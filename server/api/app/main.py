@@ -200,6 +200,21 @@ def migrate_auth_schema() -> None:
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invites_token_hash ON invites(token_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invites_email ON invites(lower(email))")
+        owner_scoped_tables = ("tasks", "event_tasks", "events", "sync_stickers", "ucp_tasks", "development_tasks", "ambp_topics")
+        for table_name in owner_scoped_tables:
+            conn.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
+        conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_assignee_id_fkey")
+        conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
+        conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("ALTER TABLE IF EXISTS event_tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
+        conn.execute("ALTER TABLE IF EXISTS event_tasks DROP CONSTRAINT IF EXISTS event_tasks_assignee_id_fkey")
+        conn.execute("UPDATE event_tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
+        conn.execute("ALTER TABLE IF EXISTS event_tasks ADD CONSTRAINT event_tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("ALTER TABLE IF EXISTS ucp_task_members ADD COLUMN IF NOT EXISTS member_id integer")
+        conn.execute("ALTER TABLE IF EXISTS ucp_task_members DROP CONSTRAINT IF EXISTS ucp_task_members_member_id_fkey")
+        conn.execute("DELETE FROM ucp_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+        conn.execute("ALTER TABLE IF EXISTS ucp_task_members ADD CONSTRAINT ucp_task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
         conn.execute("ALTER TABLE IF EXISTS events ADD COLUMN IF NOT EXISTS description text")
         conn.execute("ALTER TABLE IF EXISTS event_tasks ADD COLUMN IF NOT EXISTS description text")
         conn.execute("ALTER TABLE IF EXISTS ucp_checkpoints ADD COLUMN IF NOT EXISTS evidence_materials text NOT NULL DEFAULT ''")
@@ -213,6 +228,7 @@ def migrate_auth_schema() -> None:
               success_metric text NOT NULL DEFAULT '',
               due date,
               status text NOT NULL DEFAULT '',
+              owner_id integer REFERENCES users(id) ON DELETE SET NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
               updated_at timestamptz NOT NULL DEFAULT now()
             )
@@ -261,6 +277,7 @@ def migrate_auth_schema() -> None:
               funnel_proposals integer NOT NULL DEFAULT 0,
               funnel_contracts integer NOT NULL DEFAULT 0,
               comment text NOT NULL DEFAULT '',
+              owner_id integer REFERENCES users(id) ON DELETE SET NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
               updated_at timestamptz NOT NULL DEFAULT now()
             )
@@ -334,6 +351,12 @@ def migrate_auth_schema() -> None:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id)")
+        admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+        if not admin_owner:
+            admin_owner = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        if admin_owner:
+            for table_name in owner_scoped_tables:
+                conn.execute(f"UPDATE {table_name} SET owner_id = %s WHERE owner_id IS NULL", (admin_owner["id"],))
         if ADMIN_EMAIL and ADMIN_PASSWORD:
             existing = conn.execute("SELECT id FROM users WHERE lower(email) = lower(%s)", (ADMIN_EMAIL,)).fetchone()
             if not existing:
@@ -344,6 +367,10 @@ def migrate_auth_schema() -> None:
                     """,
                     (ADMIN_EMAIL.lower(), hash_password(ADMIN_PASSWORD), ADMIN_NAME),
                 )
+        admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+        if admin_owner:
+            for table_name in owner_scoped_tables:
+                conn.execute(f"UPDATE {table_name} SET owner_id = %s WHERE owner_id IS NULL", (admin_owner["id"],))
 
 
 @app.on_event("startup")
@@ -443,8 +470,116 @@ def task_json(row: dict[str, Any]) -> dict[str, Any]:
         "priority": row["priority"],
         "column": row["column_name"],
         "due": iso(row["due"]) or "",
+        "ownerId": row["owner_id"],
         "assigneeId": row["assignee_id"],
     }
+
+
+def visible_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if user["role"] == "admin":
+        return conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
+    return conn.execute(
+        "SELECT * FROM tasks WHERE owner_id = %s OR assignee_id = %s ORDER BY id",
+        (user["id"], user["id"]),
+    ).fetchall()
+
+
+def visible_event_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if user["role"] == "admin":
+        return conn.execute("SELECT * FROM event_tasks ORDER BY event_id, id").fetchall()
+    return conn.execute(
+        "SELECT * FROM event_tasks WHERE owner_id = %s OR assignee_id = %s ORDER BY event_id, id",
+        (user["id"], user["id"]),
+    ).fetchall()
+
+
+def can_edit_task(row: dict[str, Any], user: dict[str, Any]) -> bool:
+    return user["role"] == "admin" or row["owner_id"] == user["id"] or row["assignee_id"] == user["id"]
+
+
+def can_delete_task(row: dict[str, Any], user: dict[str, Any]) -> bool:
+    return user["role"] == "admin" or row["owner_id"] == user["id"]
+
+
+def resolve_owner_id(conn, user: dict[str, Any]) -> int | None:
+    user_id = int(user.get("id") or 0)
+    if user_id > 0:
+        return user_id
+    admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+    if admin_owner:
+        return admin_owner["id"]
+    fallback_owner = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    return fallback_owner["id"] if fallback_owner else None
+
+
+OWNER_SCOPED_TABLES = {"sync_stickers", "development_tasks", "ambp_topics"}
+OWNER_SCOPED_ORDER = {
+    "sync_stickers": "id",
+    "development_tasks": "due NULLS LAST, id",
+    "ambp_topics": "id",
+}
+
+
+def visible_owner_rows(conn, table: str, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if table not in OWNER_SCOPED_TABLES:
+        raise ValueError(f"Unsupported owner-scoped table: {table}")
+    order_by = OWNER_SCOPED_ORDER[table]
+    if user["role"] == "admin":
+        return conn.execute(f"SELECT * FROM {table} ORDER BY {order_by}").fetchall()
+    return conn.execute(
+        f"SELECT * FROM {table} WHERE owner_id = %s ORDER BY {order_by}",
+        (user["id"],),
+    ).fetchall()
+
+
+def can_manage_owner_row(row: dict[str, Any], user: dict[str, Any]) -> bool:
+    return user["role"] == "admin" or row["owner_id"] == user["id"]
+
+
+def visible_events(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if user["role"] == "admin":
+        return conn.execute("SELECT * FROM events ORDER BY month, day, id").fetchall()
+    return conn.execute(
+        """
+        SELECT DISTINCT events.*
+        FROM events
+        LEFT JOIN event_tasks ON event_tasks.event_id = events.id
+        WHERE events.owner_id = %s OR event_tasks.owner_id = %s OR event_tasks.assignee_id = %s
+        ORDER BY events.month, events.day, events.id
+        """,
+        (user["id"], user["id"], user["id"]),
+    ).fetchall()
+
+
+def visible_ucp_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if user["role"] == "admin":
+        return conn.execute("SELECT * FROM ucp_tasks ORDER BY id").fetchall()
+    return conn.execute(
+        """
+        SELECT DISTINCT ucp_tasks.*
+        FROM ucp_tasks
+        LEFT JOIN ucp_task_members ON ucp_task_members.task_id = ucp_tasks.id
+        WHERE ucp_tasks.owner_id = %s OR ucp_task_members.member_id = %s
+        ORDER BY ucp_tasks.id
+        """,
+        (user["id"], user["id"]),
+    ).fetchall()
+
+
+def can_view_ucp_task(conn, task_id: int, user: dict[str, Any]) -> bool:
+    if user["role"] == "admin":
+        return True
+    row = conn.execute(
+        """
+        SELECT ucp_tasks.id
+        FROM ucp_tasks
+        LEFT JOIN ucp_task_members ON ucp_task_members.task_id = ucp_tasks.id
+        WHERE ucp_tasks.id = %s AND (ucp_tasks.owner_id = %s OR ucp_task_members.member_id = %s)
+        LIMIT 1
+        """,
+        (task_id, user["id"], user["id"]),
+    ).fetchone()
+    return bool(row)
 
 
 def event_json(row: dict[str, Any]) -> dict[str, Any]:
@@ -456,6 +591,7 @@ def event_json(row: dict[str, Any]) -> dict[str, Any]:
         "day": row["day"],
         "type": row["type"],
         "done": row["done"],
+        "ownerId": row.get("owner_id"),
     }
 
 
@@ -464,6 +600,7 @@ def event_task_json(row: dict[str, Any]) -> dict[str, Any]:
         "id": row["id"],
         "title": row["title"],
         "description": row.get("description") or "",
+        "ownerId": row["owner_id"],
         "assigneeId": row["assignee_id"],
         "due": iso(row["due"]) or "",
         "done": row["done"],
@@ -481,6 +618,7 @@ def sticker_json(row: dict[str, Any]) -> dict[str, Any]:
         "y": row["y"],
         "width": row["width"],
         "height": row["height"],
+        "ownerId": row.get("owner_id"),
     }
 
 
@@ -489,6 +627,7 @@ def ucp_task_json(row: dict[str, Any], checkpoints: list[dict[str, Any]], member
         "id": row["id"],
         "title": row["title"],
         "description": row["description"] or "",
+        "ownerId": row.get("owner_id"),
         "memberIds": members,
         "checkpoints": [
             {
@@ -511,6 +650,7 @@ def development_task_json(row: dict[str, Any]) -> dict[str, Any]:
         "successMetric": row["success_metric"] or "",
         "due": iso(row["due"]) or "",
         "status": row["status"] or "",
+        "ownerId": row.get("owner_id"),
     }
 
 
@@ -526,10 +666,11 @@ def ambp_topic_json(row: dict[str, Any]) -> dict[str, Any]:
         "funnelProposals": row["funnel_proposals"] or 0,
         "funnelContracts": row["funnel_contracts"] or 0,
         "comment": row["comment"] or "",
+        "ownerId": row.get("owner_id"),
     }
 
 
-def fetch_all_data(conn) -> dict[str, Any]:
+def fetch_all_data(conn, user: dict[str, Any]) -> dict[str, Any]:
     team = conn.execute(
         """
         SELECT id, email, display_name as name
@@ -538,13 +679,13 @@ def fetch_all_data(conn) -> dict[str, Any]:
         ORDER BY display_name, id
         """
     ).fetchall()
-    tasks = conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
-    events = conn.execute("SELECT * FROM events ORDER BY month, day, id").fetchall()
-    event_tasks = conn.execute("SELECT * FROM event_tasks ORDER BY event_id, id").fetchall()
-    stickers = conn.execute("SELECT * FROM sync_stickers ORDER BY id").fetchall()
-    ucp_tasks = conn.execute("SELECT * FROM ucp_tasks ORDER BY id").fetchall()
-    development_tasks = conn.execute("SELECT * FROM development_tasks ORDER BY due NULLS LAST, id").fetchall()
-    ambp_topics = conn.execute("SELECT * FROM ambp_topics ORDER BY id").fetchall()
+    tasks = visible_tasks(conn, user)
+    events = visible_events(conn, user)
+    event_tasks = visible_event_tasks(conn, user)
+    stickers = visible_owner_rows(conn, "sync_stickers", user)
+    ucp_tasks = visible_ucp_tasks(conn, user)
+    development_tasks = visible_owner_rows(conn, "development_tasks", user)
+    ambp_topics = visible_owner_rows(conn, "ambp_topics", user)
     ucp_members = conn.execute("SELECT task_id, member_id FROM ucp_task_members ORDER BY task_id, member_id").fetchall()
     ucp_checkpoints = conn.execute("SELECT * FROM ucp_checkpoints ORDER BY task_id, id").fetchall()
 
@@ -622,7 +763,13 @@ def notify_task_created(conn, task: dict[str, Any], actor: dict[str, Any]) -> No
         "url": "/dashboard.html",
         "tag": f"task-{task['id']}",
     }
-    subscriptions = conn.execute("SELECT * FROM push_subscriptions ORDER BY id").fetchall()
+    recipient_ids = [user_id for user_id in {task.get("ownerId"), task.get("assigneeId")} if user_id is not None]
+    if not recipient_ids:
+        return
+    subscriptions = conn.execute(
+        "SELECT * FROM push_subscriptions WHERE user_id = ANY(%s) ORDER BY id",
+        (recipient_ids,),
+    ).fetchall()
     notify_push_subscriptions(subscriptions, payload)
 
 
@@ -905,9 +1052,9 @@ def healthcheck() -> dict[str, str]:
 
 
 @app.get("/bootstrap", dependencies=[Depends(require_auth)])
-def bootstrap() -> dict[str, Any]:
+def bootstrap(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     with db() as conn:
-        return fetch_all_data(conn)
+        return fetch_all_data(conn, user)
 
 
 @app.get("/push/vapid-public-key", dependencies=[Depends(require_auth)])
@@ -995,32 +1142,31 @@ def ambp_payload(payload: dict[str, Any]) -> tuple[Any, ...]:
 
 
 @app.get("/ambp-topics", dependencies=[Depends(require_auth)])
-def list_ambp_topics() -> list[dict[str, Any]]:
+def list_ambp_topics(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        rows = conn.execute("SELECT * FROM ambp_topics ORDER BY id").fetchall()
-        return [ambp_topic_json(item) for item in rows]
+        return [ambp_topic_json(item) for item in visible_owner_rows(conn, "ambp_topics", user)]
 
 
 @app.post("/ambp-topics", dependencies=[Depends(require_auth)])
-async def create_ambp_topic(request: Request) -> dict[str, Any]:
+async def create_ambp_topic(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
         row = conn.execute(
             """
             INSERT INTO ambp_topics (
               title, description, plan_revenue, fact_revenue,
-              funnel_leads, funnel_qualified, funnel_proposals, funnel_contracts, comment
+              funnel_leads, funnel_qualified, funnel_proposals, funnel_contracts, comment, owner_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
-            ambp_payload(payload),
+            (*ambp_payload(payload), resolve_owner_id(conn, user)),
         ).fetchone()
         return ambp_topic_json(row)
 
 
 @app.patch("/ambp-topics/{topic_id}", dependencies=[Depends(require_auth)])
-async def update_ambp_topic(topic_id: int, request: Request) -> dict[str, Any]:
+async def update_ambp_topic(topic_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
         "title": "title",
@@ -1054,33 +1200,38 @@ async def update_ambp_topic(topic_id: int, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="No fields to update")
     values.append(topic_id)
     with db() as conn:
+        existing = conn.execute("SELECT * FROM ambp_topics WHERE id = %s", (topic_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="AMBP topic not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="AMBP topic access denied")
         row = conn.execute(
             f"UPDATE ambp_topics SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
             values,
         ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="AMBP topic not found")
         return ambp_topic_json(row)
 
 
 @app.delete("/ambp-topics/{topic_id}", dependencies=[Depends(require_auth)])
-def delete_ambp_topic(topic_id: int) -> dict[str, bool]:
+def delete_ambp_topic(topic_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
-        deleted = conn.execute("DELETE FROM ambp_topics WHERE id = %s RETURNING id", (topic_id,)).fetchone()
-        if not deleted:
+        existing = conn.execute("SELECT * FROM ambp_topics WHERE id = %s", (topic_id,)).fetchone()
+        if not existing:
             raise HTTPException(status_code=404, detail="AMBP topic not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="AMBP topic access denied")
+        conn.execute("DELETE FROM ambp_topics WHERE id = %s RETURNING id", (topic_id,)).fetchone()
         return {"ok": True}
 
 
 @app.get("/development-tasks", dependencies=[Depends(require_auth)])
-def list_development_tasks() -> list[dict[str, Any]]:
+def list_development_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        rows = conn.execute("SELECT * FROM development_tasks ORDER BY due NULLS LAST, id").fetchall()
-        return [development_task_json(item) for item in rows]
+        return [development_task_json(item) for item in visible_owner_rows(conn, "development_tasks", user)]
 
 
 @app.post("/development-tasks", dependencies=[Depends(require_auth)])
-async def create_development_task(request: Request) -> dict[str, Any]:
+async def create_development_task(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     title = (payload.get("title") or "").strip()
     if not title:
@@ -1088,8 +1239,8 @@ async def create_development_task(request: Request) -> dict[str, Any]:
     with db() as conn:
         row = conn.execute(
             """
-            INSERT INTO development_tasks (title, description, result_image, success_metric, due, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO development_tasks (title, description, result_image, success_metric, due, status, owner_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -1099,13 +1250,14 @@ async def create_development_task(request: Request) -> dict[str, Any]:
                 (payload.get("successMetric", payload.get("success_metric", "")) or "").strip(),
                 clean_date(payload.get("due")),
                 (payload.get("status") or "").strip(),
+                resolve_owner_id(conn, user),
             ),
         ).fetchone()
         return development_task_json(row)
 
 
 @app.patch("/development-tasks/{task_id}", dependencies=[Depends(require_auth)])
-async def update_development_task(task_id: int, request: Request) -> dict[str, Any]:
+async def update_development_task(task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
         "title": "title",
@@ -1128,28 +1280,34 @@ async def update_development_task(task_id: int, request: Request) -> dict[str, A
         raise HTTPException(status_code=400, detail="No fields to update")
     values.append(task_id)
     with db() as conn:
+        existing = conn.execute("SELECT * FROM development_tasks WHERE id = %s", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Development task not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="Development task access denied")
         row = conn.execute(
             f"UPDATE development_tasks SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
             values,
         ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Development task not found")
         return development_task_json(row)
 
 
 @app.delete("/development-tasks/{task_id}", dependencies=[Depends(require_auth)])
-def delete_development_task(task_id: int) -> dict[str, bool]:
+def delete_development_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
-        deleted = conn.execute("DELETE FROM development_tasks WHERE id = %s RETURNING id", (task_id,)).fetchone()
-        if not deleted:
+        existing = conn.execute("SELECT * FROM development_tasks WHERE id = %s", (task_id,)).fetchone()
+        if not existing:
             raise HTTPException(status_code=404, detail="Development task not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="Development task access denied")
+        conn.execute("DELETE FROM development_tasks WHERE id = %s RETURNING id", (task_id,)).fetchone()
         return {"ok": True}
 
 
 @app.get("/tasks", dependencies=[Depends(require_auth)])
-def list_tasks() -> list[dict[str, Any]]:
+def list_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        return [task_json(item) for item in conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()]
+        return [task_json(item) for item in visible_tasks(conn, user)]
 
 
 @app.post("/tasks")
@@ -1158,8 +1316,8 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
     with db() as conn:
         row = conn.execute(
             """
-            INSERT INTO tasks (title, description, priority, column_name, due, assignee_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO tasks (title, description, priority, column_name, due, owner_id, assignee_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -1168,6 +1326,7 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
                 payload.get("priority", "Средний"),
                 payload.get("column", "Беклог"),
                 clean_date(payload.get("due")),
+                resolve_owner_id(conn, user),
                 payload.get("assigneeId"),
             ),
         ).fetchone()
@@ -1177,27 +1336,31 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
 
 
 @app.patch("/tasks/{task_id}", dependencies=[Depends(require_auth)])
-async def update_task(task_id: int, request: Request) -> dict[str, Any]:
+async def update_task(task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
-    existing = {
-        "title": payload.get("title"),
-        "description": payload.get("description"),
-        "priority": payload.get("priority"),
-        "column_name": payload.get("column"),
-        "due": clean_date(payload.get("due")) if "due" in payload else None,
-        "assignee_id": payload.get("assigneeId") if "assigneeId" in payload else None,
+    allowed = {
+        "title": "title",
+        "description": "description",
+        "priority": "priority",
+        "column": "column_name",
+        "due": "due",
+        "assigneeId": "assignee_id",
     }
     fields = []
     values = []
-    for column, value in existing.items():
-        source_key = "column" if column == "column_name" else "assigneeId" if column == "assignee_id" else column
-        if source_key in payload:
-            fields.append(f"{column} = %s")
-            values.append(value)
-    if not fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    values.append(task_id)
     with db() as conn:
+        existing = conn.execute("SELECT * FROM tasks WHERE id = %s", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if not can_edit_task(existing, user):
+            raise HTTPException(status_code=403, detail="Task access denied")
+        for key, column in allowed.items():
+            if key in payload:
+                fields.append(f"{column} = %s")
+                values.append(clean_date(payload[key]) if key == "due" else payload[key])
+        if not fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        values.append(task_id)
         row = conn.execute(
             f"UPDATE tasks SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
             values,
@@ -1208,8 +1371,13 @@ async def update_task(task_id: int, request: Request) -> dict[str, Any]:
 
 
 @app.delete("/tasks/{task_id}", dependencies=[Depends(require_auth)])
-def delete_task(task_id: int) -> dict[str, bool]:
+def delete_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
+        existing = conn.execute("SELECT * FROM tasks WHERE id = %s", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if not can_delete_task(existing, user):
+            raise HTTPException(status_code=403, detail="Task access denied")
         deleted = conn.execute("DELETE FROM tasks WHERE id = %s RETURNING id", (task_id,)).fetchone()
         if not deleted:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -1217,19 +1385,19 @@ def delete_task(task_id: int) -> dict[str, bool]:
 
 
 @app.get("/events", dependencies=[Depends(require_auth)])
-def list_events() -> list[dict[str, Any]]:
+def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        return [event_json(item) for item in conn.execute("SELECT * FROM events ORDER BY month, day, id").fetchall()]
+        return [event_json(item) for item in visible_events(conn, user)]
 
 
 @app.post("/events", dependencies=[Depends(require_auth)])
-async def create_event(request: Request) -> dict[str, Any]:
+async def create_event(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
         row = conn.execute(
             """
-            INSERT INTO events (title, description, month, day, type, done)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO events (title, description, month, day, type, done, owner_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -1239,13 +1407,14 @@ async def create_event(request: Request) -> dict[str, Any]:
                 payload.get("day"),
                 payload.get("type", "Совещание"),
                 payload.get("done", False),
+                resolve_owner_id(conn, user),
             ),
         ).fetchone()
         return event_json(row)
 
 
 @app.patch("/events/{event_id}", dependencies=[Depends(require_auth)])
-async def update_event(event_id: int, request: Request) -> dict[str, Any]:
+async def update_event(event_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {"title": "title", "description": "description", "month": "month", "day": "day", "type": "type", "done": "done"}
     fields = []
@@ -1258,38 +1427,45 @@ async def update_event(event_id: int, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="No fields to update")
     values.append(event_id)
     with db() as conn:
+        existing = conn.execute("SELECT * FROM events WHERE id = %s", (event_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Event not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="Event access denied")
         row = conn.execute(
             f"UPDATE events SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
             values,
         ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Event not found")
         return event_json(row)
 
 
 @app.delete("/events/{event_id}", dependencies=[Depends(require_auth)])
-def delete_event(event_id: int) -> dict[str, bool]:
+def delete_event(event_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
-        deleted = conn.execute("DELETE FROM events WHERE id = %s RETURNING id", (event_id,)).fetchone()
-        if not deleted:
+        existing = conn.execute("SELECT * FROM events WHERE id = %s", (event_id,)).fetchone()
+        if not existing:
             raise HTTPException(status_code=404, detail="Event not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="Event access denied")
+        conn.execute("DELETE FROM events WHERE id = %s RETURNING id", (event_id,)).fetchone()
         return {"ok": True}
 
 
 @app.post("/events/{event_id}/tasks", dependencies=[Depends(require_auth)])
-async def create_event_task(event_id: int, request: Request) -> dict[str, Any]:
+async def create_event_task(event_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
         row = conn.execute(
             """
-            INSERT INTO event_tasks (event_id, title, description, assignee_id, due, done)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO event_tasks (event_id, title, description, owner_id, assignee_id, due, done)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
                 event_id,
                 payload.get("title", "").strip(),
                 payload.get("description", "").strip(),
+                resolve_owner_id(conn, user),
                 payload.get("assigneeId"),
                 clean_date(payload.get("due")),
                 payload.get("done", False),
@@ -1299,19 +1475,24 @@ async def create_event_task(event_id: int, request: Request) -> dict[str, Any]:
 
 
 @app.patch("/events/{event_id}/tasks/{task_id}", dependencies=[Depends(require_auth)])
-async def update_event_task(event_id: int, task_id: int, request: Request) -> dict[str, Any]:
+async def update_event_task(event_id: int, task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {"title": "title", "description": "description", "assigneeId": "assignee_id", "due": "due", "done": "done"}
     fields = []
     values = []
-    for key, column in allowed.items():
-        if key in payload:
-            fields.append(f"{column} = %s")
-            values.append(clean_date(payload[key]) if key == "due" else payload[key])
-    if not fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    values.extend([event_id, task_id])
     with db() as conn:
+        existing = conn.execute("SELECT * FROM event_tasks WHERE event_id = %s AND id = %s", (event_id, task_id)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Event task not found")
+        if not can_edit_task(existing, user):
+            raise HTTPException(status_code=403, detail="Event task access denied")
+        for key, column in allowed.items():
+            if key in payload:
+                fields.append(f"{column} = %s")
+                values.append(clean_date(payload[key]) if key == "due" else payload[key])
+        if not fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        values.extend([event_id, task_id])
         row = conn.execute(
             f"UPDATE event_tasks SET {', '.join(fields)}, updated_at = now() WHERE event_id = %s AND id = %s RETURNING *",
             values,
@@ -1322,8 +1503,13 @@ async def update_event_task(event_id: int, task_id: int, request: Request) -> di
 
 
 @app.delete("/events/{event_id}/tasks/{task_id}", dependencies=[Depends(require_auth)])
-def delete_event_task(event_id: int, task_id: int) -> dict[str, bool]:
+def delete_event_task(event_id: int, task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
+        existing = conn.execute("SELECT * FROM event_tasks WHERE event_id = %s AND id = %s", (event_id, task_id)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Event task not found")
+        if not can_delete_task(existing, user):
+            raise HTTPException(status_code=403, detail="Event task access denied")
         deleted = conn.execute(
             "DELETE FROM event_tasks WHERE event_id = %s AND id = %s RETURNING id",
             (event_id, task_id),
@@ -1334,19 +1520,19 @@ def delete_event_task(event_id: int, task_id: int) -> dict[str, bool]:
 
 
 @app.get("/sync-stickers", dependencies=[Depends(require_auth)])
-def list_stickers() -> list[dict[str, Any]]:
+def list_stickers(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        return [sticker_json(item) for item in conn.execute("SELECT * FROM sync_stickers ORDER BY id").fetchall()]
+        return [sticker_json(item) for item in visible_owner_rows(conn, "sync_stickers", user)]
 
 
 @app.post("/sync-stickers", dependencies=[Depends(require_auth)])
-async def create_sticker(request: Request) -> dict[str, Any]:
+async def create_sticker(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
         row = conn.execute(
             """
-            INSERT INTO sync_stickers (speaker, topic, text, color_id, x, y, width, height)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO sync_stickers (speaker, topic, text, color_id, x, y, width, height, owner_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -1358,13 +1544,14 @@ async def create_sticker(request: Request) -> dict[str, Any]:
                 payload.get("y", 24),
                 payload.get("width", 236),
                 payload.get("height", 188),
+                resolve_owner_id(conn, user),
             ),
         ).fetchone()
         return sticker_json(row)
 
 
 @app.patch("/sync-stickers/{sticker_id}", dependencies=[Depends(require_auth)])
-async def update_sticker(sticker_id: int, request: Request) -> dict[str, Any]:
+async def update_sticker(sticker_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
         "speaker": "speaker",
@@ -1386,21 +1573,27 @@ async def update_sticker(sticker_id: int, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="No fields to update")
     values.append(sticker_id)
     with db() as conn:
+        existing = conn.execute("SELECT * FROM sync_stickers WHERE id = %s", (sticker_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Sticker not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="Sticker access denied")
         row = conn.execute(
             f"UPDATE sync_stickers SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
             values,
         ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Sticker not found")
         return sticker_json(row)
 
 
 @app.delete("/sync-stickers/{sticker_id}", dependencies=[Depends(require_auth)])
-def delete_sticker(sticker_id: int) -> dict[str, bool]:
+def delete_sticker(sticker_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
-        deleted = conn.execute("DELETE FROM sync_stickers WHERE id = %s RETURNING id", (sticker_id,)).fetchone()
-        if not deleted:
+        existing = conn.execute("SELECT * FROM sync_stickers WHERE id = %s", (sticker_id,)).fetchone()
+        if not existing:
             raise HTTPException(status_code=404, detail="Sticker not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="Sticker access denied")
+        conn.execute("DELETE FROM sync_stickers WHERE id = %s RETURNING id", (sticker_id,)).fetchone()
         return {"ok": True}
 
 
@@ -1438,28 +1631,33 @@ def fetch_ucp_task(conn, task_id: int) -> dict[str, Any]:
 
 
 @app.get("/ucp/tasks", dependencies=[Depends(require_auth)])
-def list_ucp_tasks() -> list[dict[str, Any]]:
+def list_ucp_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        return fetch_all_data(conn)["ucpTasks"]
+        return fetch_all_data(conn, user)["ucpTasks"]
 
 
 @app.post("/ucp/tasks", dependencies=[Depends(require_auth)])
-async def create_ucp_task(request: Request) -> dict[str, Any]:
+async def create_ucp_task(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
         row = conn.execute(
-            "INSERT INTO ucp_tasks (title, description) VALUES (%s, %s) RETURNING *",
-            (payload.get("title", "").strip(), payload.get("description", "").strip()),
+            "INSERT INTO ucp_tasks (title, description, owner_id) VALUES (%s, %s, %s) RETURNING *",
+            (payload.get("title", "").strip(), payload.get("description", "").strip(), resolve_owner_id(conn, user)),
         ).fetchone()
         save_ucp_relations(conn, row["id"], payload.get("memberIds", []), payload.get("checkpoints", []))
         return fetch_ucp_task(conn, row["id"])
 
 
 @app.patch("/ucp/tasks/{task_id}", dependencies=[Depends(require_auth)])
-async def update_ucp_task(task_id: int, request: Request) -> dict[str, Any]:
+async def update_ucp_task(task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
-        row = conn.execute(
+        existing = conn.execute("SELECT * FROM ucp_tasks WHERE id = %s", (task_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="UCP task not found")
+        if not can_view_ucp_task(conn, task_id, user):
+            raise HTTPException(status_code=403, detail="UCP task access denied")
+        conn.execute(
             """
             UPDATE ucp_tasks
             SET title = %s, description = %s, updated_at = now()
@@ -1468,16 +1666,17 @@ async def update_ucp_task(task_id: int, request: Request) -> dict[str, Any]:
             """,
             (payload.get("title", "").strip(), payload.get("description", "").strip(), task_id),
         ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="UCP task not found")
         save_ucp_relations(conn, task_id, payload.get("memberIds", []), payload.get("checkpoints", []))
         return fetch_ucp_task(conn, task_id)
 
 
 @app.delete("/ucp/tasks/{task_id}", dependencies=[Depends(require_auth)])
-def delete_ucp_task(task_id: int) -> dict[str, bool]:
+def delete_ucp_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
-        deleted = conn.execute("DELETE FROM ucp_tasks WHERE id = %s RETURNING id", (task_id,)).fetchone()
-        if not deleted:
+        existing = conn.execute("SELECT * FROM ucp_tasks WHERE id = %s", (task_id,)).fetchone()
+        if not existing:
             raise HTTPException(status_code=404, detail="UCP task not found")
+        if not can_manage_owner_row(existing, user):
+            raise HTTPException(status_code=403, detail="UCP task access denied")
+        conn.execute("DELETE FROM ucp_tasks WHERE id = %s RETURNING id", (task_id,)).fetchone()
         return {"ok": True}

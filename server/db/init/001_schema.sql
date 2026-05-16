@@ -17,9 +17,23 @@ ALTER TABLE ucp_task_members
 
 -- Создаем связи с таблицей users
 ALTER TABLE tasks
+  ADD COLUMN owner_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tasks
   ADD COLUMN assignee_id integer REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE event_tasks
+  ADD COLUMN owner_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE event_tasks
   ADD COLUMN assignee_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE sync_stickers
+  ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ucp_tasks
+  ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE development_tasks
+  ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ambp_topics
+  ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL;
 
 -- Обновляем ucp_task_members с новым столбцом member_id
 ALTER TABLE ucp_task_members
