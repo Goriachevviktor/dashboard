@@ -20,6 +20,8 @@ ALTER TABLE tasks
   ADD COLUMN owner_id integer REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE tasks
   ADD COLUMN assignee_id integer REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tasks
+  ADD COLUMN completed_at timestamptz;
 ALTER TABLE event_tasks
   ADD COLUMN owner_id integer REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE event_tasks
@@ -43,6 +45,9 @@ ALTER TABLE ucp_task_members
 
 -- Удаляем демо-данные team_members и связанные данные
 DELETE FROM team_members;
+UPDATE tasks SET completed_at = COALESCE(completed_at, updated_at, now()) WHERE column_name IN ('Готов', 'Готово');
+UPDATE tasks SET column_name = 'Готов' WHERE column_name = 'Готово';
+UPDATE tasks SET column_name = 'Архив' WHERE column_name = 'Готов' AND completed_at <= now() - interval '7 days';
 DELETE FROM tasks WHERE 1=1;
 DELETE FROM event_tasks WHERE 1=1;
 DELETE FROM ucp_task_members WHERE 1=1;

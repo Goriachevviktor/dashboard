@@ -204,9 +204,15 @@ def migrate_auth_schema() -> None:
         for table_name in owner_scoped_tables:
             conn.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
+        conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS completed_at timestamptz")
+        conn.execute("UPDATE tasks SET completed_at = COALESCE(completed_at, updated_at, now()) WHERE column_name IN ('Готов', 'Готово')")
         conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_assignee_id_fkey")
         conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_column_name_check")
+        conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_column_name_check CHECK (column_name IN ('Беклог', 'В работе', 'Готов', 'Готово', 'Архив'))")
+        conn.execute("UPDATE tasks SET column_name = 'Готов' WHERE column_name = 'Готово'")
+        conn.execute("UPDATE tasks SET column_name = 'Архив' WHERE column_name = 'Готов' AND completed_at <= now() - interval '7 days'")
         conn.execute("ALTER TABLE IF EXISTS event_tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
         conn.execute("ALTER TABLE IF EXISTS event_tasks DROP CONSTRAINT IF EXISTS event_tasks_assignee_id_fkey")
         conn.execute("UPDATE event_tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
@@ -462,6 +468,31 @@ def iso(value: Any) -> Any:
     return value.isoformat() if isinstance(value, date) else value
 
 
+def normalize_task_column(value: Any) -> str:
+    column = (value or "Беклог").strip()
+    if column == "Готово":
+        return "Готов"
+    if column in ("Беклог", "В работе", "Готов", "Архив"):
+        return column
+    return "Беклог"
+
+
+def is_done_column(column: Any) -> bool:
+    return column in ("Готов", "Готово")
+
+
+def archive_expired_done_tasks(conn) -> None:
+    conn.execute(
+        """
+        UPDATE tasks
+        SET column_name = 'Архив', updated_at = now()
+        WHERE column_name IN ('Готов', 'Готово')
+          AND completed_at IS NOT NULL
+          AND completed_at <= now() - interval '7 days'
+        """
+    )
+
+
 def task_json(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -470,12 +501,14 @@ def task_json(row: dict[str, Any]) -> dict[str, Any]:
         "priority": row["priority"],
         "column": row["column_name"],
         "due": iso(row["due"]) or "",
+        "completedAt": row["completed_at"].isoformat() if row.get("completed_at") else None,
         "ownerId": row["owner_id"],
         "assigneeId": row["assignee_id"],
     }
 
 
 def visible_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    archive_expired_done_tasks(conn)
     if user["role"] == "admin":
         return conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
     return conn.execute(
@@ -1316,16 +1349,17 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
     with db() as conn:
         row = conn.execute(
             """
-            INSERT INTO tasks (title, description, priority, column_name, due, owner_id, assignee_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO tasks (title, description, priority, column_name, due, completed_at, owner_id, assignee_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
                 payload.get("title", "").strip(),
                 payload.get("description", "").strip(),
                 payload.get("priority", "Средний"),
-                payload.get("column", "Беклог"),
+                normalize_task_column(payload.get("column")),
                 clean_date(payload.get("due")),
+                utcnow() if is_done_column(normalize_task_column(payload.get("column"))) else None,
                 resolve_owner_id(conn, user),
                 payload.get("assigneeId"),
             ),
@@ -1357,7 +1391,17 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
         for key, column in allowed.items():
             if key in payload:
                 fields.append(f"{column} = %s")
-                values.append(clean_date(payload[key]) if key == "due" else payload[key])
+                if key == "due":
+                    values.append(clean_date(payload[key]))
+                elif key == "column":
+                    next_column = normalize_task_column(payload[key])
+                    values.append(next_column)
+                    if is_done_column(next_column):
+                        fields.append("completed_at = COALESCE(completed_at, now())")
+                    elif next_column != "Архив":
+                        fields.append("completed_at = NULL")
+                else:
+                    values.append(payload[key])
         if not fields:
             raise HTTPException(status_code=400, detail="No fields to update")
         values.append(task_id)
@@ -1489,7 +1533,17 @@ async def update_event_task(event_id: int, task_id: int, request: Request, user:
         for key, column in allowed.items():
             if key in payload:
                 fields.append(f"{column} = %s")
-                values.append(clean_date(payload[key]) if key == "due" else payload[key])
+                if key == "due":
+                    values.append(clean_date(payload[key]))
+                elif key == "column":
+                    next_column = normalize_task_column(payload[key])
+                    values.append(next_column)
+                    if is_done_column(next_column):
+                        fields.append("completed_at = COALESCE(completed_at, now())")
+                    elif next_column != "Архив":
+                        fields.append("completed_at = NULL")
+                else:
+                    values.append(payload[key])
         if not fields:
             raise HTTPException(status_code=400, detail="No fields to update")
         values.extend([event_id, task_id])

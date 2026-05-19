@@ -94,6 +94,8 @@ const INIT_TASKS = [
 const SECTIONS = [
   { id: "tasks", label: "Текущие задачи", description: "Список активных задач и их статусы",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor" opacity=".5"/><rect x="3" y="9" width="10" height="2" rx="1" fill="currentColor"/><rect x="3" y="14" width="12" height="2" rx="1" fill="currentColor" opacity=".7"/><circle cx="16" cy="15" r="3" fill="currentColor"/><path d="M15 15l.8.8 1.5-1.5" stroke="#fff" strokeWidth="1" strokeLinecap="round"/></svg> },
+  { id: "archive", label: "Архив", description: "Закрытые и завершённые задачи",
+    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 7h12v8.5A1.5 1.5 0 0 1 14.5 17h-9A1.5 1.5 0 0 1 4 15.5V7zM3 4h14v3H3zM8 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: "events", label: "Ключевые события", description: "Важные даты и ключевые события",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/><path d="M7 3v4M13 3v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><rect x="6" y="10" width="3" height="3" rx=".5" fill="currentColor"/><rect x="11" y="10" width="3" height="3" rx=".5" fill="currentColor" opacity=".5"/></svg> },
   { id: "syncs", label: "Заметки", description: "Рабочие заметки и тезисы команды",
@@ -111,6 +113,7 @@ const SECTIONS = [
 
 const MOBILE_SECTION_LABELS = {
   tasks: "Задачи",
+  archive: "Архив",
   events: "События",
   syncs: "Заметки",
   ucp: "УПЦ",
@@ -385,6 +388,29 @@ function formatShortDate(value) {
     .replace(".", "");
 }
 
+function parseTaskDueDate(value) {
+  if (!value || value === "—") return null;
+  const text = String(value).trim().toLowerCase();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const dotted = text.match(/^(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{4}))?$/);
+  if (dotted) return new Date(Number(dotted[3] || ROADMAP_YEAR), Number(dotted[2]) - 1, Number(dotted[1]));
+  const monthMap = { янв: 0, января: 0, фев: 1, февраля: 1, мар: 2, марта: 2, апр: 3, апреля: 3, май: 4, мая: 4, июн: 5, июня: 5, июл: 6, июля: 6, авг: 7, августа: 7, сен: 8, сентября: 8, окт: 9, октября: 9, ноя: 10, ноября: 10, дек: 11, декабря: 11 };
+  const ru = text.match(/^(\d{1,2})\s+([а-яё]+)(?:\s+(\d{4}))?$/i);
+  if (ru && monthMap[ru[2]] != null) return new Date(Number(ru[3] || ROADMAP_YEAR), monthMap[ru[2]], Number(ru[1]));
+  return null;
+}
+
+function isTaskOverdue(task) {
+  if (!task || ["Готов", "Готово", "Архив"].includes(task.column)) return false;
+  const due = parseTaskDueDate(task.due);
+  if (!due || Number.isNaN(due.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+  return due < today;
+}
+
 // ---- SHARED UI ----
 function StatCard({ label, value, sub, color, compact = false }) {
   return (
@@ -623,7 +649,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [] }) {
   const [error, setError] = React.useState("");
 
   const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
-  const colColor = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981" };
+  const colColor = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
 
   function handleSave() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
@@ -754,6 +780,9 @@ function TaskDetailModal({ task, onClose, onSave, team = [] }) {
     }
     if (value === "В работе") {
       return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l5 4-5 4V4z" fill="currentColor"/></svg>;
+    }
+    if (value === "Архив") {
+      return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h10v7.5A1.5 1.5 0 0 1 11.5 14h-7A1.5 1.5 0 0 1 3 12.5V5zM2.5 3h11v2h-11zM6 8h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>;
     }
     return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.3l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
   }
@@ -899,7 +928,7 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
   const [error, setError] = React.useState("");
 
   const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
-  const colColor = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981" };
+  const colColor = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
 
   function handleSubmit() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
@@ -1010,7 +1039,7 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
 }
 
 // ---- KANBAN CARD ----
-function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, onDelete, onMove, team = [], currentUser = null }) {
+function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, onDelete, onMove, onArchive, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
   const [expanded, setExpanded] = React.useState(false);
@@ -1018,6 +1047,12 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
   const owner = findTeamMember(team, task.ownerId);
   const assignee = findTeamMember(team, task.assigneeId);
   const canDelete = currentUser?.role === "admin" || currentUser?.id === task.ownerId;
+  const canArchive = ["Готов", "Готово"].includes(task.column);
+  const overdue = isTaskOverdue(task);
+  const cardBorderColor = overdue ? "#fca5a5" : "#e8f1fd";
+  const cardShadow = overdue
+    ? "0 1px 4px rgba(239,68,68,.10), 0 8px 24px rgba(239,68,68,.08)"
+    : (isMobile ? "0 1px 3px rgba(37,99,235,.06)" : "0 1px 4px rgba(37,99,235,.07), 0 2px 12px rgba(37,99,235,.05)");
 
   function handleDragStart(e) {
     setDragging(true);
@@ -1036,15 +1071,25 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={e => { if (!dragging) onEdit && onEdit(task); }}
-      style={{ background: "#fff", borderRadius: isMobile ? 14 : 12, padding: isMobile ? "12px" : "14px 16px", boxShadow: dragging ? "0 8px 32px rgba(37,99,235,.18)" : (isMobile ? "0 1px 3px rgba(37,99,235,.06)" : "0 1px 4px rgba(37,99,235,.07), 0 2px 12px rgba(37,99,235,.05)"), border: "1px solid " + (dragging ? "#93c5fd" : "#e8f1fd"), cursor: dragging ? "grabbing" : "pointer", transition: "box-shadow .15s, opacity .15s, transform .15s", opacity: dragging ? 0.55 : 1, transform: dragging ? "rotate(1.5deg) scale(1.02)" : "none", userSelect: "none", touchAction: "manipulation" }}
-      onMouseEnter={e => { if (!dragging) { e.currentTarget.style.boxShadow = "0 4px 20px rgba(37,99,235,.13)"; e.currentTarget.style.borderColor = "#bdd7f5"; } }}
-      onMouseLeave={e => { if (!dragging) { e.currentTarget.style.boxShadow = "0 1px 4px rgba(37,99,235,.07), 0 2px 12px rgba(37,99,235,.05)"; e.currentTarget.style.borderColor = "#e8f1fd"; } }}>
+      style={{ background: overdue ? "#fff7f7" : "#fff", borderRadius: isMobile ? 14 : 12, padding: isMobile ? "12px" : "14px 16px", boxShadow: dragging ? "0 8px 32px rgba(37,99,235,.18)" : cardShadow, border: "1px solid " + (dragging ? "#93c5fd" : cardBorderColor), cursor: dragging ? "grabbing" : "pointer", transition: "box-shadow .15s, opacity .15s, transform .15s, border-color .15s, background .15s", opacity: dragging ? 0.55 : 1, transform: dragging ? "rotate(1.5deg) scale(1.02)" : "none", userSelect: "none", touchAction: "manipulation" }}
+      onMouseEnter={e => { if (!dragging) { e.currentTarget.style.boxShadow = overdue ? "0 6px 24px rgba(239,68,68,.16)" : "0 4px 20px rgba(37,99,235,.13)"; e.currentTarget.style.borderColor = overdue ? "#ef4444" : "#bdd7f5"; } }}
+      onMouseLeave={e => { if (!dragging) { e.currentTarget.style.boxShadow = cardShadow; e.currentTarget.style.borderColor = cardBorderColor; } }}>
 
       {/* Header: dot + title + priority badge */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: isMobile ? 10 : 8 }}>
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: priColor[task.priority], flexShrink: 0, marginTop: 4 }}></div>
         <div style={{ flex: 1, fontSize: isMobile ? 14 : 13, fontWeight: isMobile ? 750 : 600, color: "#1e3a6e", lineHeight: 1.35 }}>{task.title}</div>
         <span style={{ fontSize: 10, fontWeight: 600, color: priColor[task.priority], background: priColor[task.priority]+"18", padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>{task.priority}</span>
+        {overdue && <span style={{ fontSize: 10, fontWeight: 750, color: "#b91c1c", background: "#fee2e2", padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>Просрочено</span>}
+        {canArchive && (
+          <button
+            onClick={e => { e.stopPropagation(); onArchive && onArchive(task.id); }}
+            title="Переместить в архив"
+            style={{ width: 24, height: 24, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 5h10v7.5A1.5 1.5 0 0 1 11.5 14h-7A1.5 1.5 0 0 1 3 12.5V5zM2.5 3h11v2h-11zM6 8h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        )}
         {canDelete && (
           <button
             onClick={e => { e.stopPropagation(); onDelete && onDelete(task.id); }}
@@ -1095,8 +1140,8 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
       {/* Footer: due */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1" y="2" width="9" height="8" rx="1.5" stroke="#94a3b8" strokeWidth="1" fill="none"/><path d="M3.5 1v2M7.5 1v2" stroke="#94a3b8" strokeWidth="1" strokeLinecap="round"/></svg>
-          <span style={{ fontSize: 11, color: "#94a3b8" }}>до {formatShortDate(task.due)}</span>
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1" y="2" width="9" height="8" rx="1.5" stroke={overdue ? "#ef4444" : "#94a3b8"} strokeWidth="1" fill="none"/><path d="M3.5 1v2M7.5 1v2" stroke={overdue ? "#ef4444" : "#94a3b8"} strokeWidth="1" strokeLinecap="round"/></svg>
+          <span style={{ fontSize: 11, color: overdue ? "#b91c1c" : "#94a3b8", fontWeight: overdue ? 750 : 400 }}>{overdue ? "просрочено: " : "до "}{formatShortDate(task.due)}</span>
         </div>
         {isMobile ? (
           <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 132 }}>{assignee ? assignee.name.split(" ")[0] : "Без исполнителя"}</span>
@@ -1129,12 +1174,28 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
   const currentUserId = currentUser?.id ?? null;
 
   const COLUMNS = ["Беклог", "В работе", "Готов"];
-  const colColor  = { "Беклог": "#64748b", "В работе": "#2563eb", "Готов": "#10b981" };
-  const colBg     = { "Беклог": "#f1f5f9", "В работе": "#eff6ff", "Готов": "#f0fdf4" };
-  const colBorder = { "Беклог": "#e2edf8", "В работе": "#bdd7f5", "Готов": "#bbf7d0" };
-  const colDropBg = { "Беклог": "#e8edf5", "В работе": "#dbeafe", "Готов": "#dcfce7" };
+  const colColor  = { "Беклог": "#64748b", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
+  const colBg     = { "Беклог": "#f1f5f9", "В работе": "#eff6ff", "Готов": "#f0fdf4", "Архив": "#f8fafc" };
+  const colBorder = { "Беклог": "#e2edf8", "В работе": "#bdd7f5", "Готов": "#bbf7d0", "Архив": "#cbd5e1" };
+  const colDropBg = { "Беклог": "#e8edf5", "В работе": "#dbeafe", "Готов": "#dcfce7", "Архив": "#e2e8f0" };
 
   React.useEffect(() => setTasks(initialTasks), [initialTasks]);
+
+  function normalizeTaskColumn(column) {
+    return column === "Готово" ? "Готов" : column;
+  }
+
+  function isArchiveColumn(column) {
+    return column === "Архив";
+  }
+
+  function isDoneColumn(column) {
+    return ["Готов", "Готово"].includes(column);
+  }
+
+  async function archiveTask(taskId) {
+    return moveTask(taskId, "Архив");
+  }
 
   async function changeAssignee(taskId, newId) {
     try {
@@ -1147,7 +1208,8 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
 
   async function moveTask(taskId, newCol) {
     try {
-      const updated = await api.patchTask(taskId, { column: newCol });
+      const targetColumn = normalizeTaskColumn(newCol);
+      const updated = await api.patchTask(taskId, { column: targetColumn });
       setTasks(ts => ts.map(t => t.id === taskId ? updated : t));
     } catch (error) {
       onError(error);
@@ -1156,7 +1218,8 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
 
   async function addTask(data) {
     try {
-      const created = await api.createTask(data);
+      const payload = { ...data, column: normalizeTaskColumn(data.column) };
+      const created = await api.createTask(payload);
       setTasks(ts => [...ts, created]);
     } catch (error) {
       onError(error);
@@ -1165,7 +1228,8 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
 
   async function saveTask(updated) {
     try {
-      const saved = await api.patchTask(updated.id, updated);
+      const payload = { ...updated, column: normalizeTaskColumn(updated.column) };
+      const saved = await api.patchTask(updated.id, payload);
       setTasks(ts => ts.map(t => t.id === saved.id ? saved : t));
     } catch (error) {
       onError(error);
@@ -1216,18 +1280,19 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
     return true;
   });
 
+  const activeScopeTasks = scopeTasks.filter(t => !isArchiveColumn(t.column));
+
   // Filtered tasks
-  const filtered = scopeTasks.filter(t => {
+  const filtered = activeScopeTasks.filter(t => {
     const matchAssignee = filterAssignee === "all" || String(t.assigneeId) === filterAssignee;
     const matchPriority = filterPriority === "all" || t.priority === filterPriority;
     return matchAssignee && matchPriority;
   });
   const mobileStatusFilter = [...COLUMNS, "all", "unassigned"].includes(mobileColumn) ? mobileColumn : "all";
   const mobileFiltered = filtered.filter(t => {
-    if (mobileStatusFilter === "Готов") return t.column === "Готов";
-    if (mobileStatusFilter === "unassigned") return !t.assigneeId && t.column !== "Готов";
-    if (mobileStatusFilter === "all") return t.column !== "Готов";
-    return t.column === mobileStatusFilter;
+    if (mobileStatusFilter === "unassigned") return !t.assigneeId && !isArchiveColumn(t.column);
+    if (mobileStatusFilter === "all") return !isArchiveColumn(t.column);
+    return normalizeTaskColumn(t.column) === mobileStatusFilter;
   });
 
   const filterBtnStyle = (active) => ({
@@ -1274,8 +1339,8 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
       marginBottom: 5,
     };
     const mobileListTitle =
-      mobileStatusFilter === "Готов" ? "Готовые задачи" :
       mobileStatusFilter === "unassigned" ? "Без исполнителя" :
+      mobileStatusFilter === "Готов" ? "Готовые задачи" :
       "Активные задачи";
     const mobileStatButton = (active) => ({
       width: "100%",
@@ -1296,18 +1361,21 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
         {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} />}
 
         {scopeControls}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
           <button onClick={() => setMobileColumn("all")} style={mobileStatButton(mobileStatusFilter === "all")}>
-            <StatCard compact label="Всего задач" value={scopeTasks.length} sub="на доске" color="#1e3a6e"/>
+            <StatCard compact label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#1e3a6e"/>
+          </button>
+          <button onClick={() => setMobileColumn("Беклог")} style={mobileStatButton(mobileStatusFilter === "Беклог")}>
+            <StatCard compact label="Беклог" value={scopeTasks.filter(t=>t.column==="Беклог").length} sub="ожидают" color="#64748b"/>
           </button>
           <button onClick={() => setMobileColumn("В работе")} style={mobileStatButton(mobileStatusFilter === "В работе")}>
             <StatCard compact label="В работе" value={scopeTasks.filter(t=>t.column==="В работе").length} sub="активных" color="#2563eb"/>
           </button>
           <button onClick={() => setMobileColumn("Готов")} style={mobileStatButton(mobileStatusFilter === "Готов")}>
-            <StatCard compact label="Готово" value={scopeTasks.filter(t=>t.column==="Готов").length} sub="завершено" color="#10b981"/>
+            <StatCard compact label="Готово" value={scopeTasks.filter(t=>isDoneColumn(t.column)).length} sub="7 дней" color="#10b981"/>
           </button>
           <button onClick={() => { setFilterAssignee("all"); setMobileColumn("unassigned"); }} style={mobileStatButton(mobileStatusFilter === "unassigned")}>
-            <StatCard compact label="Без исполнителя" value={scopeTasks.filter(t=>!t.assigneeId && t.column!=="Готов").length} sub="назначить" color="#f59e0b"/>
+            <StatCard compact label="Без исполнителя" value={scopeTasks.filter(t=>!t.assigneeId && !isArchiveColumn(t.column)).length} sub="назначить" color="#f59e0b"/>
           </button>
         </div>
 
@@ -1315,7 +1383,7 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 850, color: "#1e3a6e", lineHeight: 1.15 }}>{mobileListTitle}</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>{mobileFiltered.length} из {scopeTasks.length} на экране</div>
+              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>{mobileFiltered.length} из {activeScopeTasks.length} на экране</div>
             </div>
             <button
               onClick={() => setShowModal(true)}
@@ -1364,6 +1432,7 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
                 currentUser={currentUser}
                 onEdit={task => setEditTask(task)}
                 onMove={moveTask}
+                onArchive={archiveTask}
                 onDelete={deleteTask}
               />
             )) : (
@@ -1385,11 +1454,12 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
 
       {/* Stats */}
       {scopeControls}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap: isMobile ? 6 : 14, flexShrink: 0 }}>
-        <StatCard compact={isMobile} label="Всего задач" value={scopeTasks.length} sub="на доске" color="#1e3a6e"/>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(5, minmax(0, 1fr))" : "repeat(5, minmax(140px, 1fr))", gap: isMobile ? 6 : 14, flexShrink: 0 }}>
+        <StatCard compact={isMobile} label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#1e3a6e"/>
+        <StatCard compact={isMobile} label="Беклог" value={scopeTasks.filter(t=>t.column==="Беклог").length} sub="ожидают" color="#64748b"/>
         <StatCard compact={isMobile} label="В работе" value={scopeTasks.filter(t=>t.column==="В работе").length} sub="активных" color="#2563eb"/>
-        <StatCard compact={isMobile} label="Готово" value={scopeTasks.filter(t=>t.column==="Готов").length} sub="завершено" color="#10b981"/>
-        <StatCard compact={isMobile} label="Без исполнителя" value={scopeTasks.filter(t=>!t.assigneeId).length} sub="назначить" color="#f59e0b"/>
+        <StatCard compact={isMobile} label="Готово" value={scopeTasks.filter(t=>isDoneColumn(t.column)).length} sub="7 дней" color="#10b981"/>
+        <StatCard compact={isMobile} label="Без исполнителя" value={scopeTasks.filter(t=>!t.assigneeId && !isArchiveColumn(t.column)).length} sub="назначить" color="#f59e0b"/>
       </div>
 
       {/* Board container */}
@@ -1397,7 +1467,7 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
 
         {/* Toolbar: title + filters + add button */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap", flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a6e", marginRight: 4 }}>Активные задачи</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a6e", marginRight: 4 }}>Доска задач</div>
 
           {/* Separator */}
           <div style={{ width: 1, height: 20, background: "#e2edf8", flexShrink: 0 }}></div>
@@ -1446,15 +1516,15 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
         {/* Filtered count hint */}
         {(filterAssignee !== "all" || filterPriority !== "all") && (
           <div style={{ fontSize: 12, color: "#2563eb", marginBottom: 10, flexShrink: 0 }}>
-            Показано {filtered.length} из {scopeTasks.length} задач
+            Показано {filtered.length} из {activeScopeTasks.length} задач
             <button onClick={() => { setFilterAssignee("all"); setFilterPriority("all"); }} style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontFamily: "Inter", textDecoration: "underline" }}>Сбросить</button>
           </div>
         )}
 
         {/* Columns */}
-        <div style={{ display: "grid", gridTemplateColumns: isCompact ? "1fr" : "1fr 1fr 1fr", gap: 14, flex: 1, minHeight: 0, overflow: isMobile ? "visible" : "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isCompact ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 14, flex: 1, minHeight: 0, overflow: isMobile ? "visible" : "hidden" }}>
           {COLUMNS.map(col => {
-            const colTasks = filtered.filter(t => t.column === col);
+            const colTasks = filtered.filter(t => normalizeTaskColumn(t.column) === col);
             const isOver = dragOverCol === col;
             return (
               <div key={col}
@@ -1496,6 +1566,7 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
                       onDragEnd={() => setDraggingId(null)}
                       onEdit={task => setEditTask(task)}
                       onMove={moveTask}
+                      onArchive={archiveTask}
                       onDelete={deleteTask} />
                   ))}
                 </div>
@@ -1503,6 +1574,137 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function TaskArchiveSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
+  const { isMobile } = useViewportFlags();
+  const [confirmDelete, confirmDialog] = useConfirmDialog();
+  const [tasks, setTasks] = React.useState(initialTasks);
+  const [editTask, setEditTask] = React.useState(null);
+
+  React.useEffect(() => setTasks(initialTasks), [initialTasks]);
+
+  const archivedTasks = tasks.filter(task => task.column === "Архив");
+  const canDeleteTask = task => currentUser?.role === "admin" || currentUser?.id === task.ownerId;
+
+  async function updateTask(taskId, payload) {
+    try {
+      const saved = await api.patchTask(taskId, payload);
+      setTasks(items => items.map(item => item.id === saved.id ? saved : item));
+      return saved;
+    } catch (error) {
+      onError(error);
+      return null;
+    }
+  }
+
+  async function saveTask(updated) {
+    const saved = await updateTask(updated.id, updated);
+    if (saved) setEditTask(null);
+  }
+
+  async function restoreTask(taskId, column) {
+    await updateTask(taskId, { column });
+  }
+
+  async function deleteTask(taskId) {
+    const task = tasks.find(item => item.id === taskId);
+    const confirmed = await confirmDelete({
+      title: "Удалить задачу из архива?",
+      message: "Задача будет удалена окончательно. Это действие нельзя отменить.",
+      itemTitle: task?.title,
+      confirmText: "Удалить",
+    });
+    if (!confirmed) return;
+    try {
+      await api.deleteTask(taskId);
+      setTasks(items => items.filter(item => item.id !== taskId));
+      if (editTask?.id === taskId) setEditTask(null);
+    } catch (error) {
+      onError(error);
+    }
+  }
+
+  const buttonStyle = (color = "#2563eb") => ({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: isMobile ? 34 : 32,
+    padding: isMobile ? "7px 10px" : "6px 10px",
+    borderRadius: 9,
+    border: "1px solid " + (color === "#ef4444" ? "#fecaca" : "#dbeafe"),
+    background: "#fff",
+    color,
+    fontSize: 12,
+    fontWeight: 750,
+    fontFamily: "Inter",
+    cursor: "pointer",
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {confirmDialog}
+      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} />}
+
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(180px, 1fr))", gap: isMobile ? 8 : 14 }}>
+        <StatCard compact={isMobile} label="В архиве" value={archivedTasks.length} sub="закрытых задач" color="#64748b"/>
+        <StatCard compact={isMobile} label="С исполнителем" value={archivedTasks.filter(task => task.assigneeId).length} sub="есть ответственный" color="#2563eb"/>
+        <StatCard compact={isMobile} label="Без исполнителя" value={archivedTasks.filter(task => !task.assigneeId).length} sub="без назначения" color="#f59e0b"/>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 16, padding: isMobile ? 14 : 20, border: "1px solid #e2edf8", boxShadow: "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 850, color: "#1e3a6e" }}>Архив задач</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Завершённые задачи не мешают текущей доске</div>
+          </div>
+        </div>
+
+        {archivedTasks.length ? (
+          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", padding: isMobile ? "10px 12px" : "12px 16px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#64748b", fontSize: 11, fontWeight: 850, letterSpacing: .35, textTransform: "uppercase" }}>
+              Наименование задачи
+            </div>
+            {archivedTasks.map((task, index) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={() => setEditTask(task)}
+                title="Открыть задачу"
+                style={{
+                  width: "100%",
+                  minHeight: isMobile ? 42 : 44,
+                  display: "block",
+                  padding: isMobile ? "10px 12px" : "11px 16px",
+                  border: "none",
+                  borderBottom: index === archivedTasks.length - 1 ? "none" : "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#1e3a6e",
+                  fontSize: 14,
+                  fontWeight: 750,
+                  fontFamily: "Inter",
+                  lineHeight: 1.35,
+                  textAlign: "left",
+                  cursor: "pointer",
+                  overflowWrap: "anywhere",
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = "#f8fbff"}
+                onMouseLeave={e => e.currentTarget.style.background = "#fff"}
+              >
+                {task.title}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: isMobile ? "30px 14px" : "42px 20px", borderRadius: 14, border: "1px dashed #cbd5e1", color: "#94a3b8", textAlign: "center", fontSize: 14, fontWeight: 750 }}>
+            В архиве пока нет задач
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1528,6 +1730,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const [showAddTask,  setShowAddTask]  = React.useState(false);
   const [editEvent, setEditEvent] = React.useState(null);
   const [selectedTask, setSelectedTask] = React.useState(null);
+  const [roadmapTypeFilter, setRoadmapTypeFilter] = React.useState("all");
 
   React.useEffect(() => {
     if (!Array.isArray(initialEvents)) return;
@@ -1548,8 +1751,18 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     return Math.max(0, Math.ceil((endOfYear - referenceDate) / (1000 * 60 * 60 * 24)));
   }, [TODAY_DAY, TODAY_MONTH]);
 
+  const roadmapEvents = React.useMemo(
+    () => roadmapTypeFilter === "all" ? events : events.filter(event => event.type === roadmapTypeFilter),
+    [events, roadmapTypeFilter]
+  );
   const selectedEvent = events.find(e => e.id === selectedId) || null;
   const tasks = (selectedId && eventTasks[selectedId]) || [];
+
+  React.useEffect(() => {
+    if (roadmapTypeFilter === "all") return;
+    if (!roadmapEvents.length) return;
+    if (!roadmapEvents.some(event => event.id === selectedId)) setSelectedId(roadmapEvents[0].id);
+  }, [roadmapTypeFilter, roadmapEvents, selectedId]);
 
   async function addEvent(data) {
     try {
@@ -1695,7 +1908,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     };
   }
 
-  const { topEvents, bottomEvents } = React.useMemo(() => assignLevels(events), [events]);
+  const { topEvents, bottomEvents } = React.useMemo(() => assignLevels(roadmapEvents), [roadmapEvents]);
 
   function EventModal({ event, onClose, onSubmit }) {
     const isEdit = Boolean(event);
@@ -1961,14 +2174,22 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
         <div style={{ display:"flex", alignItems:isCompact ? "flex-start" : "center", justifyContent:"space-between", marginBottom:20, gap:14, flexWrap:"wrap" }}>
           <div style={{ fontSize:isMobile ? 18 : 14, fontWeight:isMobile ? 850 : 600, color:"#1e3a6e" }}>Дорожная карта 2026</div>
           <div style={{ display:"flex", alignItems:isCompact ? "flex-start" : "center", gap:14, flexWrap:"wrap" }}>
-            {!isMobile && <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
-              {Object.entries(TYPE_COLOR).map(([t,c]) => (
-                <div key={t} style={{ display:"flex", alignItems:"center", gap:5 }}>
-                  <div style={{ width:8, height:8, borderRadius:"50%", background:c }}></div>
-                  <span style={{ fontSize:11, color:"#94a3b8" }}>{t}</span>
-                </div>
-              ))}
-            </div>}
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {Object.entries(TYPE_COLOR).map(([t,c]) => {
+                const active = roadmapTypeFilter === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setRoadmapTypeFilter(current => current === t ? "all" : t)}
+                    title={active ? "Показать все типы" : `Показать только: ${t}`}
+                    style={{ display:"flex", alignItems:"center", gap:5, minHeight:26, padding:"4px 8px", borderRadius:999, border:"1.5px solid " + (active ? c : "#e2edf8"), background: active ? c + "14" : "#fff", color: active ? c : "#94a3b8", fontSize:11, fontWeight: active ? 800 : 650, fontFamily:"Inter", cursor:"pointer" }}>
+                    <span style={{ width:8, height:8, borderRadius:"50%", background:c, flexShrink:0 }}></span>
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
             <button onClick={() => setShowAddEvent(true)}
               style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.25)", whiteSpace:"nowrap" }}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1980,7 +2201,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
         {/* Timeline */}
         {isMobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {events
+            {roadmapEvents
               .slice()
               .sort((a, b) => a.month === b.month ? a.day - b.day : a.month - b.month)
               .map(ev => {
@@ -2010,12 +2231,12 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
         <div style={{ overflowX:"auto", paddingBottom:4 }}>
           <div style={{ position:"relative", paddingTop:60, paddingBottom:60, minWidth:isCompact ? 860 : "auto" }}>
           {/* Top labels — multi-level anti-collision */}
-          <div style={{ position:"relative", height: Math.max(1, Math.max(...topEvents.map(e=>e.level))+1) * 26 + 12 }}>
+          <div style={{ position:"relative", height: Math.max(1, topEvents.length ? Math.max(...topEvents.map(e=>e.level))+1 : 1) * 26 + 12 }}>
             {topEvents.map(ev => {
               const pct = getEventPct(ev);
               const isSel = selectedId === ev.id;
               // level 0 = closest to track (bottom of zone), higher levels = further up
-              const maxLevel = Math.max(...topEvents.map(e=>e.level));
+              const maxLevel = topEvents.length ? Math.max(...topEvents.map(e=>e.level)) : 0;
               const bottomOffset = ev.level * 26;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
@@ -2064,7 +2285,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           </div>
 
           {/* Bottom labels — multi-level anti-collision */}
-          <div style={{ position:"relative", height: Math.max(1, Math.max(...bottomEvents.map(e=>e.level))+1) * 26 + 12, marginTop:4 }}>
+          <div style={{ position:"relative", height: Math.max(1, bottomEvents.length ? Math.max(...bottomEvents.map(e=>e.level))+1 : 1) * 26 + 12, marginTop:4 }}>
             {bottomEvents.map(ev => {
               const pct = getEventPct(ev);
               const isSel = selectedId === ev.id;
@@ -3508,6 +3729,7 @@ function BacklogSection() {
 
 const SECTION_COMPONENTS = {
   tasks: ({ data, api, onError, currentUser }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
+  archive: ({ data, api, onError, currentUser }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   events: ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   syncs: ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
   ucp: ({ data, api, onError }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} />,
