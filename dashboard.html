@@ -1720,8 +1720,8 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const TODAY_DAY = today.day;
   const todayPct = (TODAY_MONTH + (TODAY_DAY - 1) / 31) / 12;
 
-  const TYPE_OPTIONS = ["Совещание","Мероприятие","Релиз","Дедлайн","Планирование"];
-  const TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b" };
+  const TYPE_OPTIONS = ["Совещание","Мероприятие","Релиз","Дедлайн","Планирование","УПЦ","План развития"];
+  const TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b","УПЦ":"#0f766e","План развития":"#7c3aed" };
 
   const [events, setEvents] = React.useState(() => Array.isArray(initialEvents) ? initialEvents : []);
   const [eventTasks, setEventTasks] = React.useState(() => initialEventTasks || {});
@@ -1756,7 +1756,8 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     [events, roadmapTypeFilter]
   );
   const selectedEvent = events.find(e => e.id === selectedId) || null;
-  const tasks = (selectedId && eventTasks[selectedId]) || [];
+  const selectedEventGenerated = Boolean(selectedEvent?.generated);
+  const tasks = (!selectedEventGenerated && selectedId && eventTasks[selectedId]) || [];
 
   React.useEffect(() => {
     if (roadmapTypeFilter === "all") return;
@@ -1875,9 +1876,49 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
   function getEventPct(ev) { return (ev.month + (ev.day - 1) / 31) / 12; }
 
+  function compactRoadmapTitle(event) {
+    const raw = String(event?.title || "").trim();
+    if (!raw) return "Без названия";
+    const sourcePrefix = event?.type === "УПЦ" ? "УПЦ · " : event?.type === "План развития" ? "План · " : "";
+    const parts = raw.split(":").map(part => part.trim()).filter(Boolean);
+    const base = parts.length > 1 && ["УПЦ", "План развития"].includes(event?.type) ? parts[parts.length - 1] : raw;
+    const cleaned = base
+      .replace(/^провести\s+/i, "")
+      .replace(/^реализация\s+(задач\s+)?/i, "")
+      .replace(/^создание\s+/i, "")
+      .trim();
+    const limit = sourcePrefix ? 44 : 52;
+    const short = cleaned.length > limit ? cleaned.slice(0, limit - 1).trimEnd() + "…" : cleaned;
+    return sourcePrefix + short;
+  }
+
+  const roadmapLabelStyle = (event, selected) => ({
+    width: 190,
+    minHeight: 24,
+    maxHeight: 42,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+    fontSize: 10,
+    lineHeight: 1.25,
+    fontWeight: 700,
+    color: event.done ? "#94a3b8" : TYPE_COLOR[event.type],
+    background: selected ? TYPE_COLOR[event.type] + "22" : "#fff",
+    padding: "4px 8px",
+    borderRadius: 8,
+    textAlign: "center",
+    border: selected ? "1.5px solid " + TYPE_COLOR[event.type] : "1.5px solid #e8f1fd",
+    transition: "all .15s",
+    boxShadow: selected ? "0 2px 8px rgba(37,99,235,.12)" : "none",
+  });
+
   // Anti-collision: assign each event a side (top/bottom) and a level within that side
   // so labels never overlap horizontally
-  const LABEL_W_PCT = 0.13; // approx label width as fraction of timeline width
+  const LABEL_W_PCT = 0.115; // compact two-line labels reduce horizontal collisions
 
   function assignLevels(evList) {
     // Sort by x position
@@ -2216,7 +2257,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                       <div style={{ width: 12, height: 12, borderRadius: "50%", background: ev.done ? "#94a3b8" : TYPE_COLOR[ev.type] }}></div>
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
+                      <div title={ev.title} style={{ fontSize: 14, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{compactRoadmapTitle(ev)}</div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 12, color: "#64748b" }}>{MONTHS[ev.month]} · {ev.day}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: TYPE_COLOR[ev.type], background: TYPE_COLOR[ev.type] + "18", padding: "2px 7px", borderRadius: 999 }}>{ev.type}</span>
@@ -2231,18 +2272,18 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
         <div style={{ overflowX:"auto", paddingBottom:4 }}>
           <div style={{ position:"relative", paddingTop:60, paddingBottom:60, minWidth:isCompact ? 860 : "auto" }}>
           {/* Top labels — multi-level anti-collision */}
-          <div style={{ position:"relative", height: Math.max(1, topEvents.length ? Math.max(...topEvents.map(e=>e.level))+1 : 1) * 26 + 12 }}>
+          <div style={{ position:"relative", height: Math.max(1, topEvents.length ? Math.max(...topEvents.map(e=>e.level))+1 : 1) * 48 + 16 }}>
             {topEvents.map(ev => {
               const pct = getEventPct(ev);
               const isSel = selectedId === ev.id;
               // level 0 = closest to track (bottom of zone), higher levels = further up
               const maxLevel = topEvents.length ? Math.max(...topEvents.map(e=>e.level)) : 0;
-              const bottomOffset = ev.level * 26;
+              const bottomOffset = ev.level * 48;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
                   style={{ position:"absolute", left:`${pct*100}%`, bottom: bottomOffset, transform:"translateX(-50%)", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
-                  <div style={{ fontSize:10, fontWeight:600, color:ev.done?"#94a3b8":TYPE_COLOR[ev.type], background:isSel?TYPE_COLOR[ev.type]+"22":"#fff", padding:"2px 7px", borderRadius:6, whiteSpace:"nowrap", textAlign:"center", border:isSel?"1.5px solid "+TYPE_COLOR[ev.type]:"1.5px solid #e8f1fd", transition:"all .15s", boxShadow: isSel?"0 2px 8px rgba(37,99,235,.12)":"none" }} title={ev.title}>
-                    {ev.title}
+                  <div style={roadmapLabelStyle(ev, isSel)} title={ev.title}>
+                    {compactRoadmapTitle(ev)}
                   </div>
                   <div style={{ width:1, height: bottomOffset === 0 ? 10 : bottomOffset + 10, background:ev.done?"#d1d5db":TYPE_COLOR[ev.type], opacity:.4, position:"absolute", bottom: -( bottomOffset === 0 ? 10 : bottomOffset + 10), left:"50%" }}></div>
                 </div>
@@ -2285,17 +2326,17 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           </div>
 
           {/* Bottom labels — multi-level anti-collision */}
-          <div style={{ position:"relative", height: Math.max(1, bottomEvents.length ? Math.max(...bottomEvents.map(e=>e.level))+1 : 1) * 26 + 12, marginTop:4 }}>
+          <div style={{ position:"relative", height: Math.max(1, bottomEvents.length ? Math.max(...bottomEvents.map(e=>e.level))+1 : 1) * 48 + 16, marginTop:4 }}>
             {bottomEvents.map(ev => {
               const pct = getEventPct(ev);
               const isSel = selectedId === ev.id;
-              const topOffset = ev.level * 26;
+              const topOffset = ev.level * 48;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
                   style={{ position:"absolute", left:`${pct*100}%`, top: topOffset, transform:"translateX(-50%)", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
                   <div style={{ width:1, height: topOffset === 0 ? 10 : topOffset + 10, background:ev.done?"#d1d5db":TYPE_COLOR[ev.type], opacity:.4, position:"absolute", top:-(topOffset===0?10:topOffset+10), left:"50%" }}></div>
-                  <div style={{ fontSize:10, fontWeight:600, color:ev.done?"#94a3b8":TYPE_COLOR[ev.type], background:isSel?TYPE_COLOR[ev.type]+"22":"#fff", padding:"2px 7px", borderRadius:6, whiteSpace:"nowrap", textAlign:"center", border:isSel?"1.5px solid "+TYPE_COLOR[ev.type]:"1.5px solid #e8f1fd", transition:"all .15s", boxShadow: isSel?"0 2px 8px rgba(37,99,235,.12)":"none" }} title={ev.title}>
-                    {ev.title}
+                  <div style={roadmapLabelStyle(ev, isSel)} title={ev.title}>
+                    {compactRoadmapTitle(ev)}
                   </div>
                 </div>
               );
@@ -2318,31 +2359,36 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               <div style={{ display:"flex", gap:10, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
                 <span style={{ fontSize:12, color:"#64748b" }}>{MONTHS[selectedEvent.month]} 2026 · {selectedEvent.day} число</span>
                 <span style={{ fontSize:11, fontWeight:600, color:TYPE_COLOR[selectedEvent.type], background:TYPE_COLOR[selectedEvent.type]+"18", padding:"2px 8px", borderRadius:20 }}>{selectedEvent.type}</span>
+                {selectedEventGenerated && <span style={{ fontSize:11, fontWeight:600, color:"#64748b", background:"#f1f5f9", padding:"2px 8px", borderRadius:20 }}>Автоматически</span>}
                 {selectedEvent.done && <span style={{ fontSize:11, fontWeight:600, color:"#10b981", background:"#10b98118", padding:"2px 8px", borderRadius:20 }}>Завершено</span>}
               </div>
               {selectedEvent.description && <div style={{ fontSize:13, color:"#64748b", marginTop:8, lineHeight:1.55 }}>{selectedEvent.description}</div>}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-              <span style={{ fontSize:13, color:"#94a3b8" }}>{tasks.filter(t=>t.done).length}/{tasks.length} задач</span>
-              <button onClick={() => setEditEvent(selectedEvent)}
+              {!selectedEventGenerated && <span style={{ fontSize:13, color:"#94a3b8" }}>{tasks.filter(t=>t.done).length}/{tasks.length} задач</span>}
+              {!selectedEventGenerated && <button onClick={() => setEditEvent(selectedEvent)}
                 style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 12px", borderRadius:10, border:"1px solid #dbeafe", background:"#fff", color:"#2563eb", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }}>
                 <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5l2 2L5.2 10.8H3.2V8.8L8.5 3.5z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Редактировать
-              </button>
-              <button onClick={() => deleteEvent(selectedEvent.id)}
+              </button>}
+              {!selectedEventGenerated && <button onClick={() => deleteEvent(selectedEvent.id)}
                 style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 12px", borderRadius:10, border:"1px solid #fecaca", background:"#fff", color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }}>
                 <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Удалить
-              </button>
-              <button onClick={() => setShowAddTask(true)}
+              </button>}
+              {!selectedEventGenerated && <button onClick={() => setShowAddTask(true)}
                 style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.2)", whiteSpace:"nowrap" }}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
                 Добавить задачу
-              </button>
+              </button>}
             </div>
           </div>
 
-          {tasks.length === 0 ? (
+          {selectedEventGenerated ? (
+            <div style={{ textAlign:"center", padding:"18px 0 8px", color:"#94a3b8", fontSize:13 }}>
+              Это событие сформировано автоматически из связанного раздела и обновляется при изменении исходной задачи.
+            </div>
+          ) : tasks.length === 0 ? (
             <div style={{ textAlign:"center", padding:"28px 0", color:"#94a3b8", fontSize:14 }}>
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ margin:"0 auto 10px", display:"block", opacity:.35 }}>
                 <rect x="4" y="6" width="24" height="20" rx="3" stroke="currentColor" strokeWidth="1.5" fill="none"/>

@@ -625,6 +625,8 @@ def event_json(row: dict[str, Any]) -> dict[str, Any]:
         "type": row["type"],
         "done": row["done"],
         "ownerId": row.get("owner_id"),
+        "generated": bool(row.get("generated", False)),
+        "source": row.get("source") or "events",
     }
 
 
@@ -687,6 +689,75 @@ def development_task_json(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def roadmap_date_parts(value: Any) -> tuple[int, int] | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        value = value.date()
+    if isinstance(value, date):
+        return value.month - 1, value.day
+    try:
+        parsed = datetime.fromisoformat(str(value)).date()
+    except ValueError:
+        return None
+    return parsed.month - 1, parsed.day
+
+
+def generated_roadmap_events(
+    ucp_tasks: list[dict[str, Any]],
+    ucp_checkpoints: list[dict[str, Any]],
+    development_tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    ucp_ids = {item["id"] for item in ucp_tasks}
+    ucp_title_by_id = {item["id"]: item["title"] for item in ucp_tasks}
+    generated: list[dict[str, Any]] = []
+
+    for checkpoint in ucp_checkpoints:
+        task_id = checkpoint["task_id"]
+        if task_id not in ucp_ids:
+            continue
+        parts = roadmap_date_parts(checkpoint.get("date"))
+        if not parts:
+            continue
+        label = (checkpoint.get("label") or "Контрольная точка").strip() or "Контрольная точка"
+        task_title = ucp_title_by_id.get(task_id) or "УПЦ"
+        generated.append(
+            {
+                "id": f"ucp-checkpoint-{checkpoint['id']}",
+                "title": f"{task_title}: {label}",
+                "description": checkpoint.get("evidence_materials") or "Автоматически добавлено из раздела УПЦ",
+                "month": parts[0],
+                "day": parts[1],
+                "type": "УПЦ",
+                "done": False,
+                "owner_id": next((item.get("owner_id") for item in ucp_tasks if item["id"] == task_id), None),
+                "generated": True,
+                "source": "ucp",
+            }
+        )
+
+    for task in development_tasks:
+        parts = roadmap_date_parts(task.get("due"))
+        if not parts:
+            continue
+        generated.append(
+            {
+                "id": f"development-task-{task['id']}",
+                "title": task["title"],
+                "description": task.get("description") or task.get("success_metric") or "Автоматически добавлено из раздела План развития",
+                "month": parts[0],
+                "day": parts[1],
+                "type": "План развития",
+                "done": False,
+                "owner_id": task.get("owner_id"),
+                "generated": True,
+                "source": "development",
+            }
+        )
+
+    return sorted(generated, key=lambda item: (item["month"], item["day"], str(item["id"])))
+
+
 def ambp_topic_json(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -737,7 +808,7 @@ def fetch_all_data(conn, user: dict[str, Any]) -> dict[str, Any]:
     return {
         "team": team,
         "tasks": [task_json(item) for item in tasks],
-        "events": [event_json(item) for item in events],
+        "events": [event_json(item) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks)],
         "eventTasks": event_task_map,
         "syncStickers": [sticker_json(item) for item in stickers],
         "ucpTasks": [
@@ -1431,7 +1502,11 @@ def delete_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> d
 @app.get("/events", dependencies=[Depends(require_auth)])
 def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        return [event_json(item) for item in visible_events(conn, user)]
+        events = visible_events(conn, user)
+        ucp_tasks = visible_ucp_tasks(conn, user)
+        development_tasks = visible_owner_rows(conn, "development_tasks", user)
+        ucp_checkpoints = conn.execute("SELECT * FROM ucp_checkpoints ORDER BY task_id, id").fetchall()
+        return [event_json(item) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks)]
 
 
 @app.post("/events", dependencies=[Depends(require_auth)])
