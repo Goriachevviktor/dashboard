@@ -703,6 +703,11 @@ def roadmap_date_parts(value: Any) -> tuple[int, int] | None:
     return parsed.month - 1, parsed.day
 
 
+def is_development_task_done(row: dict[str, Any]) -> bool:
+    status = (row.get("status") or "").strip().lower()
+    return any(marker in status for marker in ("заверш", "готов", "выполн", "done", "complete"))
+
+
 def generated_roadmap_events(
     ucp_tasks: list[dict[str, Any]],
     ucp_checkpoints: list[dict[str, Any]],
@@ -748,7 +753,7 @@ def generated_roadmap_events(
                 "month": parts[0],
                 "day": parts[1],
                 "type": "План развития",
-                "done": False,
+                "done": is_development_task_done(task),
                 "owner_id": task.get("owner_id"),
                 "generated": True,
                 "source": "development",

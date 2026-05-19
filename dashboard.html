@@ -1718,7 +1718,6 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const today = React.useMemo(() => getRoadmapToday(), []);
   const TODAY_MONTH = today.month;
   const TODAY_DAY = today.day;
-  const todayPct = (TODAY_MONTH + (TODAY_DAY - 1) / 31) / 12;
 
   const TYPE_OPTIONS = ["Совещание","Мероприятие","Релиз","Дедлайн","Планирование","УПЦ","План развития"];
   const TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b","УПЦ":"#0f766e","План развития":"#7c3aed" };
@@ -1731,6 +1730,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const [editEvent, setEditEvent] = React.useState(null);
   const [selectedTask, setSelectedTask] = React.useState(null);
   const [roadmapTypeFilter, setRoadmapTypeFilter] = React.useState("all");
+  const [showClosedPastMonths, setShowClosedPastMonths] = React.useState(false);
 
   React.useEffect(() => {
     if (!Array.isArray(initialEvents)) return;
@@ -1755,15 +1755,48 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     () => roadmapTypeFilter === "all" ? events : events.filter(event => event.type === roadmapTypeFilter),
     [events, roadmapTypeFilter]
   );
-  const selectedEvent = events.find(e => e.id === selectedId) || null;
+
+  function isRoadmapEventClosed(event) {
+    if (!event) return true;
+    if (event.generated) return Boolean(event.done);
+    const relatedTasks = eventTasks[String(event.id)] || eventTasks[event.id] || [];
+    return Boolean(event.done) && relatedTasks.every(task => task.done);
+  }
+
+  const hiddenPastMonths = React.useMemo(() => {
+    if (showClosedPastMonths) return new Set();
+    const hidden = new Set();
+    for (let month = 0; month < TODAY_MONTH; month += 1) {
+      const monthEvents = roadmapEvents.filter(event => event.month === month);
+      if (!monthEvents.length || monthEvents.every(isRoadmapEventClosed)) hidden.add(month);
+    }
+    return hidden;
+  }, [roadmapEvents, eventTasks, showClosedPastMonths, TODAY_MONTH]);
+
+  const visibleRoadmapEvents = React.useMemo(
+    () => roadmapEvents.filter(event => !hiddenPastMonths.has(event.month)),
+    [roadmapEvents, hiddenPastMonths]
+  );
+
+  const timelineStartMonth = React.useMemo(() => {
+    if (showClosedPastMonths) return 0;
+    for (let month = 0; month < 12; month += 1) {
+      if (!hiddenPastMonths.has(month)) return month;
+    }
+    return TODAY_MONTH;
+  }, [hiddenPastMonths, showClosedPastMonths, TODAY_MONTH]);
+  const timelineMonthSpan = Math.max(1, 12 - timelineStartMonth);
+  const clampTimelinePct = value => Math.max(0, Math.min(1, value));
+  const todayPct = clampTimelinePct((TODAY_MONTH - timelineStartMonth + (TODAY_DAY - 1) / 31) / timelineMonthSpan);
+
+  const selectedEvent = visibleRoadmapEvents.find(e => e.id === selectedId) || null;
   const selectedEventGenerated = Boolean(selectedEvent?.generated);
   const tasks = (!selectedEventGenerated && selectedId && eventTasks[selectedId]) || [];
 
   React.useEffect(() => {
-    if (roadmapTypeFilter === "all") return;
-    if (!roadmapEvents.length) return;
-    if (!roadmapEvents.some(event => event.id === selectedId)) setSelectedId(roadmapEvents[0].id);
-  }, [roadmapTypeFilter, roadmapEvents, selectedId]);
+    if (!visibleRoadmapEvents.length) return;
+    if (!visibleRoadmapEvents.some(event => event.id === selectedId)) setSelectedId(visibleRoadmapEvents[0].id);
+  }, [visibleRoadmapEvents, selectedId]);
 
   async function addEvent(data) {
     try {
@@ -1874,7 +1907,13 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     }
   }
 
-  function getEventPct(ev) { return (ev.month + (ev.day - 1) / 31) / 12; }
+  function getMonthPct(month) {
+    return clampTimelinePct((month - timelineStartMonth) / timelineMonthSpan);
+  }
+
+  function getEventPct(ev) {
+    return clampTimelinePct((ev.month - timelineStartMonth + (ev.day - 1) / 31) / timelineMonthSpan);
+  }
 
   function compactRoadmapTitle(event) {
     const raw = String(event?.title || "").trim();
@@ -1949,7 +1988,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     };
   }
 
-  const { topEvents, bottomEvents } = React.useMemo(() => assignLevels(roadmapEvents), [roadmapEvents]);
+  const { topEvents, bottomEvents } = React.useMemo(() => assignLevels(visibleRoadmapEvents), [visibleRoadmapEvents, todayPct, timelineStartMonth]);
 
   function EventModal({ event, onClose, onSubmit }) {
     const isEdit = Boolean(event);
@@ -2231,6 +2270,12 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 );
               })}
             </div>
+            <button
+              type="button"
+              onClick={() => setShowClosedPastMonths(value => !value)}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 10px", borderRadius:10, border:"1.5px solid " + (showClosedPastMonths ? "#93c5fd" : "#e2edf8"), background:showClosedPastMonths ? "#eff6ff" : "#fff", color:showClosedPastMonths ? "#2563eb" : "#64748b", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }}>
+              {showClosedPastMonths ? "Скрыть прошлое" : "Показать прошлое"}
+            </button>
             <button onClick={() => setShowAddEvent(true)}
               style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.25)", whiteSpace:"nowrap" }}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -2242,7 +2287,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
         {/* Timeline */}
         {isMobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {roadmapEvents
+            {visibleRoadmapEvents
               .slice()
               .sort((a, b) => a.month === b.month ? a.day - b.day : a.month - b.month)
               .map(ev => {
@@ -2295,8 +2340,8 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           <div style={{ position:"relative", height:32 }}>
             <div style={{ position:"absolute", top:"50%", left:0, right:0, height:4, background:"#e8f1fd", borderRadius:4, transform:"translateY(-50%)" }}></div>
             <div style={{ position:"absolute", top:"50%", left:0, width:`${todayPct*100}%`, height:4, background:"linear-gradient(90deg,#2563eb,#60a5fa)", borderRadius:4, transform:"translateY(-50%)" }}></div>
-            {MONTHS.map((_, i) => (
-              <div key={i} style={{ position:"absolute", left:`${(i/12)*100}%`, top:"50%", transform:"translateX(-50%) translateY(-50%)" }}>
+            {MONTHS.map((_, i) => hiddenPastMonths.has(i) ? null : (
+              <div key={i} style={{ position:"absolute", left:`${getMonthPct(i)*100}%`, top:"50%", transform:"translateX(-50%) translateY(-50%)" }}>
                 <div style={{ width:2, height:10, background:"#d1d5db", borderRadius:1 }}></div>
               </div>
             ))}
@@ -2319,9 +2364,18 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           </div>
 
           {/* Month labels */}
-          <div style={{ display:"flex", marginTop:8 }}>
-            {MONTHS.map((m, i) => (
-              <div key={m} style={{ flex:1, textAlign:"center", fontSize:11, color:i===TODAY_MONTH?"#2563eb":"#94a3b8", fontWeight:i===TODAY_MONTH?700:400 }}>{m}</div>
+          <div style={{ position:"relative", height:22, marginTop:8 }}>
+            {MONTHS.map((m, i) => hiddenPastMonths.has(i) ? null : (
+              <div key={m} style={{
+                position:"absolute",
+                left:`${getMonthPct(i)*100}%`,
+                transform:i===timelineStartMonth?"translateX(0)":"translateX(-50%)",
+                textAlign:i===timelineStartMonth?"left":"center",
+                fontSize:11,
+                color:i===TODAY_MONTH?"#2563eb":"#94a3b8",
+                fontWeight:i===TODAY_MONTH?700:400,
+                whiteSpace:"nowrap"
+              }}>{m}</div>
             ))}
           </div>
 
