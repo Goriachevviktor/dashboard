@@ -94,8 +94,6 @@ const INIT_TASKS = [
 const SECTIONS = [
   { id: "tasks", label: "Текущие задачи", description: "Список активных задач и их статусы",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor" opacity=".5"/><rect x="3" y="9" width="10" height="2" rx="1" fill="currentColor"/><rect x="3" y="14" width="12" height="2" rx="1" fill="currentColor" opacity=".7"/><circle cx="16" cy="15" r="3" fill="currentColor"/><path d="M15 15l.8.8 1.5-1.5" stroke="#fff" strokeWidth="1" strokeLinecap="round"/></svg> },
-  { id: "archive", label: "Архив", description: "Закрытые и завершённые задачи",
-    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 7h12v8.5A1.5 1.5 0 0 1 14.5 17h-9A1.5 1.5 0 0 1 4 15.5V7zM3 4h14v3H3zM8 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: "events", label: "Ключевые события", description: "Важные даты и ключевые события",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/><path d="M7 3v4M13 3v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><rect x="6" y="10" width="3" height="3" rx=".5" fill="currentColor"/><rect x="11" y="10" width="3" height="3" rx=".5" fill="currentColor" opacity=".5"/></svg> },
   { id: "syncs", label: "Заметки", description: "Рабочие заметки и тезисы команды",
@@ -106,6 +104,8 @@ const SECTIONS = [
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16V5M4 16h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><rect x="6" y="10" width="2.5" height="4" rx="1" fill="currentColor" opacity=".45"/><rect x="10" y="7" width="2.5" height="7" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="4" width="2.5" height="10" rx="1" fill="currentColor"/><path d="M6 7l3-2 3 1 4-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: "plan", label: "План развития", description: "Стратегический план и этапы развития",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 14l4-4 3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/><path d="M14 8h2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+  { id: "archive", label: "Архив", description: "Закрытые и завершённые задачи",
+    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 7h12v8.5A1.5 1.5 0 0 1 14.5 17h-9A1.5 1.5 0 0 1 4 15.5V7zM3 4h14v3H3zM8 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: "users", label: "Пользователи", description: "Команда, роли и приглашения",
     adminOnly: true,
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M2.5 17a4.5 4.5 0 0 1 9 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="14" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" opacity=".65"/><path d="M12.5 14.5c.6-.5 1.4-.8 2.3-.8 1.5 0 2.8.9 3.4 2.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".65"/></svg> },
@@ -1235,7 +1235,6 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
       onError(error);
     }
   }
-
   async function deleteTask(taskId) {
     const task = tasks.find(item => item.id === taskId);
     const confirmed = await confirmDelete({
@@ -1716,6 +1715,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const [confirmDelete, confirmDialog] = useConfirmDialog();
   const MONTHS = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
   const today = React.useMemo(() => getRoadmapToday(), []);
+  const hideClosedEventsInPwa = React.useMemo(() => isStandalonePwa(), []);
   const TODAY_MONTH = today.month;
   const TODAY_DAY = today.day;
 
@@ -1751,9 +1751,14 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     return Math.max(0, Math.ceil((endOfYear - referenceDate) / (1000 * 60 * 60 * 24)));
   }, [TODAY_DAY, TODAY_MONTH]);
 
+  const displayEvents = React.useMemo(
+    () => hideClosedEventsInPwa ? events.filter(event => !isRoadmapEventClosed(event)) : events,
+    [events, eventTasks, hideClosedEventsInPwa]
+  );
+
   const roadmapEvents = React.useMemo(
-    () => roadmapTypeFilter === "all" ? events : events.filter(event => event.type === roadmapTypeFilter),
-    [events, roadmapTypeFilter]
+    () => roadmapTypeFilter === "all" ? displayEvents : displayEvents.filter(event => event.type === roadmapTypeFilter),
+    [displayEvents, roadmapTypeFilter]
   );
 
   function isRoadmapEventClosed(event) {
@@ -2243,9 +2248,9 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap:isMobile ? 6 : 14 }}>
-        <StatCard compact={isMobile} label="Событий в году" value={events.length} sub="запланировано" color="#1e3a6e"/>
-        <StatCard compact={isMobile} label="Завершено" value={events.filter(e=>e.done).length} sub="пройдено" color="#10b981"/>
-        <StatCard compact={isMobile} label="Предстоит" value={events.filter(e=>!e.done).length} sub="впереди" color="#2563eb"/>
+        <StatCard compact={isMobile} label="Событий в году" value={displayEvents.length} sub={hideClosedEventsInPwa ? "активных" : "запланировано"} color="#1e3a6e"/>
+        <StatCard compact={isMobile} label="Завершено" value={hideClosedEventsInPwa ? 0 : events.filter(e=>e.done).length} sub={hideClosedEventsInPwa ? "скрыто в PWA" : "пройдено"} color="#10b981"/>
+        <StatCard compact={isMobile} label="Предстоит" value={displayEvents.filter(e=>!e.done).length} sub="впереди" color="#2563eb"/>
         <StatCard compact={isMobile} label="До конца года" value={daysToYearEnd} sub="дней" color="#f59e0b"/>
       </div>
 
@@ -2833,12 +2838,14 @@ function SyncsSection({ initialStickers = null, api, onError }) {
                     </button>
                   </div>
                 </div>
-                <textarea
-                  value={sticker.text}
-                  onChange={e => updateSticker(sticker.id, { text: e.target.value })}
-                  placeholder="Запишите основные тезисы..."
-                  style={{ flex: 1, border: "none", background: "transparent", resize: "vertical", minHeight: 90, maxHeight: 360, outline: "none", padding: "12px 14px 14px", fontFamily: "Inter", fontSize: 13, lineHeight: 1.55, color: "#475569" }}
-                />
+                <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "stretch" }}>
+                  <textarea
+                    value={sticker.text}
+                    onChange={e => updateSticker(sticker.id, { text: e.target.value })}
+                    placeholder="Запишите основные тезисы..."
+                    style={{ flex: "1 1 auto", width: "100%", height: "100%", minHeight: 0, border: "none", background: "transparent", resize: "none", outline: "none", padding: "12px 14px 34px", fontFamily: "Inter", fontSize: 13, lineHeight: 1.55, color: "#475569", boxSizing: "border-box", overflowY: "auto", display: "block" }}
+                  />
+                </div>
                 <div
                   onMouseDown={e => {
                     e.stopPropagation();
@@ -2893,38 +2900,18 @@ function SyncsSection({ initialStickers = null, api, onError }) {
   );
 }
 
-function UcpSection({ initialTasks = null, team = [], api, onError }) {
+function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const [confirmDelete, confirmDialog] = useConfirmDialog();
   const [showCreate, setShowCreate] = React.useState(false);
   const [editTask, setEditTask] = React.useState(null);
-  const [tasks, setTasks] = React.useState(initialTasks?.length ? initialTasks : [
-    {
-      id: 1,
-      title: "Повысить конверсию в активацию",
-      description: "Собрать гипотезы по первым 7 дням онбординга и синхронизировать план с продуктом и аналитикой.",
-      memberIds: [2, 3, 4],
-      checkpoints: [
-        { id: 11, label: "Диагностика воронки", date: "2026-05-06", evidenceMaterials: "" },
-        { id: 12, label: "Защита гипотез", date: "2026-05-12", evidenceMaterials: "" },
-        { id: 13, label: "Запуск эксперимента", date: "2026-05-20", evidenceMaterials: "" },
-      ],
-    },
-    {
-      id: 2,
-      title: "Снизить время согласования бюджета",
-      description: "Собрать узкие места процесса и внедрить единый шаблон согласования для руководителей направлений.",
-      memberIds: [1, 5, 7],
-      checkpoints: [
-        { id: 21, label: "Карта текущего процесса", date: "2026-05-04", evidenceMaterials: "" },
-        { id: 22, label: "Новый шаблон", date: "2026-05-09", evidenceMaterials: "" },
-      ],
-    },
-  ]);
+  const [tasks, setTasks] = React.useState(() => Array.isArray(initialTasks) ? initialTasks : []);
 
   React.useEffect(() => {
     if (initialTasks) setTasks(initialTasks);
   }, [initialTasks]);
+
+  const canDeleteTask = task => currentUser?.role === "admin" || currentUser?.id === task.ownerId;
 
   function formatCheckpointDate(value) {
     if (!value) return "Без даты";
@@ -2936,11 +2923,12 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
     const isEdit = Boolean(task);
     const [title, setTitle] = React.useState(task?.title || "");
     const [description, setDescription] = React.useState(task?.description || "");
+    const [done, setDone] = React.useState(Boolean(task?.done));
     const [memberIds, setMemberIds] = React.useState(task?.memberIds || []);
     const [checkpoints, setCheckpoints] = React.useState(
       task?.checkpoints?.length
-        ? task.checkpoints.map(item => ({ ...item, evidenceMaterials: item.evidenceMaterials || "" }))
-        : [{ id: 1, label: "", date: "", evidenceMaterials: "" }]
+        ? task.checkpoints.map(item => ({ ...item, evidenceMaterials: item.evidenceMaterials || "", done: Boolean(item.done) }))
+        : [{ id: 1, label: "", date: "", evidenceMaterials: "", done: false }]
     );
     const [error, setError] = React.useState("");
 
@@ -2959,7 +2947,7 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
     }
 
     function addCheckpoint() {
-      setCheckpoints(items => [...items, { id: Date.now() + items.length, label: "", date: "", evidenceMaterials: "" }]);
+      setCheckpoints(items => [...items, { id: Date.now() + items.length, label: "", date: "", evidenceMaterials: "", done: false }]);
     }
 
     function removeCheckpoint(checkpointId) {
@@ -2977,12 +2965,14 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
           label: item.label.trim(),
           date: item.date,
           evidenceMaterials: (item.evidenceMaterials || "").trim(),
+          done: Boolean(item.done),
         }))
         .filter(item => item.label || item.date || item.evidenceMaterials);
       onSubmit({
         ...(task ? { id: task.id } : {}),
         title: title.trim(),
         description: description.trim(),
+        done,
         memberIds,
         checkpoints: normalizedCheckpoints,
       });
@@ -3014,6 +3004,10 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
               <label style={labelStyle}>Описание</label>
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder="Опишите контекст, ожидаемый результат и критерии успеха..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1.5px solid " + (done ? "#86efac" : "#e2edf8"), background: done ? "#f0fdf4" : "#f8fafc", color: done ? "#15803d" : "#1e3a6e", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
+              Задача выполнена
+            </label>
             <div>
               <label style={labelStyle}>Команда соисполнителей</label>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -3039,11 +3033,16 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {checkpoints.map(point => (
-                  <div key={point.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr .8fr 1.2fr auto", gap: 10, alignItems: "center" }}>
-                    <input value={point.label} onChange={e => updateCheckpoint(point.id, { label: e.target.value })} placeholder="Название контрольной точки" style={inputStyle} />
-                    <input type="date" value={point.date} onChange={e => updateCheckpoint(point.id, { date: e.target.value })} style={inputStyle} />
-                    <input value={point.evidenceMaterials || ""} onChange={e => updateCheckpoint(point.id, { evidenceMaterials: e.target.value })} placeholder="Подтверждающие материалы" style={inputStyle} />
-                    <button onClick={() => removeCheckpoint(point.id)} style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#94a3b8", cursor: "pointer" }}>×</button>
+                  <div key={point.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "auto 1fr", gap: 10, alignItems: "start" }}>
+                    <label title="Выполнено" style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid " + (point.done ? "#86efac" : "#e2edf8"), background: point.done ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                      <input type="checkbox" checked={Boolean(point.done)} onChange={e => updateCheckpoint(point.id, { done: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr .8fr 1.2fr auto", gap: 10, alignItems: "center" }}>
+                      <input value={point.label} onChange={e => updateCheckpoint(point.id, { label: e.target.value })} placeholder="Название контрольной точки" style={inputStyle} />
+                      <input type="date" value={point.date} onChange={e => updateCheckpoint(point.id, { date: e.target.value })} style={inputStyle} />
+                      <input value={point.evidenceMaterials || ""} onChange={e => updateCheckpoint(point.id, { evidenceMaterials: e.target.value })} placeholder="Подтверждающие материалы" style={inputStyle} />
+                      <button onClick={() => removeCheckpoint(point.id)} style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#94a3b8", cursor: "pointer" }}>×</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3076,6 +3075,16 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
     }
   }
 
+
+  async function toggleTaskDone(task) {
+    await saveTask({ ...task, done: !task.done });
+  }
+
+  async function toggleCheckpointDone(task, checkpointId) {
+    const checkpoints = (task.checkpoints || []).map(point => point.id === checkpointId ? { ...point, done: !point.done } : point);
+    await saveTask({ ...task, checkpoints });
+  }
+
   async function deleteTask(taskId) {
     const task = tasks.find(item => item.id === taskId);
     const confirmed = await confirmDelete({
@@ -3100,8 +3109,8 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
       {showCreate && <CreateUcpTaskModal onClose={() => setShowCreate(false)} onSubmit={addTask} />}
       {editTask && <CreateUcpTaskModal task={editTask} onClose={() => setEditTask(null)} onSubmit={(task) => { saveTask(task); setEditTask(null); }} />}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, minmax(0, 1fr))" : "repeat(3, minmax(180px, 1fr))", gap: isMobile ? 6 : 14 }}>
-        <StatCard compact={isMobile} label="Задач УПЦ" value={tasks.length} sub="в работе" color="#1e3a6e"/>
-        <StatCard compact={isMobile} label="Контрольных точек" value={tasks.reduce((sum, task) => sum + (task.checkpoints || []).length, 0)} sub="запланировано" color="#2563eb"/>
+        <StatCard compact={isMobile} label="Задач УПЦ" value={tasks.length} sub={tasks.filter(task => task.done).length + " выполнено"} color="#1e3a6e"/>
+        <StatCard compact={isMobile} label="Контрольных точек" value={tasks.reduce((sum, task) => sum + (task.checkpoints || []).length, 0)} sub={tasks.reduce((sum, task) => sum + (task.checkpoints || []).filter(point => point.done).length, 0) + " выполнено"} color="#2563eb"/>
         <StatCard compact={isMobile} label="Соисполнителей" value={new Set(tasks.flatMap(task => task.memberIds || [])).size} sub="задействовано" color="#8b5cf6"/>
       </div>
       <div style={{ background: "#fff", borderRadius: isMobile ? 18 : 16, padding: isMobile ? 14 : 24, boxShadow: "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" }}>
@@ -3117,17 +3126,24 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 14 }}>
           {tasks.map(task => (
-            <div key={task.id} style={{ padding: isMobile ? 14 : 18, background: "#f8fafc", borderRadius: 14, border: "1px solid #e2edf8", display: "flex", flexDirection: "column", gap: isMobile ? 12 : 14 }}>
+            <div key={task.id} style={{ padding: isMobile ? 14 : 18, background: task.done ? "#f8fff9" : "#f8fafc", borderRadius: 14, border: "1px solid " + (task.done ? "#bbf7d0" : "#e2edf8"), display: "flex", flexDirection: "column", gap: isMobile ? 12 : 14 }}>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: "#1e3a6e", lineHeight: 1.35 }}>{task.title}</div>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+                    <button onClick={() => toggleTaskDone(task)} title={task.done ? "Вернуть в работу" : "Отметить выполненной"} style={{ width: 26, height: 26, borderRadius: 8, border: "1.5px solid " + (task.done ? "#22c55e" : "#cbd5e1"), background: task.done ? "#22c55e" : "#fff", color: task.done ? "#fff" : "#94a3b8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {task.done && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    </button>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: task.done ? "#64748b" : "#1e3a6e", lineHeight: 1.35, textDecoration: task.done ? "line-through" : "none" }}>{task.title}</div>
+                  </div>
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button onClick={() => setEditTask(task)} style={{ padding: isMobile ? "6px 8px" : "6px 10px", borderRadius: 8, border: "1px solid #dbeafe", background: "#fff", color: "#2563eb", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>
                       {isMobile ? "Изм." : "Редактировать"}
                     </button>
-                    <button onClick={() => deleteTask(task.id)} title="Удалить задачу УПЦ" style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    </button>
+                    {canDeleteTask(task) && (
+                      <button onClick={() => deleteTask(task.id)} title="Удалить задачу УПЦ" style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </button>
+                    )}
                   </div>
                 </div>
                 {task.description && <div style={{ fontSize: 13, color: "#64748b", marginTop: 8, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: isMobile ? 2 : "unset", WebkitBoxOrient: "vertical", overflow: "hidden" }}>{task.description}</div>}
@@ -3138,10 +3154,13 @@ function UcpSection({ initialTasks = null, team = [], api, onError }) {
                   {(task.checkpoints || []).length === 0 ? (
                     <div style={{ fontSize: 12, color: "#94a3b8" }}>Контрольные точки не добавлены</div>
                   ) : (task.checkpoints || []).map(point => (
-                    <div key={point.id} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "9px 10px", background: "#fff", borderRadius: 10, border: "1px solid #e8f1fd" }}>
+                    <div key={point.id} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "9px 10px", background: point.done ? "#f0fdf4" : "#fff", borderRadius: 10, border: "1px solid " + (point.done ? "#bbf7d0" : "#e8f1fd") }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                        <span style={{ fontSize: 13, color: "#1e3a6e", fontWeight: 500 }}>{point.label || "Контрольная точка"}</span>
-                        <span style={{ fontSize: 12, color: "#2563eb", fontWeight: 600, whiteSpace: "nowrap" }}>{formatCheckpointDate(point.date)}</span>
+                        <button onClick={() => toggleCheckpointDone(task, point.id)} title={point.done ? "Вернуть контрольную точку" : "Отметить контрольную точку"} style={{ width: 22, height: 22, borderRadius: 7, border: "1.5px solid " + (point.done ? "#22c55e" : "#cbd5e1"), background: point.done ? "#22c55e" : "#fff", color: point.done ? "#fff" : "#94a3b8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {point.done && <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </button>
+                        <span style={{ fontSize: 13, color: point.done ? "#64748b" : "#1e3a6e", fontWeight: 500, flex: 1, textDecoration: point.done ? "line-through" : "none" }}>{point.label || "Контрольная точка"}</span>
+                        <span style={{ fontSize: 12, color: point.done ? "#16a34a" : "#2563eb", fontWeight: 600, whiteSpace: "nowrap" }}>{formatCheckpointDate(point.date)}</span>
                       </div>
                       {point.evidenceMaterials && (
                         <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
@@ -3515,6 +3534,7 @@ function PlanSection({ initialTasks = [], api, onError }) {
   }
 
   function taskTone(task) {
+    if (task.done) return { label: "Завершено", color: "#10b981", bg: "#10b98118" };
     const text = (task.status || "").toLowerCase();
     if (text.includes("заверш")) return { label: "Завершено", color: "#10b981", bg: "#10b98118" };
     if (task.due && new Date(task.due + "T23:59:59") < new Date()) return { label: "Просрочено", color: "#ef4444", bg: "#ef444418" };
@@ -3530,6 +3550,12 @@ function PlanSection({ initialTasks = [], api, onError }) {
     const [resultImage, setResultImage] = React.useState(task?.resultImage || "");
     const [successMetric, setSuccessMetric] = React.useState(task?.successMetric || "");
     const [due, setDue] = React.useState(task?.due || "");
+    const [done, setDone] = React.useState(Boolean(task?.done));
+    const [checkpoints, setCheckpoints] = React.useState(
+      task?.checkpoints?.length
+        ? task.checkpoints.map(item => ({ ...item, done: Boolean(item.done) }))
+        : [{ id: 1, label: "", date: "", done: false }]
+    );
     const [error, setError] = React.useState("");
 
     React.useEffect(() => {
@@ -3538,11 +3564,26 @@ function PlanSection({ initialTasks = [], api, onError }) {
       return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
 
+    function updateCheckpoint(checkpointId, patch) {
+      setCheckpoints(items => items.map(item => item.id === checkpointId ? { ...item, ...patch } : item));
+    }
+
+    function addCheckpoint() {
+      setCheckpoints(items => [...items, { id: Date.now() + items.length, label: "", date: "", done: false }]);
+    }
+
+    function removeCheckpoint(checkpointId) {
+      setCheckpoints(items => items.length === 1 ? items : items.filter(item => item.id !== checkpointId));
+    }
+
     function handleSubmit() {
       if (!title.trim()) {
         setError("Введите наименование задачи");
         return;
       }
+      const normalizedCheckpoints = checkpoints
+        .map(item => ({ ...item, label: (item.label || "").trim(), date: item.date || "", done: Boolean(item.done) }))
+        .filter(item => item.label || item.date);
       onSubmit({
         ...(task ? { id: task.id, status: task.status || "" } : { status: "" }),
         title: title.trim(),
@@ -3550,6 +3591,8 @@ function PlanSection({ initialTasks = [], api, onError }) {
         resultImage: resultImage.trim(),
         successMetric: successMetric.trim(),
         due,
+        done,
+        checkpoints: normalizedCheckpoints,
       });
       onClose();
     }
@@ -3590,6 +3633,30 @@ function PlanSection({ initialTasks = [], api, onError }) {
                 <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inputStyle} />
               </div>
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1.5px solid " + (done ? "#86efac" : "#e2edf8"), background: done ? "#f0fdf4" : "#f8fafc", color: done ? "#15803d" : "#1e3a6e", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
+              Задача выполнена
+            </label>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                <label style={{ ...labelStyle, marginBottom: 0 }}>Подзадачи / чек-поинты</label>
+                <button onClick={addCheckpoint} style={{ border: "none", background: "none", color: "#2563eb", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>+ Добавить точку</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {checkpoints.map(point => (
+                  <div key={point.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "auto 1fr", gap: 10, alignItems: "start" }}>
+                    <label title="Выполнено" style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid " + (point.done ? "#86efac" : "#e2edf8"), background: point.done ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                      <input type="checkbox" checked={Boolean(point.done)} onChange={e => updateCheckpoint(point.id, { done: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.4fr .8fr auto", gap: 10, alignItems: "center" }}>
+                      <input value={point.label} onChange={e => updateCheckpoint(point.id, { label: e.target.value })} placeholder="Название подзадачи или контрольной точки" style={inputStyle} />
+                      <input type="date" value={point.date} onChange={e => updateCheckpoint(point.id, { date: e.target.value })} style={inputStyle} />
+                      <button onClick={() => removeCheckpoint(point.id)} style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#94a3b8", cursor: "pointer" }}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
           <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
             <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
@@ -3617,6 +3684,15 @@ function PlanSection({ initialTasks = [], api, onError }) {
     } catch (error) {
       onError(error);
     }
+  }
+
+  async function toggleTaskDone(task) {
+    await saveTask({ ...task, done: !task.done });
+  }
+
+  async function toggleCheckpointDone(task, checkpointId) {
+    const checkpoints = (task.checkpoints || []).map(point => point.id === checkpointId ? { ...point, done: !point.done } : point);
+    await saveTask({ ...task, checkpoints });
   }
 
   function updateStatusDraft(taskId, status) {
@@ -3657,8 +3733,10 @@ function PlanSection({ initialTasks = [], api, onError }) {
     }
   }
 
-  const completed = tasks.filter(task => (task.status || "").toLowerCase().includes("заверш")).length;
-  const overdue = tasks.filter(task => task.due && new Date(task.due + "T23:59:59") < new Date()).length;
+  const completed = tasks.filter(task => task.done || (task.status || "").toLowerCase().includes("заверш")).length;
+  const totalCheckpoints = tasks.reduce((sum, task) => sum + (task.checkpoints || []).length, 0);
+  const completedCheckpoints = tasks.reduce((sum, task) => sum + (task.checkpoints || []).filter(point => point.done).length, 0);
+  const overdue = tasks.filter(task => !task.done && task.due && new Date(task.due + "T23:59:59") < new Date()).length;
   const nearest = [...tasks].filter(task => task.due).sort((a, b) => a.due.localeCompare(b.due))[0];
   const selectedTask = tasks.find(task => task.id === selectedTaskId) || tasks[0] || null;
 
@@ -3670,8 +3748,8 @@ function PlanSection({ initialTasks = [], api, onError }) {
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap: isMobile ? 6 : 14 }}>
         <StatCard compact={isMobile} label="Задач" value={tasks.length} sub="в плане" color="#1e3a6e"/>
-        <StatCard compact={isMobile} label="Завершено" value={completed} sub="по статусу" color="#10b981"/>
-        <StatCard compact={isMobile} label="Просрочено" value={overdue} sub="требуют внимания" color="#f59e0b"/>
+        <StatCard compact={isMobile} label="Завершено" value={completed} sub="задач" color="#10b981"/>
+        <StatCard compact={isMobile} label="Чек-поинтов" value={totalCheckpoints} sub={completedCheckpoints + " выполнено"} color="#8b5cf6"/>
         <StatCard compact={isMobile} label="Ближайший срок" value={nearest ? formatPlanDate(nearest.due) : "—"} sub={nearest?.title || "нет дат"} color="#2563eb"/>
       </div>
 
@@ -3703,9 +3781,9 @@ function PlanSection({ initialTasks = [], api, onError }) {
                       textAlign: "left",
                       padding: isMobile ? "12px" : "14px 16px",
                       minHeight: isMobile ? 88 : 104,
-                      background: active ? "#eff6ff" : "#f8fafc",
+                      background: task.done ? "#f0fdf4" : active ? "#eff6ff" : "#f8fafc",
                       borderRadius: 12,
-                      border: "1.5px solid " + (active ? "#93c5fd" : "#e2edf8"),
+                      border: "1.5px solid " + (task.done ? "#bbf7d0" : active ? "#93c5fd" : "#e2edf8"),
                       cursor: "pointer",
                       fontFamily: "Inter",
                       boxShadow: active ? "0 8px 20px rgba(37,99,235,.10)" : "none",
@@ -3715,7 +3793,7 @@ function PlanSection({ initialTasks = [], api, onError }) {
                       <span style={{ fontSize: 11, fontWeight: 700, color: tone.color, background: tone.bg, padding: "3px 9px", borderRadius: 999 }}>{tone.label}</span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#2563eb", padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>Задача</span>
                     </div>
-                    <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: 750, color: "#1e3a6e", lineHeight: 1.35, minHeight: isMobile ? 0 : 36 }}>{task.title}</div>
+                    <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: 750, color: task.done ? "#64748b" : "#1e3a6e", lineHeight: 1.35, minHeight: isMobile ? 0 : 36, textDecoration: task.done ? "line-through" : "none" }}>{task.title}</div>
                     <div style={{ display: "inline-flex", marginTop: 10, fontSize: 11, fontWeight: 600, color: tone.color, background: tone.bg, padding: "3px 9px", borderRadius: 999 }}>{compactStatus(task)}</div>
                   </button>
                 );
@@ -3726,7 +3804,12 @@ function PlanSection({ initialTasks = [], api, onError }) {
               <div style={{ marginTop: 18, padding: isMobile ? 14 : 18, background: "#f8fafc", borderRadius: 14, border: "1px solid #e2edf8" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 16 }}>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#1e3a6e", lineHeight: 1.35 }}>{selectedTask.title}</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <button onClick={() => toggleTaskDone(selectedTask)} title={selectedTask.done ? "Вернуть в работу" : "Отметить выполненной"} style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid " + (selectedTask.done ? "#22c55e" : "#cbd5e1"), background: selectedTask.done ? "#22c55e" : "#fff", color: selectedTask.done ? "#fff" : "#94a3b8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {selectedTask.done && <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </button>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: selectedTask.done ? "#64748b" : "#1e3a6e", lineHeight: 1.35, textDecoration: selectedTask.done ? "line-through" : "none" }}>{selectedTask.title}</div>
+                    </div>
                     <div style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, marginTop: 6 }}>{formatPlanDate(selectedTask.due)}</div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -3754,6 +3837,25 @@ function PlanSection({ initialTasks = [], api, onError }) {
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: .7, textTransform: "uppercase", marginBottom: 8 }}>Сроки задачи</div>
                     <div style={{ fontSize: 13, color: "#1e3a6e", lineHeight: 1.6 }}>{formatPlanDate(selectedTask.due)}</div>
                   </div>
+                </div>
+
+                <div style={{ marginTop: 12, padding: 14, background: "#fff", borderRadius: 12, border: "1px solid #e8f1fd" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: .7, textTransform: "uppercase", marginBottom: 8 }}>Подзадачи / чек-поинты</div>
+                  {(selectedTask.checkpoints || []).length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#94a3b8" }}>Подзадачи не добавлены</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {(selectedTask.checkpoints || []).map(point => (
+                        <div key={point.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", background: point.done ? "#f0fdf4" : "#f8fafc", borderRadius: 10, border: "1px solid " + (point.done ? "#bbf7d0" : "#e2edf8") }}>
+                          <button onClick={() => toggleCheckpointDone(selectedTask, point.id)} title={point.done ? "Вернуть подзадачу" : "Отметить подзадачу"} style={{ width: 22, height: 22, borderRadius: 7, border: "1.5px solid " + (point.done ? "#22c55e" : "#cbd5e1"), background: point.done ? "#22c55e" : "#fff", color: point.done ? "#fff" : "#94a3b8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {point.done && <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          </button>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: point.done ? "#64748b" : "#1e3a6e", fontWeight: 600, lineHeight: 1.35, textDecoration: point.done ? "line-through" : "none" }}>{point.label || "Подзадача"}</span>
+                          <span style={{ fontSize: 12, color: point.done ? "#16a34a" : "#2563eb", fontWeight: 700, whiteSpace: "nowrap" }}>{formatPlanDate(point.date)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 12 }}>
@@ -3832,7 +3934,7 @@ const SECTION_COMPONENTS = {
   archive: ({ data, api, onError, currentUser }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   events: ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   syncs: ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
-  ucp: ({ data, api, onError }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} />,
+  ucp: ({ data, api, onError, currentUser }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   ambp: ({ data, api, onError }) => <AmbpSection initialTopics={data.ambpTopics} api={api} onError={onError} />,
   plan: ({ data, api, onError }) => <PlanSection initialTasks={data.developmentTasks} api={api} onError={onError} />,
   users: ({ api, onError }) => <UsersSection api={api} onError={onError} />,
