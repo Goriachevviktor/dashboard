@@ -256,6 +256,19 @@ def migrate_auth_schema() -> None:
             """
         )
         conn.execute("ALTER TABLE IF EXISTS development_task_checkpoints ADD COLUMN IF NOT EXISTS done boolean NOT NULL DEFAULT false")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS development_task_members (
+              task_id integer NOT NULL REFERENCES development_tasks(id) ON DELETE CASCADE,
+              member_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              PRIMARY KEY (task_id, member_id)
+            )
+            """
+        )
+        conn.execute("ALTER TABLE IF EXISTS development_task_members ADD COLUMN IF NOT EXISTS member_id integer")
+        conn.execute("ALTER TABLE IF EXISTS development_task_members DROP CONSTRAINT IF EXISTS development_task_members_member_id_fkey")
+        conn.execute("DELETE FROM development_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+        conn.execute("ALTER TABLE IF EXISTS development_task_members ADD CONSTRAINT development_task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
         if not conn.execute("SELECT id FROM development_tasks LIMIT 1").fetchone():
             conn.execute(
                 """
@@ -641,6 +654,37 @@ def can_view_ucp_task(conn, task_id: int, user: dict[str, Any]) -> bool:
     return bool(row)
 
 
+def visible_development_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    if user["role"] == "admin":
+        return conn.execute("SELECT * FROM development_tasks ORDER BY due NULLS LAST, id").fetchall()
+    return conn.execute(
+        """
+        SELECT DISTINCT development_tasks.*
+        FROM development_tasks
+        LEFT JOIN development_task_members ON development_task_members.task_id = development_tasks.id
+        WHERE development_tasks.owner_id = %s OR development_task_members.member_id = %s
+        ORDER BY development_tasks.due NULLS LAST, development_tasks.id
+        """,
+        (user["id"], user["id"]),
+    ).fetchall()
+
+
+def can_view_development_task(conn, task_id: int, user: dict[str, Any]) -> bool:
+    if user["role"] == "admin":
+        return True
+    row = conn.execute(
+        """
+        SELECT development_tasks.id
+        FROM development_tasks
+        LEFT JOIN development_task_members ON development_task_members.task_id = development_tasks.id
+        WHERE development_tasks.id = %s AND (development_tasks.owner_id = %s OR development_task_members.member_id = %s)
+        LIMIT 1
+        """,
+        (task_id, user["id"], user["id"]),
+    ).fetchone()
+    return bool(row)
+
+
 def event_json(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -653,6 +697,9 @@ def event_json(row: dict[str, Any]) -> dict[str, Any]:
         "ownerId": row.get("owner_id"),
         "generated": bool(row.get("generated", False)),
         "source": row.get("source") or "events",
+        "sourceKind": row.get("source_kind") or "event",
+        "sourceTaskId": row.get("source_task_id"),
+        "sourceCheckpointId": row.get("source_checkpoint_id"),
     }
 
 
@@ -704,7 +751,7 @@ def ucp_task_json(row: dict[str, Any], checkpoints: list[dict[str, Any]], member
     }
 
 
-def development_task_json(row: dict[str, Any], checkpoints: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def development_task_json(row: dict[str, Any], checkpoints: list[dict[str, Any]] | None = None, members: list[int] | None = None) -> dict[str, Any]:
     return {
         "id": row["id"],
         "title": row["title"],
@@ -715,6 +762,7 @@ def development_task_json(row: dict[str, Any], checkpoints: list[dict[str, Any]]
         "status": row["status"] or "",
         "done": bool(row.get("done")),
         "ownerId": row.get("owner_id"),
+        "memberIds": members or [],
         "checkpoints": [
             {
                 "id": item["id"],
@@ -779,6 +827,9 @@ def generated_roadmap_events(
                 "owner_id": next((item.get("owner_id") for item in ucp_tasks if item["id"] == task_id), None),
                 "generated": True,
                 "source": "ucp",
+                "source_kind": "checkpoint",
+                "source_task_id": task_id,
+                "source_checkpoint_id": checkpoint["id"],
             }
         )
 
@@ -801,6 +852,9 @@ def generated_roadmap_events(
                 "owner_id": task.get("owner_id"),
                 "generated": True,
                 "source": "development",
+                "source_kind": "task",
+                "source_task_id": task["id"],
+                "source_checkpoint_id": None,
             }
         )
 
@@ -825,6 +879,9 @@ def generated_roadmap_events(
                 "owner_id": next((item.get("owner_id") for item in development_tasks if item["id"] == task_id), None),
                 "generated": True,
                 "source": "development",
+                "source_kind": "checkpoint",
+                "source_task_id": task_id,
+                "source_checkpoint_id": checkpoint["id"],
             }
         )
 
@@ -861,10 +918,14 @@ def fetch_all_data(conn, user: dict[str, Any]) -> dict[str, Any]:
     event_tasks = visible_event_tasks(conn, user)
     stickers = visible_owner_rows(conn, "sync_stickers", user)
     ucp_tasks = visible_ucp_tasks(conn, user)
-    development_tasks = visible_owner_rows(conn, "development_tasks", user)
+    development_tasks = visible_development_tasks(conn, user)
     development_task_ids = [item["id"] for item in development_tasks]
     development_checkpoints = conn.execute(
         "SELECT * FROM development_task_checkpoints WHERE task_id = ANY(%s) ORDER BY task_id, id",
+        (development_task_ids or [0],),
+    ).fetchall()
+    development_members = conn.execute(
+        "SELECT task_id, member_id FROM development_task_members WHERE task_id = ANY(%s) ORDER BY task_id, member_id",
         (development_task_ids or [0],),
     ).fetchall()
     ambp_topics = visible_owner_rows(conn, "ambp_topics", user)
@@ -887,6 +948,10 @@ def fetch_all_data(conn, user: dict[str, Any]) -> dict[str, Any]:
     for item in development_checkpoints:
         development_checkpoint_map.setdefault(item["task_id"], []).append(item)
 
+    development_member_map: dict[int, list[int]] = {}
+    for item in development_members:
+        development_member_map.setdefault(item["task_id"], []).append(item["member_id"])
+
     return {
         "team": team,
         "tasks": [task_json(item) for item in tasks],
@@ -897,7 +962,7 @@ def fetch_all_data(conn, user: dict[str, Any]) -> dict[str, Any]:
             ucp_task_json(item, checkpoint_map.get(item["id"], []), member_map.get(item["id"], []))
             for item in ucp_tasks
         ],
-        "developmentTasks": [development_task_json(item, development_checkpoint_map.get(item["id"], [])) for item in development_tasks],
+        "developmentTasks": [development_task_json(item, development_checkpoint_map.get(item["id"], []), development_member_map.get(item["id"], [])) for item in development_tasks],
         "ambpTopics": [ambp_topic_json(item) for item in ambp_topics],
     }
 
@@ -1410,7 +1475,23 @@ def delete_ambp_topic(topic_id: int, user: dict[str, Any] = Depends(require_auth
         return {"ok": True}
 
 
-def save_development_checkpoints(conn, task_id: int, checkpoints: list[dict[str, Any]]) -> None:
+def normalize_development_member_ids(conn, member_ids: list[int]) -> list[int]:
+    if not member_ids:
+        return []
+    rows = conn.execute(
+        "SELECT id FROM users WHERE is_active = true AND id = ANY(%s) ORDER BY id",
+        (member_ids,),
+    ).fetchall()
+    valid_ids = {row["id"] for row in rows}
+    return [member_id for member_id in member_ids if member_id in valid_ids]
+
+
+def save_development_relations(conn, task_id: int, member_ids: list[int], checkpoints: list[dict[str, Any]]) -> None:
+    normalized_member_ids = normalize_development_member_ids(conn, member_ids)
+    conn.execute("DELETE FROM development_task_members WHERE task_id = %s", (task_id,))
+    for member_id in normalized_member_ids:
+        conn.execute("INSERT INTO development_task_members (task_id, member_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (task_id, member_id))
+
     conn.execute("DELETE FROM development_task_checkpoints WHERE task_id = %s", (task_id,))
     for checkpoint in checkpoints:
         conn.execute(
@@ -1432,23 +1513,34 @@ def fetch_development_task(conn, task_id: int) -> dict[str, Any]:
         "SELECT * FROM development_task_checkpoints WHERE task_id = %s ORDER BY id",
         (task_id,),
     ).fetchall()
-    return development_task_json(task, checkpoints)
+    members = conn.execute(
+        "SELECT member_id FROM development_task_members WHERE task_id = %s ORDER BY member_id",
+        (task_id,),
+    ).fetchall()
+    return development_task_json(task, checkpoints, [item["member_id"] for item in members])
 
 
 
 @app.get("/development-tasks", dependencies=[Depends(require_auth)])
 def list_development_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        tasks = visible_owner_rows(conn, "development_tasks", user)
+        tasks = visible_development_tasks(conn, user)
         task_ids = [item["id"] for item in tasks]
         checkpoints = conn.execute(
             "SELECT * FROM development_task_checkpoints WHERE task_id = ANY(%s) ORDER BY task_id, id",
             (task_ids or [0],),
         ).fetchall()
+        members = conn.execute(
+            "SELECT task_id, member_id FROM development_task_members WHERE task_id = ANY(%s) ORDER BY task_id, member_id",
+            (task_ids or [0],),
+        ).fetchall()
         checkpoint_map: dict[int, list[dict[str, Any]]] = {}
         for item in checkpoints:
             checkpoint_map.setdefault(item["task_id"], []).append(item)
-        return [development_task_json(item, checkpoint_map.get(item["id"], [])) for item in tasks]
+        member_map: dict[int, list[int]] = {}
+        for item in members:
+            member_map.setdefault(item["task_id"], []).append(item["member_id"])
+        return [development_task_json(item, checkpoint_map.get(item["id"], []), member_map.get(item["id"], [])) for item in tasks]
 
 
 @app.post("/development-tasks", dependencies=[Depends(require_auth)])
@@ -1475,7 +1567,7 @@ async def create_development_task(request: Request, user: dict[str, Any] = Depen
                 resolve_owner_id(conn, user),
             ),
         ).fetchone()
-        save_development_checkpoints(conn, row["id"], payload.get("checkpoints", []))
+        save_development_relations(conn, row["id"], payload.get("memberIds", []), payload.get("checkpoints", []))
         return fetch_development_task(conn, row["id"])
 
 
@@ -1506,14 +1598,15 @@ async def update_development_task(task_id: int, request: Request, user: dict[str
             fields.append(f"{column} = %s")
             values.append(value)
     has_checkpoints = "checkpoints" in payload
-    if not fields and not has_checkpoints:
+    has_members = "memberIds" in payload
+    if not fields and not has_checkpoints and not has_members:
         raise HTTPException(status_code=400, detail="No fields to update")
     values.append(task_id)
     with db() as conn:
         existing = conn.execute("SELECT * FROM development_tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Development task not found")
-        if not can_manage_owner_row(existing, user):
+        if not can_view_development_task(conn, task_id, user):
             raise HTTPException(status_code=403, detail="Development task access denied")
         if fields:
             conn.execute(
@@ -1522,8 +1615,21 @@ async def update_development_task(task_id: int, request: Request, user: dict[str
             ).fetchone()
         else:
             conn.execute("UPDATE development_tasks SET updated_at = now() WHERE id = %s", (task_id,))
-        if has_checkpoints:
-            save_development_checkpoints(conn, task_id, payload.get("checkpoints", []))
+        if has_checkpoints or has_members:
+            existing_members = conn.execute(
+                "SELECT member_id FROM development_task_members WHERE task_id = %s ORDER BY member_id",
+                (task_id,),
+            ).fetchall()
+            existing_checkpoints = conn.execute(
+                "SELECT * FROM development_task_checkpoints WHERE task_id = %s ORDER BY id",
+                (task_id,),
+            ).fetchall()
+            save_development_relations(
+                conn,
+                task_id,
+                payload.get("memberIds", [item["member_id"] for item in existing_members]),
+                payload.get("checkpoints", [dict(item) for item in existing_checkpoints]),
+            )
         return fetch_development_task(conn, task_id)
 
 
@@ -1630,12 +1736,55 @@ def delete_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> d
         return {"ok": True}
 
 
+@app.patch("/roadmap/generated-events", dependencies=[Depends(require_auth)])
+async def update_generated_roadmap_event(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
+    payload = await request.json()
+    source = (payload.get("source") or "").strip()
+    source_kind = (payload.get("sourceKind", payload.get("source_kind", "")) or "").strip()
+    done = clean_bool(payload.get("done"))
+    with db() as conn:
+        if source == "ucp" and source_kind == "checkpoint":
+            checkpoint_id = payload.get("sourceCheckpointId", payload.get("source_checkpoint_id"))
+            checkpoint = conn.execute("SELECT * FROM ucp_checkpoints WHERE id = %s", (checkpoint_id,)).fetchone()
+            if not checkpoint:
+                raise HTTPException(status_code=404, detail="UCP checkpoint not found")
+            if not can_view_ucp_task(conn, checkpoint["task_id"], user):
+                raise HTTPException(status_code=403, detail="UCP checkpoint access denied")
+            conn.execute("UPDATE ucp_checkpoints SET done = %s WHERE id = %s", (done, checkpoint["id"]))
+            return {"source": source, "sourceKind": source_kind, "sourceTaskId": checkpoint["task_id"], "sourceCheckpointId": checkpoint["id"], "done": done}
+
+        if source == "development" and source_kind == "task":
+            task_id = payload.get("sourceTaskId", payload.get("source_task_id"))
+            task = conn.execute("SELECT * FROM development_tasks WHERE id = %s", (task_id,)).fetchone()
+            if not task:
+                raise HTTPException(status_code=404, detail="Development task not found")
+            if not can_view_development_task(conn, task["id"], user):
+                raise HTTPException(status_code=403, detail="Development task access denied")
+            conn.execute("UPDATE development_tasks SET done = %s, updated_at = now() WHERE id = %s", (done, task["id"]))
+            return {"source": source, "sourceKind": source_kind, "sourceTaskId": task["id"], "sourceCheckpointId": None, "done": done}
+
+        if source == "development" and source_kind == "checkpoint":
+            checkpoint_id = payload.get("sourceCheckpointId", payload.get("source_checkpoint_id"))
+            checkpoint = conn.execute("SELECT * FROM development_task_checkpoints WHERE id = %s", (checkpoint_id,)).fetchone()
+            if not checkpoint:
+                raise HTTPException(status_code=404, detail="Development checkpoint not found")
+            task = conn.execute("SELECT * FROM development_tasks WHERE id = %s", (checkpoint["task_id"],)).fetchone()
+            if not task:
+                raise HTTPException(status_code=404, detail="Development task not found")
+            if not can_view_development_task(conn, task["id"], user):
+                raise HTTPException(status_code=403, detail="Development checkpoint access denied")
+            conn.execute("UPDATE development_task_checkpoints SET done = %s WHERE id = %s", (done, checkpoint["id"]))
+            return {"source": source, "sourceKind": source_kind, "sourceTaskId": checkpoint["task_id"], "sourceCheckpointId": checkpoint["id"], "done": done}
+
+    raise HTTPException(status_code=400, detail="Unsupported generated roadmap source")
+
+
 @app.get("/events", dependencies=[Depends(require_auth)])
 def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         events = visible_events(conn, user)
         ucp_tasks = visible_ucp_tasks(conn, user)
-        development_tasks = visible_owner_rows(conn, "development_tasks", user)
+        development_tasks = visible_development_tasks(conn, user)
         ucp_checkpoints = conn.execute("SELECT * FROM ucp_checkpoints ORDER BY task_id, id").fetchall()
         development_task_ids = [item["id"] for item in development_tasks]
         development_checkpoints = conn.execute(

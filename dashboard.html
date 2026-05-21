@@ -412,12 +412,19 @@ function isTaskOverdue(task) {
 }
 
 // ---- SHARED UI ----
-function StatCard({ label, value, sub, color, compact = false }) {
+function StatCard({ label, value, sub, color, compact = false, onClick = null, active = false }) {
+  const interactive = typeof onClick === "function";
   return (
-    <div style={{ background: "#fff", borderRadius: compact ? 10 : 14, padding: compact ? "9px 10px" : "20px 22px", flex: 1, minWidth: compact ? 0 : 180, boxShadow: compact ? "0 1px 3px rgba(37,99,235,.05)" : "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" }}>
-      <div style={{ fontSize: compact ? 8 : 11, fontWeight: 700, color: "#94a3b8", letterSpacing: compact ? .35 : .6, textTransform: "uppercase", marginBottom: compact ? 4 : 8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+    <div
+      onClick={onClick || undefined}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={interactive ? e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      style={{ background: active ? "#eff6ff" : "#fff", borderRadius: compact ? 10 : 14, padding: compact ? "9px 10px" : "20px 22px", flex: 1, minWidth: compact ? 0 : 180, border: active ? "1.5px solid #2563eb" : "1.5px solid transparent", boxShadow: compact ? "0 1px 3px rgba(37,99,235,.05)" : "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)", cursor: interactive ? "pointer" : "default" }}
+    >
+      <div style={{ fontSize: compact ? 8 : 11, fontWeight: 700, color: active ? "#2563eb" : "#94a3b8", letterSpacing: compact ? .35 : .6, textTransform: "uppercase", marginBottom: compact ? 4 : 8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
       <div style={{ fontSize: compact ? 20 : 32, fontWeight: 800, color: color || "#1e3a6e", lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: compact ? 9 : 12, color: "#64748b", marginTop: compact ? 3 : 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+      {sub && <div style={{ fontSize: compact ? 9 : 12, color: active ? "#2563eb" : "#64748b", marginTop: compact ? 3 : 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
     </div>
   );
 }
@@ -1730,6 +1737,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const [editEvent, setEditEvent] = React.useState(null);
   const [selectedTask, setSelectedTask] = React.useState(null);
   const [roadmapTypeFilter, setRoadmapTypeFilter] = React.useState("all");
+  const [pwaEventStatusFilter, setPwaEventStatusFilter] = React.useState("all");
   const [showClosedPastMonths, setShowClosedPastMonths] = React.useState(false);
 
   React.useEffect(() => {
@@ -1756,9 +1764,16 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     [events, eventTasks, hideClosedEventsInPwa]
   );
 
+  const statusFilteredEvents = React.useMemo(
+    () => !hideClosedEventsInPwa || pwaEventStatusFilter === "all"
+      ? displayEvents
+      : displayEvents.filter(event => roadmapEventTimeStatus(event) === pwaEventStatusFilter),
+    [displayEvents, hideClosedEventsInPwa, pwaEventStatusFilter]
+  );
+
   const roadmapEvents = React.useMemo(
-    () => roadmapTypeFilter === "all" ? displayEvents : displayEvents.filter(event => event.type === roadmapTypeFilter),
-    [displayEvents, roadmapTypeFilter]
+    () => roadmapTypeFilter === "all" ? statusFilteredEvents : statusFilteredEvents.filter(event => event.type === roadmapTypeFilter),
+    [statusFilteredEvents, roadmapTypeFilter]
   );
 
   function isRoadmapEventClosed(event) {
@@ -1767,6 +1782,21 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const relatedTasks = eventTasks[String(event.id)] || eventTasks[event.id] || [];
     return Boolean(event.done) && relatedTasks.every(task => task.done);
   }
+
+  function roadmapEventTimeStatus(event) {
+    if (isRoadmapEventClosed(event)) return "done";
+    if (event.month < TODAY_MONTH || (event.month === TODAY_MONTH && event.day < TODAY_DAY)) return "overdue";
+    if (event.month === TODAY_MONTH && event.day === TODAY_DAY) return "today";
+    return "upcoming";
+  }
+
+  const pwaStatusOptions = React.useMemo(() => [
+    { id: "all", label: "Все", count: displayEvents.length },
+    { id: "done", label: "Завершено", count: 0 },
+    { id: "overdue", label: "Просрочено", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "overdue").length },
+    { id: "today", label: "Сегодня", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "today").length },
+    { id: "upcoming", label: "Предстоит", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "upcoming").length },
+  ], [displayEvents, eventTasks, TODAY_DAY, TODAY_MONTH]);
 
   const hiddenPastMonths = React.useMemo(() => {
     if (showClosedPastMonths) return new Set();
@@ -1821,6 +1851,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     } catch (error) {
       onError(error);
     }
+  }
+
+  async function toggleCreatedEventDone(event) {
+    if (!event || event.generated) return;
+    await saveEvent(event.id, { done: !event.done });
   }
 
   async function deleteEvent(eventId) {
@@ -1907,6 +1942,22 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
         ...et,
         [eventId]: et[eventId].map(t => t.id === taskId ? updated : t)
       }));
+    } catch (error) {
+      onError(error);
+    }
+  }
+
+  async function toggleGeneratedEventDone(event) {
+    if (!event?.generated || !event.source || !event.sourceKind) return;
+    try {
+      const updated = await api.patchGeneratedRoadmapEvent({
+        source: event.source,
+        sourceKind: event.sourceKind,
+        sourceTaskId: event.sourceTaskId,
+        sourceCheckpointId: event.sourceCheckpointId,
+        done: !event.done,
+      });
+      setEvents(items => items.map(item => item.id === event.id ? { ...item, done: updated.done } : item));
     } catch (error) {
       onError(error);
     }
@@ -2000,8 +2051,10 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const [title, setTitle] = React.useState(event?.title || "");
     const [description, setDescription] = React.useState(event?.description || "");
     const [type,  setType]  = React.useState(event?.type || "Совещание");
-    const [month, setMonth] = React.useState(event?.month ?? TODAY_MONTH);
-    const [day,   setDay]   = React.useState(event?.day ?? TODAY_DAY);
+    const initialMonth = event?.month ?? TODAY_MONTH;
+    const initialDay = event?.day ?? TODAY_DAY;
+    const formatEventDate = (monthIndex, dayValue) => `${ROADMAP_YEAR}-${String(Number(monthIndex) + 1).padStart(2, "0")}-${String(Number(dayValue)).padStart(2, "0")}`;
+    const [eventDate, setEventDate] = React.useState(formatEventDate(initialMonth, initialDay));
     const [done, setDone] = React.useState(Boolean(event?.done));
     const [error, setError] = React.useState("");
 
@@ -2013,7 +2066,10 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
     function handleSave() {
       if (!title.trim()) { setError("Введите название"); return; }
-      onSubmit({ title: title.trim(), description: description.trim(), type, month: Number(month), day: Number(day), done });
+      if (!eventDate) { setError("Выберите дату события"); return; }
+      const parsedDate = new Date(eventDate + "T00:00:00");
+      if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
+      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done });
       onClose();
     }
 
@@ -2054,19 +2110,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               <label style={lbl}>Описание</label>
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, цель или важные детали события" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
             </div>
-            <div style={{ display:"flex", gap:14 }}>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Месяц</label>
-                <select value={month} onChange={e => setMonth(e.target.value)} style={{ ...inp, cursor:"pointer" }}>
-                  {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
-                </select>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>День</label>
-                <input type="number" min="1" max="31" value={day} onChange={e => setDay(e.target.value)} style={inp}
-                  onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                  onBlur={e => e.target.style.borderColor = "#e2edf8"} />
-              </div>
+            <div>
+              <label style={lbl}>Дата события</label>
+              <input type="date" value={eventDate} min={`${ROADMAP_YEAR}-01-01`} max={`${ROADMAP_YEAR}-12-31`} onChange={e => setEventDate(e.target.value)} style={{ ...inp, cursor:"pointer" }}
+                onFocus={e => e.target.style.borderColor = "#93c5fd"}
+                onBlur={e => e.target.style.borderColor = "#e2edf8"} />
             </div>
             <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
               <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
@@ -2248,10 +2296,10 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap:isMobile ? 6 : 14 }}>
-        <StatCard compact={isMobile} label="Событий в году" value={displayEvents.length} sub={hideClosedEventsInPwa ? "активных" : "запланировано"} color="#1e3a6e"/>
-        <StatCard compact={isMobile} label="Завершено" value={hideClosedEventsInPwa ? 0 : events.filter(e=>e.done).length} sub={hideClosedEventsInPwa ? "скрыто в PWA" : "пройдено"} color="#10b981"/>
-        <StatCard compact={isMobile} label="Предстоит" value={displayEvents.filter(e=>!e.done).length} sub="впереди" color="#2563eb"/>
-        <StatCard compact={isMobile} label="До конца года" value={daysToYearEnd} sub="дней" color="#f59e0b"/>
+        <StatCard compact={isMobile} label="Событий в году" value={displayEvents.length} sub={hideClosedEventsInPwa ? "активных" : "запланировано"} color="#1e3a6e" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("all") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "all"}/>
+        <StatCard compact={isMobile} label="Завершено" value={hideClosedEventsInPwa ? 0 : events.filter(e=>e.done).length} sub={hideClosedEventsInPwa ? "скрыто в PWA" : "пройдено"} color="#10b981" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("done") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "done"}/>
+        <StatCard compact={isMobile} label="Предстоит" value={pwaStatusOptions.find(option => option.id === "upcoming")?.count ?? displayEvents.filter(e=>!e.done).length} sub="впереди" color="#2563eb" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("upcoming") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "upcoming"}/>
+        <StatCard compact={isMobile} label={hideClosedEventsInPwa ? "Просрочено" : "До конца года"} value={hideClosedEventsInPwa ? (pwaStatusOptions.find(option => option.id === "overdue")?.count ?? 0) : daysToYearEnd} sub={hideClosedEventsInPwa ? "требуют внимания" : "дней"} color="#f59e0b" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("overdue") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "overdue"}/>
       </div>
 
       {/* Roadmap */}
@@ -2410,9 +2458,13 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       {selectedEvent && (
         <div style={{ background:"#fff", borderRadius:isMobile ? 18 : 16, padding:isMobile ? 14 : 24, boxShadow:"0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" }}>
           <div style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:14, marginBottom:20, paddingBottom:16, borderBottom:"1px solid #e8f1fd", flexWrap:"wrap" }}>
-            <div style={{ width:44, height:44, borderRadius:12, background:TYPE_COLOR[selectedEvent.type]+"18", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <div style={{ width:16, height:16, borderRadius:"50%", background:TYPE_COLOR[selectedEvent.type] }}></div>
-            </div>
+            <button
+              onClick={() => selectedEventGenerated ? toggleGeneratedEventDone(selectedEvent) : toggleCreatedEventDone(selectedEvent)}
+              title={selectedEvent.done ? "Вернуть в работу" : "Отметить выполненным"}
+              style={{ width:44, height:44, borderRadius:12, border:"1.5px solid " + (selectedEvent.done ? "#10b981" : TYPE_COLOR[selectedEvent.type] + "55"), background:selectedEvent.done ? "#10b981" : TYPE_COLOR[selectedEvent.type]+"18", color:selectedEvent.done ? "#fff" : TYPE_COLOR[selectedEvent.type], display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer" }}
+            >
+              {selectedEvent.done ? <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg> : <div style={{ width:16, height:16, borderRadius:5, border:"2px solid currentColor" }}></div>}
+            </button>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:16, fontWeight:700, color:"#1e3a6e" }}>{selectedEvent.title}</div>
               <div style={{ display:"flex", gap:10, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
@@ -2443,11 +2495,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
             </div>
           </div>
 
-          {selectedEventGenerated ? (
-            <div style={{ textAlign:"center", padding:"18px 0 8px", color:"#94a3b8", fontSize:13 }}>
-              Это событие сформировано автоматически из связанного раздела и обновляется при изменении исходной задачи.
-            </div>
-          ) : tasks.length === 0 ? (
+          {selectedEventGenerated ? null : tasks.length === 0 ? (
             <div style={{ textAlign:"center", padding:"28px 0", color:"#94a3b8", fontSize:14 }}>
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ margin:"0 auto 10px", display:"block", opacity:.35 }}>
                 <rect x="4" y="6" width="24" height="20" rx="3" stroke="currentColor" strokeWidth="1.5" fill="none"/>
@@ -2523,6 +2571,7 @@ function SyncsSection({ initialStickers = null, api, onError }) {
   const boardRef = React.useRef(null);
   const dragRef = React.useRef(null);
   const [showCreate, setShowCreate] = React.useState(false);
+  const [editingStickerId, setEditingStickerId] = React.useState(null);
   const [stickers, setStickers] = React.useState(initialStickers?.length ? initialStickers : [
     { id: 1, speaker: "Алексей К.", topic: "Риски квартального отчёта", text: "Подсветить блокеры по финансам и согласованию с аналитикой.", colorId: "sky", x: 24, y: 28, width: 236, height: 188 },
     { id: 2, speaker: "Мария С.", topic: "Статус продуктовой команды", text: "Обновить прогресс по MVP и зависимостям от дизайна.", colorId: "mint", x: 286, y: 64, width: 244, height: 196 },
@@ -2717,45 +2766,77 @@ function SyncsSection({ initialStickers = null, api, onError }) {
   }
 
   if (isMobile) {
+    const mobileInputStyle = color => ({ width: "100%", border: "1.5px solid " + color.border, outline: "none", background: "rgba(255,255,255,.78)", color: "#1e3a6e", fontFamily: "Inter", fontSize: 16, borderRadius: 12, padding: "10px 12px", boxSizing: "border-box" });
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {showCreate && <CreateStickerModal onClose={() => setShowCreate(false)} onCreate={addSticker} />}
         <button
           onClick={() => setShowCreate(true)}
-          style={{ minHeight: 46, borderRadius: 12, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 2px 8px rgba(37,99,235,.25)" }}
+          style={{ minHeight: 46, borderRadius: 12, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 16, fontWeight: 750, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 2px 8px rgba(37,99,235,.22)" }}
         >
           Создать заметку
         </button>
         {stickers.map(sticker => {
           const color = STICKER_COLORS.find(item => item.id === sticker.colorId) || STICKER_COLORS[0];
+          const editing = editingStickerId === sticker.id;
           return (
-            <div key={sticker.id} style={{ background: color.surface, border: "1.5px solid " + color.border, borderRadius: 14, padding: 16, boxShadow: "0 1px 4px rgba(37,99,235,.07)" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: color.accent, marginTop: 5, flexShrink: 0 }}></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <input
-                    value={sticker.topic}
-                    onChange={e => updateSticker(sticker.id, { topic: e.target.value })}
-                    style={{ width: "100%", border: "none", outline: "none", background: "transparent", color: "#1e3a6e", fontFamily: "Inter", fontSize: 16, fontWeight: 800, marginBottom: 8 }}
-                  />
+            <div
+              key={sticker.id}
+              onClick={() => !editing && setEditingStickerId(sticker.id)}
+              style={{ position: "relative", background: "#fff", border: "1.5px solid " + color.border, borderLeft: "5px solid " + color.accent, borderRadius: 16, padding: 14, boxShadow: "0 2px 10px rgba(37,99,235,.07)", cursor: editing ? "default" : "pointer" }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: editing ? 12 : 8 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  {editing ? (
+                    <input
+                      value={sticker.topic}
+                      onChange={e => updateSticker(sticker.id, { topic: e.target.value })}
+                      placeholder="Тема заметки"
+                      style={{ ...mobileInputStyle(color), fontWeight: 800, marginBottom: 8 }}
+                      autoFocus
+                    />
+                  ) : (
+                    <div style={{ fontSize: 16, fontWeight: 850, color: "#1e3a6e", lineHeight: 1.25, overflowWrap: "anywhere" }}>{sticker.topic || "Без темы"}</div>
+                  )}
+                  {!editing && (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", marginTop: 7, padding: "4px 9px", borderRadius: 999, background: color.surface, color: color.accent, fontSize: 12, fontWeight: 750 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: color.accent, flexShrink: 0 }}></span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sticker.speaker || "Без спикера"}</span>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {editing && (
+                    <button onClick={e => { e.stopPropagation(); setEditingStickerId(null); }} title="Готово" style={{ width: 32, height: 32, borderRadius: 10, border: "none", background: "#10b981", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </button>
+                  )}
+                  <button onClick={e => { e.stopPropagation(); deleteSticker(sticker.id); }} title="Удалить" style={{ width: 32, height: 32, borderRadius: 10, border: "none", background: "#fff1f2", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                </div>
+              </div>
+              {editing ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }} onClick={e => e.stopPropagation()}>
                   <input
                     value={sticker.speaker}
                     onChange={e => updateSticker(sticker.id, { speaker: e.target.value })}
                     placeholder="Спикер"
-                    style={{ width: "100%", border: "1px solid " + color.border, outline: "none", background: "rgba(255,255,255,.65)", color: "#64748b", fontFamily: "Inter", fontSize: 16, borderRadius: 10, padding: "8px 10px", marginBottom: 10 }}
+                    style={mobileInputStyle(color)}
                   />
                   <textarea
                     value={sticker.text}
                     onChange={e => updateSticker(sticker.id, { text: e.target.value })}
-                    rows={4}
+                    rows={5}
                     placeholder="Заметка"
-                    style={{ width: "100%", border: "1px solid " + color.border, outline: "none", background: "rgba(255,255,255,.65)", color: "#1e3a6e", fontFamily: "Inter", fontSize: 16, borderRadius: 10, padding: 10, lineHeight: 1.45, resize: "vertical" }}
+                    style={{ ...mobileInputStyle(color), minHeight: 132, lineHeight: 1.45, resize: "vertical" }}
                   />
                 </div>
-                <button onClick={() => deleteSticker(sticker.id)} title="Удалить" style={{ width: 40, height: 40, borderRadius: 12, border: "1px solid #fecaca", background: "#fff", color: "#ef4444", cursor: "pointer", flexShrink: 0 }}>
-                  <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                </button>
-              </div>
+              ) : (
+                <div style={{ fontSize: 14, color: "#334155", lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere", display: "-webkit-box", WebkitLineClamp: 6, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {sticker.text || "Нет текста"}
+                </div>
+              )}
             </div>
           );
         })}
@@ -3495,7 +3576,7 @@ function AmbpSection({ initialTopics = [], api, onError }) {
   );
 }
 
-function PlanSection({ initialTasks = [], api, onError }) {
+function PlanSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const [confirmDelete, confirmDialog] = useConfirmDialog();
   const [tasks, setTasks] = React.useState(initialTasks || []);
@@ -3545,6 +3626,7 @@ function PlanSection({ initialTasks = [], api, onError }) {
 
   function PlanTaskModal({ task, onClose, onSubmit }) {
     const isEdit = Boolean(task);
+    const [memberIds, setMemberIds] = React.useState(task?.memberIds || []);
     const [title, setTitle] = React.useState(task?.title || "");
     const [description, setDescription] = React.useState(task?.description || "");
     const [resultImage, setResultImage] = React.useState(task?.resultImage || "");
@@ -3563,6 +3645,10 @@ function PlanSection({ initialTasks = [], api, onError }) {
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
+
+    function toggleMember(memberId) {
+      setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
+    }
 
     function updateCheckpoint(checkpointId, patch) {
       setCheckpoints(items => items.map(item => item.id === checkpointId ? { ...item, ...patch } : item));
@@ -3592,6 +3678,7 @@ function PlanSection({ initialTasks = [], api, onError }) {
         successMetric: successMetric.trim(),
         due,
         done,
+        memberIds,
         checkpoints: normalizedCheckpoints,
       });
       onClose();
@@ -3637,6 +3724,22 @@ function PlanSection({ initialTasks = [], api, onError }) {
               <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
               Задача выполнена
             </label>
+            <div>
+              <label style={labelStyle}>Команда соисполнителей</label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {team.length === 0 ? (
+                  <span style={{ fontSize: 12, color: "#94a3b8" }}>Пользователи не найдены</span>
+                ) : team.map(member => {
+                  const active = memberIds.includes(member.id);
+                  return (
+                    <button key={member.id} type="button" onClick={() => toggleMember(member.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 999, border: "1.5px solid " + (active ? "#2563eb" : "#e2edf8"), background: active ? "#eff6ff" : "#f8fafc", color: active ? "#2563eb" : "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Inter" }}>
+                      <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? "#2563eb" : "#e2edf8", color: active ? "#fff" : "#64748b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>{member.initials}</span>
+                      <span>{member.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }}>Подзадачи / чек-поинты</label>
@@ -3739,6 +3842,8 @@ function PlanSection({ initialTasks = [], api, onError }) {
   const overdue = tasks.filter(task => !task.done && task.due && new Date(task.due + "T23:59:59") < new Date()).length;
   const nearest = [...tasks].filter(task => task.due).sort((a, b) => a.due.localeCompare(b.due))[0];
   const selectedTask = tasks.find(task => task.id === selectedTaskId) || tasks[0] || null;
+  const selectedMembers = selectedTask ? team.filter(member => (selectedTask.memberIds || []).includes(member.id)) : [];
+  const canDeleteTask = task => currentUser?.role === "admin" || currentUser?.id === task?.ownerId;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -3814,9 +3919,9 @@ function PlanSection({ initialTasks = [], api, onError }) {
                   </div>
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button onClick={() => setEditTask(selectedTask)} style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #dbeafe", background: "#fff", color: "#2563eb", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Inter" }}>Редактировать</button>
-                    <button onClick={() => deleteTask(selectedTask.id)} title="Удалить задачу" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {canDeleteTask(selectedTask) && <button onClick={() => deleteTask(selectedTask.id)} title="Удалить задачу" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    </button>
+                    </button>}
                   </div>
                 </div>
 
@@ -3836,6 +3941,21 @@ function PlanSection({ initialTasks = [], api, onError }) {
                   <div style={{ padding: 14, background: "#fff", borderRadius: 12, border: "1px solid #e8f1fd" }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: .7, textTransform: "uppercase", marginBottom: 8 }}>Сроки задачи</div>
                     <div style={{ fontSize: 13, color: "#1e3a6e", lineHeight: 1.6 }}>{formatPlanDate(selectedTask.due)}</div>
+                  </div>
+                  <div style={{ padding: 14, background: "#fff", borderRadius: 12, border: "1px solid #e8f1fd" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: .7, textTransform: "uppercase", marginBottom: 8 }}>Соисполнители</div>
+                    {selectedMembers.length === 0 ? (
+                      <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6 }}>Не назначены</div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                        {selectedMembers.map(member => (
+                          <span key={member.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 9px", borderRadius: 999, background: "#eff6ff", color: "#2563eb", fontSize: 12, fontWeight: 700 }}>
+                            <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#2563eb", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800 }}>{member.initials}</span>
+                            {member.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3936,7 +4056,7 @@ const SECTION_COMPONENTS = {
   syncs: ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
   ucp: ({ data, api, onError, currentUser }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   ambp: ({ data, api, onError }) => <AmbpSection initialTopics={data.ambpTopics} api={api} onError={onError} />,
-  plan: ({ data, api, onError }) => <PlanSection initialTasks={data.developmentTasks} api={api} onError={onError} />,
+  plan: ({ data, api, onError, currentUser }) => <PlanSection initialTasks={data.developmentTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   users: ({ api, onError }) => <UsersSection api={api} onError={onError} />,
 };
 
@@ -4276,7 +4396,7 @@ function App() {
   const [installPrompt, setInstallPrompt] = React.useState(null);
   const [standalone, setStandalone] = React.useState(isStandalonePwa());
   const [pushStatus, setPushStatus] = React.useState("idle");
-  const visibleSections = SECTIONS.filter(s => !s.adminOnly || currentUser?.role === "admin");
+  const visibleSections = SECTIONS.filter(s => (!s.adminOnly || currentUser?.role === "admin") && !(standalone && s.id === "archive"));
   const section = visibleSections.find(s => s.id === active) || visibleSections[0];
   const sidebarCollapsed = isCompact ? true : collapsed;
   const topbarDate = formatDashboardDate(new Date());
@@ -4315,6 +4435,10 @@ function App() {
     document.body.classList.toggle("dashboard-mobile", isMobile);
     return () => document.body.classList.remove("dashboard-mobile");
   }, [isMobile]);
+
+  React.useEffect(() => {
+    if (section && section.id !== active) setActive(section.id);
+  }, [active, section]);
 
   async function handleInstallClick() {
     if (!installPrompt) return;
@@ -4380,6 +4504,7 @@ function App() {
     createEventTask: (eventId, payload) => authRequest(`/events/${eventId}/tasks`, { method: "POST", body: JSON.stringify(payload) }),
     patchEventTask: (eventId, taskId, payload) => authRequest(`/events/${eventId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) }),
     deleteEventTask: (eventId, taskId) => authRequest(`/events/${eventId}/tasks/${taskId}`, { method: "DELETE" }),
+    patchGeneratedRoadmapEvent: (payload) => authRequest("/roadmap/generated-events", { method: "PATCH", body: JSON.stringify(payload) }),
     createSticker: (payload) => authRequest("/sync-stickers", { method: "POST", body: JSON.stringify(payload) }),
     patchSticker: (id, payload) => authRequest(`/sync-stickers/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     deleteSticker: (id) => authRequest(`/sync-stickers/${id}`, { method: "DELETE" }),
