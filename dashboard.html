@@ -4236,6 +4236,25 @@ function UsersSection({ api, onError }) {
 
   React.useEffect(() => { load(); }, [load]);
 
+
+  function formatUserActivityDate(value) {
+    if (!value) return "не было";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "не было";
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayDiff = Math.round((startOfToday - startOfDate) / 86400000);
+    if (dayDiff === 0) return "сегодня";
+    if (dayDiff === 1) return "вчера";
+    return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(date).replace(".", "");
+  }
+
+  const activeToday = users.filter(user => formatUserActivityDate(user.lastSeenAt) === "сегодня").length;
+  const active7d = users.filter(user => (user.activity7dCount || 0) > 0).length;
+  const totalActivity7d = users.reduce((sum, user) => sum + (user.activity7dCount || 0), 0);
+  const inactiveUsers = users.filter(user => (user.activityCount || 0) === 0).length;
+
   async function createInvite(event) {
     event.preventDefault();
     try {
@@ -4264,6 +4283,8 @@ function UsersSection({ api, onError }) {
     const [displayName, setDisplayName] = React.useState(user.displayName || "");
     const [nextRole, setNextRole] = React.useState(user.role || "member");
     const [isActive, setIsActive] = React.useState(user.isActive !== false);
+    const [temporaryPassword, setTemporaryPassword] = React.useState("");
+    const [resettingPassword, setResettingPassword] = React.useState(false);
     const [error, setError] = React.useState("");
     const color = userColor(user);
     const initials = initialsFromName(displayName, user.email);
@@ -4275,6 +4296,22 @@ function UsersSection({ api, onError }) {
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
+
+    async function resetPassword() {
+      const confirmed = window.confirm(`Сбросить пароль для ${user.email}? Старые сессии пользователя будут завершены.`);
+      if (!confirmed) return;
+      setResettingPassword(true);
+      setTemporaryPassword("");
+      try {
+        const result = await api.resetUserPassword(user.id);
+        setTemporaryPassword(result.temporaryPassword || "");
+        if (result.user) setUsers(rows => rows.map(row => row.id === result.user.id ? { ...row, ...result.user } : row));
+      } catch (err) {
+        onError(err);
+      } finally {
+        setResettingPassword(false);
+      }
+    }
 
     function handleSubmit(event) {
       event.preventDefault();
@@ -4316,6 +4353,21 @@ function UsersSection({ api, onError }) {
               <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
               Активный пользователь
             </label>
+            <div style={{ padding: 12, borderRadius: 10, border: "1px solid #fee2e2", background: "#fff7f7", display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 750, color: "#991b1b" }}>Сброс пароля</div>
+                  <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>Создаёт временный пароль и завершает активные сессии пользователя.</div>
+                </div>
+                <button type="button" onClick={resetPassword} disabled={resettingPassword} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, fontWeight: 750, cursor: resettingPassword ? "default" : "pointer", fontFamily: "Inter" }}>{resettingPassword ? "Сбрасываю..." : "Сбросить"}</button>
+              </div>
+              {temporaryPassword && (
+                <div>
+                  <label style={{ ...labelStyle, color: "#991b1b" }}>Временный пароль</label>
+                  <input readOnly value={temporaryPassword} onFocus={e => e.target.select()} style={{ ...inputStyle, borderColor: "#fecaca", background: "#fff" }} />
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ padding: "16px 24px 24px", borderTop: "1px solid #f0f6ff", display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
@@ -4346,6 +4398,12 @@ function UsersSection({ api, onError }) {
       <div style={{ display: "grid", gap: 18 }}>
         <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 8, padding: 18, boxShadow: "0 2px 12px rgba(37,99,235,.06)" }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e", marginBottom: 12 }}>Пользователи</div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))", gap: 8, marginBottom: 14 }}>
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "#eff6ff", border: "1px solid #dbeafe" }}><div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Сегодня</div><div style={{ fontSize: 22, fontWeight: 850, color: "#2563eb", marginTop: 4 }}>{activeToday}</div></div>
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" }}><div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>За 7 дней</div><div style={{ fontSize: 22, fontWeight: 850, color: "#16a34a", marginTop: 4 }}>{active7d}</div></div>
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa" }}><div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Действий</div><div style={{ fontSize: 22, fontWeight: 850, color: "#f59e0b", marginTop: 4 }}>{totalActivity7d}</div></div>
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2edf8" }}><div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Без активности</div><div style={{ fontSize: 22, fontWeight: 850, color: "#64748b", marginTop: 4 }}>{inactiveUsers}</div></div>
+          </div>
           {loading ? <div style={{ color: "#64748b", fontSize: 13 }}>Загрузка...</div> : users.map(user => {
             const color = userColor(user);
             return (
@@ -4354,6 +4412,9 @@ function UsersSection({ api, onError }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: user.isActive === false ? "#94a3b8" : "#1e3a6e", textDecoration: user.isActive === false ? "line-through" : "none" }}>{user.displayName}</div>
                 <div style={{ fontSize: 12, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>Входов: {user.loginCount || 0}</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Активность: {user.activityCount || 0} · 7 дней: {user.activity7dCount || 0}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>Последняя: {formatUserActivityDate(user.lastSeenAt)}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: user.role === "admin" ? "#2563eb" : "#64748b" }}>{user.role}</div>
@@ -4519,6 +4580,7 @@ function App() {
     deleteAmbpTopic: (id) => authRequest(`/ambp-topics/${id}`, { method: "DELETE" }),
     listUsers: () => authRequest("/auth/users"),
     updateUser: (id, payload) => authRequest(`/auth/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    resetUserPassword: (id) => authRequest(`/auth/users/${id}/reset-password`, { method: "POST" }),
     listInvites: () => authRequest("/auth/invites"),
     createInvite: (payload) => authRequest("/auth/invites", { method: "POST", body: JSON.stringify(payload) }),
     getPushPublicKey: () => authRequest("/push/vapid-public-key"),

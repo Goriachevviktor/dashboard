@@ -58,6 +58,11 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+def generate_temporary_password(length: int = 12) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
 def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
@@ -166,7 +171,10 @@ def migrate_auth_schema() -> None:
               is_active boolean NOT NULL DEFAULT true,
               created_at timestamptz NOT NULL DEFAULT now(),
               updated_at timestamptz NOT NULL DEFAULT now(),
-              last_login_at timestamptz
+              last_login_at timestamptz,
+              login_count integer NOT NULL DEFAULT 0,
+              last_seen_at timestamptz,
+              activity_count integer NOT NULL DEFAULT 0
             )
             """
         )
@@ -200,6 +208,20 @@ def migrate_auth_schema() -> None:
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invites_token_hash ON invites(token_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invites_email ON invites(lower(email))")
+        conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS login_count integer NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS last_seen_at timestamptz")
+        conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS activity_count integer NOT NULL DEFAULT 0")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_activity_daily (
+              user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              activity_date date NOT NULL,
+              activity_count integer NOT NULL DEFAULT 0,
+              last_seen_at timestamptz NOT NULL DEFAULT now(),
+              PRIMARY KEY (user_id, activity_date)
+            )
+            """
+        )
         owner_scoped_tables = ("tasks", "event_tasks", "events", "sync_stickers", "ucp_tasks", "development_tasks", "ambp_topics")
         for table_name in owner_scoped_tables:
             conn.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL")
@@ -413,6 +435,25 @@ def startup() -> None:
     migrate_auth_schema()
 
 
+def record_user_activity(conn, user: dict[str, Any]) -> None:
+    user_id = user.get("id")
+    if not user_id:
+        return
+    conn.execute(
+        "UPDATE users SET last_seen_at = now(), activity_count = activity_count + 1 WHERE id = %s",
+        (user_id,),
+    )
+    conn.execute(
+        """
+        INSERT INTO user_activity_daily (user_id, activity_date, activity_count, last_seen_at)
+        VALUES (%s, CURRENT_DATE, 1, now())
+        ON CONFLICT (user_id, activity_date)
+        DO UPDATE SET activity_count = user_activity_daily.activity_count + 1, last_seen_at = now()
+        """,
+        (user_id,),
+    )
+
+
 def require_auth(
     authorization: str | None = Header(default=None),
     x_dashboard_token: str | None = Header(default=None, alias="X-Dashboard-Token"),
@@ -441,6 +482,7 @@ def require_auth(
         ).fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="User is inactive")
+        record_user_activity(conn, user)
         return user
 
 
@@ -1039,7 +1081,7 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
         ).fetchone()
         if not user or not verify_password(password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Неверный email или пароль")
-        conn.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
+        conn.execute("UPDATE users SET last_login_at = now(), login_count = login_count + 1 WHERE id = %s", (user["id"],))
         return issue_auth_response(conn, response, user)
 
 
@@ -1088,7 +1130,7 @@ async def mobile_login(request: Request) -> dict[str, Any]:
         ).fetchone()
         if not user or not verify_password(password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Неверный email или пароль")
-        conn.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
+        conn.execute("UPDATE users SET last_login_at = now(), login_count = login_count + 1 WHERE id = %s", (user["id"],))
         return issue_mobile_auth_response(conn, user)
 
 
@@ -1124,9 +1166,26 @@ def list_users() -> list[dict[str, Any]]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT id, email, display_name, role, is_active, created_at, last_login_at
+            SELECT
+              users.id,
+              users.email,
+              users.display_name,
+              users.role,
+              users.is_active,
+              users.created_at,
+              users.last_login_at,
+              users.login_count,
+              users.last_seen_at,
+              users.activity_count,
+              COALESCE(activity_7d.activity_count, 0) AS activity_7d_count
             FROM users
-            ORDER BY created_at DESC, id DESC
+            LEFT JOIN (
+              SELECT user_id, SUM(activity_count)::integer AS activity_count
+              FROM user_activity_daily
+              WHERE activity_date >= CURRENT_DATE - interval '6 days'
+              GROUP BY user_id
+            ) activity_7d ON activity_7d.user_id = users.id
+            ORDER BY users.created_at DESC, users.id DESC
             """
         ).fetchall()
         return [
@@ -1134,6 +1193,10 @@ def list_users() -> list[dict[str, Any]]:
                 **user_json(row),
                 "createdAt": row["created_at"].isoformat(),
                 "lastLoginAt": row["last_login_at"].isoformat() if row["last_login_at"] else None,
+                "loginCount": row.get("login_count") or 0,
+                "lastSeenAt": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
+                "activityCount": row.get("activity_count") or 0,
+                "activity7dCount": row.get("activity_7d_count") or 0,
             }
             for row in rows
         ]
@@ -1190,6 +1253,40 @@ async def update_user(
             **user_json(row),
             "createdAt": row["created_at"].isoformat(),
             "lastLoginAt": row["last_login_at"].isoformat() if row["last_login_at"] else None,
+            "loginCount": row.get("login_count") or 0,
+            "lastSeenAt": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
+            "activityCount": row.get("activity_count") or 0,
+            "activity7dCount": 0,
+        }
+
+
+@app.post("/auth/users/{user_id}/reset-password", dependencies=[Depends(require_admin)])
+def reset_user_password(user_id: int, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    temporary_password = generate_temporary_password()
+    with db() as conn:
+        row = conn.execute(
+            """
+            UPDATE users
+            SET password_hash = %s, updated_at = now()
+            WHERE id = %s
+            RETURNING id, email, display_name, role, is_active, created_at, last_login_at, login_count, last_seen_at, activity_count
+            """,
+            (hash_password(temporary_password), user_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        conn.execute("UPDATE auth_sessions SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL", (user_id,))
+        return {
+            "temporaryPassword": temporary_password,
+            "user": {
+                **user_json(row),
+                "createdAt": row["created_at"].isoformat(),
+                "lastLoginAt": row["last_login_at"].isoformat() if row["last_login_at"] else None,
+                "loginCount": row.get("login_count") or 0,
+                "lastSeenAt": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
+                "activityCount": row.get("activity_count") or 0,
+                "activity7dCount": 0,
+            },
         }
 
 
