@@ -1659,7 +1659,7 @@ async def create_development_task(request: Request, user: dict[str, Any] = Depen
                 (payload.get("resultImage", payload.get("result_image", "")) or "").strip(),
                 (payload.get("successMetric", payload.get("success_metric", "")) or "").strip(),
                 clean_date(payload.get("due")),
-                (payload.get("status") or "").strip(),
+                payload.get("status") or "",
                 clean_bool(payload.get("done")),
                 resolve_owner_id(conn, user),
             ),
@@ -1690,6 +1690,8 @@ async def update_development_task(task_id: int, request: Request, user: dict[str
                 value = clean_date(payload[key])
             elif key == "done":
                 value = clean_bool(payload[key])
+            elif key == "status":
+                value = payload[key] or ""
             else:
                 value = (payload[key] or "").strip()
             fields.append(f"{column} = %s")
