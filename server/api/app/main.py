@@ -650,7 +650,21 @@ def can_manage_owner_row(row: dict[str, Any], user: dict[str, Any]) -> bool:
     return user["role"] == "admin" or row["owner_id"] == user["id"]
 
 
+def ensure_event_members_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_members (
+          event_id integer NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY (event_id, user_id)
+        )
+        """
+    )
+
+
 def visible_events(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
+    ensure_event_members_table(conn)
     if user["role"] == "admin":
         return conn.execute("SELECT * FROM events ORDER BY month, day, id").fetchall()
     return conn.execute(
@@ -658,11 +672,61 @@ def visible_events(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
         SELECT DISTINCT events.*
         FROM events
         LEFT JOIN event_tasks ON event_tasks.event_id = events.id
-        WHERE events.owner_id = %s OR event_tasks.owner_id = %s OR event_tasks.assignee_id = %s
+        LEFT JOIN event_members ON event_members.event_id = events.id
+        WHERE events.owner_id = %s
+           OR event_tasks.owner_id = %s
+           OR event_tasks.assignee_id = %s
+           OR event_members.user_id = %s
         ORDER BY events.month, events.day, events.id
         """,
-        (user["id"], user["id"], user["id"]),
+        (user["id"], user["id"], user["id"], user["id"]),
     ).fetchall()
+
+
+def event_member_map(conn, event_ids: list[int]) -> dict[int, list[int]]:
+    ensure_event_members_table(conn)
+    if not event_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT event_id, user_id FROM event_members WHERE event_id = ANY(%s) ORDER BY event_id, user_id",
+        (event_ids,),
+    ).fetchall()
+    result: dict[int, list[int]] = {}
+    for row in rows:
+        result.setdefault(row["event_id"], []).append(row["user_id"])
+    return result
+
+
+def clean_member_ids(conn, value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    ids = []
+    for item in value:
+        try:
+            user_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0 and user_id not in ids:
+            ids.append(user_id)
+    if not ids:
+        return []
+    rows = conn.execute(
+        "SELECT id FROM users WHERE is_active = true AND id = ANY(%s) ORDER BY id",
+        (ids,),
+    ).fetchall()
+    valid = {row["id"] for row in rows}
+    return [user_id for user_id in ids if user_id in valid]
+
+
+def sync_event_members(conn, event_id: int, member_ids: list[int]) -> list[int]:
+    ensure_event_members_table(conn)
+    conn.execute("DELETE FROM event_members WHERE event_id = %s", (event_id,))
+    for member_id in member_ids:
+        conn.execute(
+            "INSERT INTO event_members (event_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (event_id, member_id),
+        )
+    return member_ids
 
 
 def visible_ucp_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
@@ -727,7 +791,7 @@ def can_view_development_task(conn, task_id: int, user: dict[str, Any]) -> bool:
     return bool(row)
 
 
-def event_json(row: dict[str, Any]) -> dict[str, Any]:
+def event_json(row: dict[str, Any], member_ids: list[int] | None = None) -> dict[str, Any]:
     return {
         "id": row["id"],
         "title": row["title"],
@@ -737,6 +801,7 @@ def event_json(row: dict[str, Any]) -> dict[str, Any]:
         "type": row["type"],
         "done": row["done"],
         "ownerId": row.get("owner_id"),
+        "memberIds": member_ids or [],
         "generated": bool(row.get("generated", False)),
         "source": row.get("source") or "events",
         "sourceKind": row.get("source_kind") or "event",
@@ -994,10 +1059,12 @@ def fetch_all_data(conn, user: dict[str, Any]) -> dict[str, Any]:
     for item in development_members:
         development_member_map.setdefault(item["task_id"], []).append(item["member_id"])
 
+    event_members = event_member_map(conn, [item["id"] for item in events])
+
     return {
         "team": team,
         "tasks": [task_json(item) for item in tasks],
-        "events": [event_json(item) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks, development_checkpoints)],
+        "events": [event_json(item, event_members.get(item["id"], [])) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks, development_checkpoints)],
         "eventTasks": event_task_map,
         "syncStickers": [sticker_json(item) for item in stickers],
         "ucpTasks": [
@@ -1890,7 +1957,8 @@ def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, 
             "SELECT * FROM development_task_checkpoints WHERE task_id = ANY(%s) ORDER BY task_id, id",
             (development_task_ids or [0],),
         ).fetchall()
-        return [event_json(item) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks, development_checkpoints)]
+        members = event_member_map(conn, [item["id"] for item in events])
+        return [event_json(item, members.get(item["id"], [])) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks, development_checkpoints)]
 
 
 @app.post("/events", dependencies=[Depends(require_auth)])
@@ -1913,7 +1981,8 @@ async def create_event(request: Request, user: dict[str, Any] = Depends(require_
                 resolve_owner_id(conn, user),
             ),
         ).fetchone()
-        return event_json(row)
+        members = sync_event_members(conn, row["id"], clean_member_ids(conn, payload.get("memberIds")))
+        return event_json(row, members)
 
 
 @app.patch("/events/{event_id}", dependencies=[Depends(require_auth)])
@@ -1926,20 +1995,26 @@ async def update_event(event_id: int, request: Request, user: dict[str, Any] = D
         if key in payload:
             fields.append(f"{column} = %s")
             values.append(payload[key])
-    if not fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    values.append(event_id)
     with db() as conn:
         existing = conn.execute("SELECT * FROM events WHERE id = %s", (event_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Event not found")
         if not can_manage_owner_row(existing, user):
             raise HTTPException(status_code=403, detail="Event access denied")
-        row = conn.execute(
-            f"UPDATE events SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
-            values,
-        ).fetchone()
-        return event_json(row)
+        row = existing
+        if fields:
+            values.append(event_id)
+            row = conn.execute(
+                f"UPDATE events SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
+                values,
+            ).fetchone()
+        elif "memberIds" not in payload:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        if "memberIds" in payload:
+            members = sync_event_members(conn, event_id, clean_member_ids(conn, payload.get("memberIds")))
+        else:
+            members = event_member_map(conn, [event_id]).get(event_id, [])
+        return event_json(row, members)
 
 
 @app.delete("/events/{event_id}", dependencies=[Depends(require_auth)])

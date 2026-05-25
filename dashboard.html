@@ -2056,7 +2056,12 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const formatEventDate = (monthIndex, dayValue) => `${ROADMAP_YEAR}-${String(Number(monthIndex) + 1).padStart(2, "0")}-${String(Number(dayValue)).padStart(2, "0")}`;
     const [eventDate, setEventDate] = React.useState(formatEventDate(initialMonth, initialDay));
     const [done, setDone] = React.useState(Boolean(event?.done));
+    const [memberIds, setMemberIds] = React.useState(event?.memberIds || []);
     const [error, setError] = React.useState("");
+
+    function toggleMember(memberId) {
+      setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
+    }
 
     React.useEffect(() => {
       const fn = e => { if (e.key === "Escape") onClose(); };
@@ -2069,7 +2074,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       if (!eventDate) { setError("Выберите дату события"); return; }
       const parsedDate = new Date(eventDate + "T00:00:00");
       if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
-      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done });
+      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds });
       onClose();
     }
 
@@ -2078,7 +2083,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
     return (
       <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
-        <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 460px)", boxShadow:"0 24px 64px rgba(37,99,235,.22)", animation:"modalIn .2s ease" }}>
+        <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 520px)", maxHeight:"90vh", overflowY:"auto", boxShadow:"0 24px 64px rgba(37,99,235,.22)", animation:"modalIn .2s ease" }}>
           <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
               <div style={{ fontSize:16, fontWeight:700, color:"#1e3a6e" }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
@@ -2115,6 +2120,25 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               <input type="date" value={eventDate} min={`${ROADMAP_YEAR}-01-01`} max={`${ROADMAP_YEAR}-12-31`} onChange={e => setEventDate(e.target.value)} style={{ ...inp, cursor:"pointer" }}
                 onFocus={e => e.target.style.borderColor = "#93c5fd"}
                 onBlur={e => e.target.style.borderColor = "#e2edf8"} />
+            </div>
+            <div>
+              <label style={lbl}>Участники события</label>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {team.map(member => {
+                  const active = memberIds.includes(member.id);
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => toggleMember(member.id)}
+                      style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:999, border:"1.5px solid " + (active ? member.color : "#e2edf8"), background:active ? member.color + "18" : "#f8fafc", color:active ? member.color : "#64748b", cursor:"pointer", fontFamily:"Inter" }}
+                    >
+                      <span style={{ width:22, height:22, borderRadius:"50%", background:member.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{member.initials}</span>
+                      <span style={{ fontSize:12, fontWeight:600 }}>{member.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
               <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
@@ -2474,6 +2498,20 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 {selectedEvent.done && <span style={{ fontSize:11, fontWeight:600, color:"#10b981", background:"#10b98118", padding:"2px 8px", borderRadius:20 }}>Завершено</span>}
               </div>
               {selectedEvent.description && <div style={{ fontSize:13, color:"#64748b", marginTop:8, lineHeight:1.55 }}>{selectedEvent.description}</div>}
+              {!selectedEventGenerated && (selectedEvent.memberIds || []).length > 0 && (
+                <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", marginTop:10 }}>
+                  {(selectedEvent.memberIds || []).map(memberId => {
+                    const member = team.find(item => item.id === memberId);
+                    if (!member) return null;
+                    return (
+                      <span key={member.id} title={member.name} style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 8px 4px 4px", borderRadius:999, background:member.color + "14", color:member.color, fontSize:11, fontWeight:700 }}>
+                        <span style={{ width:20, height:20, borderRadius:"50%", background:member.color, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800 }}>{member.initials}</span>
+                        {member.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
               {!selectedEventGenerated && <span style={{ fontSize:13, color:"#94a3b8" }}>{tasks.filter(t=>t.done).length}/{tasks.length} задач</span>}
