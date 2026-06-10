@@ -613,7 +613,7 @@ function AssigneePicker({ assigneeId, onChange, team = [] }) {
 }
 
 // ---- TASK DETAIL / EDIT MODAL ----
-function TaskDetailModal({ task, onClose, onSave, team = [] }) {
+function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const scrollRef = React.useRef(null);
   const touchStartY = React.useRef(0);
@@ -653,6 +653,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [] }) {
   const [column, setColumn] = React.useState(task.column);
   const [due, setDue] = React.useState(isMobile ? formatDueForMobile(task.due) : (task.due === "—" ? "" : task.due));
   const [assigneeId, setAssigneeId] = React.useState(task.assigneeId);
+  const [ownerId, setOwnerId] = React.useState(task.ownerId);
   const [error, setError] = React.useState("");
 
   const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
@@ -661,7 +662,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [] }) {
   function handleSave() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
     const normalizedDue = isMobile ? normalizeMobileDue(due) : due;
-    onSave({ ...task, title: title.trim(), description: description.trim(), priority, column, due: normalizedDue || "—", assigneeId });
+    onSave({ ...task, title: title.trim(), description: description.trim(), priority, column, due: normalizedDue || "—", assigneeId, ownerId });
     onClose();
   }
 
@@ -752,7 +753,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [] }) {
 
   const labelStyle = { fontSize: isMobile ? 11 : 12, fontWeight: 700, color: "#64748b", marginBottom: isMobile ? 5 : 6, display: "block", letterSpacing: .3 };
   const inputStyle = { width: "100%", padding: isMobile ? "10px 12px" : "10px 14px", borderRadius: isMobile ? 12 : 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc", transition: "border-color .15s" };
-  const owner = findTeamMember(team, task.ownerId);
+  const owner = findTeamMember(team, ownerId);
   const assignee = findTeamMember(team, assigneeId);
   const segmentButtonStyle = (active, color) => ({
     flex: 1,
@@ -914,6 +915,22 @@ function TaskDetailModal({ task, onClose, onSave, team = [] }) {
               </div>
             </div>
           </div>
+
+          {currentUser?.role === "admin" && (
+            <div>
+              <label style={labelStyle}>Автор</label>
+              <div style={{ position: "relative" }}>
+                <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)}
+                  style={{ ...inputStyle, cursor: "pointer", paddingLeft: owner ? (isMobile ? 32 : 40) : (isMobile ? 10 : 14) }}>
+                  <option value="">— Не указан —</option>
+                  {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                {owner && (
+                  <div style={{ position: "absolute", left: isMobile ? 8 : 10, top: "50%", transform: "translateY(-50%)", width: isMobile ? 18 : 22, height: isMobile ? 18 : 22, borderRadius: "50%", background: owner.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, pointerEvents: "none" }}>{owner.initials}</div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1364,7 +1381,7 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {confirmDialog}
         {showModal && <AddTaskModal onClose={() => setShowModal(false)} onAdd={addTask} team={team} />}
-        {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} />}
+        {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
         {scopeControls}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
@@ -1456,7 +1473,7 @@ function TasksSection({ initialTasks = INIT_TASKS, team = [], api, onError, curr
     <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%" }}>
       {confirmDialog}
       {showModal && <AddTaskModal onClose={() => setShowModal(false)} onAdd={addTask} team={team} />}
-      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} />}
+      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
       {/* Stats */}
       {scopeControls}
@@ -1655,7 +1672,7 @@ function TaskArchiveSection({ initialTasks = [], team = [], api, onError, curren
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {confirmDialog}
-      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} />}
+      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(180px, 1fr))", gap: isMobile ? 8 : 14 }}>
         <StatCard compact={isMobile} label="В архиве" value={archivedTasks.length} sub="закрытых задач" color="#64748b"/>
@@ -2057,6 +2074,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const [eventDate, setEventDate] = React.useState(formatEventDate(initialMonth, initialDay));
     const [done, setDone] = React.useState(Boolean(event?.done));
     const [memberIds, setMemberIds] = React.useState(event?.memberIds || []);
+    const [ownerId, setOwnerId] = React.useState(event?.ownerId || currentUser?.id || null);
     const [error, setError] = React.useState("");
 
     function toggleMember(memberId) {
@@ -2074,7 +2092,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       if (!eventDate) { setError("Выберите дату события"); return; }
       const parsedDate = new Date(eventDate + "T00:00:00");
       if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
-      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds });
+      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds, ownerId });
       onClose();
     }
 
@@ -2121,6 +2139,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 onFocus={e => e.target.style.borderColor = "#93c5fd"}
                 onBlur={e => e.target.style.borderColor = "#e2edf8"} />
             </div>
+            {isEdit && currentUser?.role === "admin" && (
+              <div>
+                <label style={lbl}>Автор события</label>
+                <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer" }}>
+                  <option value="">— Не указан —</option>
+                  {team.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label style={lbl}>Участники события</label>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>

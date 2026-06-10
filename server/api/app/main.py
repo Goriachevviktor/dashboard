@@ -626,6 +626,26 @@ def resolve_owner_id(conn, user: dict[str, Any]) -> int | None:
     return fallback_owner["id"] if fallback_owner else None
 
 
+def resolve_active_user_id(conn, value: Any) -> int:
+    try:
+        user_id = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid owner")
+    row = conn.execute("SELECT id FROM users WHERE id = %s AND is_active = true", (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail="Owner not found")
+    return row["id"]
+
+
+def can_change_owner(existing_owner_id: Any, payload_owner_id: Any, user: dict[str, Any]) -> bool:
+    if user["role"] == "admin":
+        return True
+    try:
+        return int(payload_owner_id) == int(existing_owner_id)
+    except (TypeError, ValueError):
+        return False
+
+
 OWNER_SCOPED_TABLES = {"sync_stickers", "development_tasks", "ambp_topics"}
 OWNER_SCOPED_ORDER = {
     "sync_stickers": "id",
@@ -1853,6 +1873,7 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
         "column": "column_name",
         "due": "due",
         "assigneeId": "assignee_id",
+        "ownerId": "owner_id",
     }
     fields = []
     values = []
@@ -1864,6 +1885,14 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
             raise HTTPException(status_code=403, detail="Task access denied")
         for key, column in allowed.items():
             if key in payload:
+                if key == "ownerId":
+                    if not can_change_owner(existing.get("owner_id"), payload[key], user):
+                        raise HTTPException(status_code=403, detail="Only admin can change owner")
+                    if user["role"] != "admin":
+                        continue
+                    fields.append(f"{column} = %s")
+                    values.append(resolve_active_user_id(conn, payload[key]))
+                    continue
                 fields.append(f"{column} = %s")
                 if key == "due":
                     values.append(clean_date(payload[key]))
@@ -1988,19 +2017,27 @@ async def create_event(request: Request, user: dict[str, Any] = Depends(require_
 @app.patch("/events/{event_id}", dependencies=[Depends(require_auth)])
 async def update_event(event_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
-    allowed = {"title": "title", "description": "description", "month": "month", "day": "day", "type": "type", "done": "done"}
+    allowed = {"title": "title", "description": "description", "month": "month", "day": "day", "type": "type", "done": "done", "ownerId": "owner_id"}
     fields = []
     values = []
-    for key, column in allowed.items():
-        if key in payload:
-            fields.append(f"{column} = %s")
-            values.append(payload[key])
     with db() as conn:
         existing = conn.execute("SELECT * FROM events WHERE id = %s", (event_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Event not found")
         if not can_manage_owner_row(existing, user):
             raise HTTPException(status_code=403, detail="Event access denied")
+        for key, column in allowed.items():
+            if key in payload:
+                if key == "ownerId":
+                    if not can_change_owner(existing.get("owner_id"), payload[key], user):
+                        raise HTTPException(status_code=403, detail="Only admin can change owner")
+                    if user["role"] != "admin":
+                        continue
+                    fields.append(f"{column} = %s")
+                    values.append(resolve_active_user_id(conn, payload[key]))
+                    continue
+                fields.append(f"{column} = %s")
+                values.append(payload[key])
         row = existing
         if fields:
             values.append(event_id)
