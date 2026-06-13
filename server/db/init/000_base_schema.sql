@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS sync_stickers (
   speaker text NOT NULL DEFAULT '',
   topic text NOT NULL DEFAULT '',
   text text NOT NULL DEFAULT '',
-  color_id integer NOT NULL DEFAULT 0,
+  color_id text NOT NULL DEFAULT 'sky',
   x numeric NOT NULL DEFAULT 0,
   y numeric NOT NULL DEFAULT 0,
   width numeric NOT NULL DEFAULT 200,
