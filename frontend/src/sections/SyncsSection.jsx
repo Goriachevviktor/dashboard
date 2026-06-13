@@ -1,4 +1,3 @@
-import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
 import { useViewportFlags } from '../utils.js';

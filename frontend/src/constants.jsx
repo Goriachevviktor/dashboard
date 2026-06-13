@@ -1,4 +1,3 @@
-import React from 'react';
 
 export const SECTIONS = [
   { id: "tasks", label: "Текущие задачи", description: "Список активных задач и их статусы",

@@ -1,4 +1,3 @@
-import React from 'react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 const COLORS = ["#2563eb","#8b5cf6","#10b981","#f59e0b","#ef4444","#0ea5e9","#6366f1","#14b8a6"];

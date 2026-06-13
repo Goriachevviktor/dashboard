@@ -2,3 +2,10 @@ server/.env
 server/docker-compose.override.yml
 server/api/app/vapid_private.pem
 dashboard-config.js
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Build output (генерируется при деплое)
+/frontend-dist/
