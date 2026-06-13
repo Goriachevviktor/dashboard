@@ -1,9 +1,7 @@
 :80 {
-  redir / /dashboard.html 308
+  root * /srv/frontend-dist
 
-  root * /srv
-
-  header /dashboard.html Cache-Control "no-cache"
+  header /index.html Cache-Control "no-cache"
   header /service-worker.js Cache-Control "no-cache"
   header /manifest.webmanifest Content-Type "application/manifest+json; charset=utf-8"
 
@@ -11,5 +9,8 @@
     reverse_proxy dashboard-api:8000
   }
 
-  file_server
+  handle {
+    try_files {path} /index.html
+    file_server
+  }
 }

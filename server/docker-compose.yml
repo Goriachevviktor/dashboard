@@ -49,6 +49,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ..:/srv:ro
+      - ../frontend-dist:/srv/frontend-dist:ro
     networks:
       - default
       - proxy_net
