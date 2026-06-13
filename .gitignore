@@ -1,0 +1,4 @@
+server/.env
+server/docker-compose.override.yml
+server/api/app/vapid_private.pem
+dashboard-config.js

@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: dashboard
       POSTGRES_USER: dashboard
-      POSTGRES_PASSWORD: dashboard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - dashboard-db-data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -22,17 +22,17 @@ services:
       context: ./api
     container_name: dashboard-api
     environment:
-      DASHBOARD_DATABASE_URL: postgresql://dashboard:dashboard@dashboard-db:5432/dashboard
-      DASHBOARD_API_TOKEN: 0aeabd8e680e72e9f0a279d493e10b6157ec38b192ca415f
-      DASHBOARD_CORS_ORIGINS: https://dashboard.goryachevviktor.crazedns.ru,http://dashboard.goryachevviktor.crazedns.ru,http://localhost:8080,http://127.0.0.1:8080
-      DASHBOARD_JWT_SECRET: b931442e73dde15017ab7072f9cd9c2f8ffb25cda8b2dd11
+      DASHBOARD_DATABASE_URL: ${DASHBOARD_DATABASE_URL}
+      DASHBOARD_API_TOKEN: ${DASHBOARD_API_TOKEN}
+      DASHBOARD_CORS_ORIGINS: https://dashboard.goryachevviktor.crazedns.ru,http://dashboard.goryachevviktor.crazedns.ru
+      DASHBOARD_JWT_SECRET: ${DASHBOARD_JWT_SECRET}
       DASHBOARD_COOKIE_SECURE: "true"
-      DASHBOARD_ADMIN_EMAIL: viktor@goryachevviktor.local
-      DASHBOARD_ADMIN_PASSWORD: xDmLnsKSjsT3IHUzk53AlWbv
-      DASHBOARD_ADMIN_NAME: Виктор
-      DASHBOARD_VAPID_PUBLIC_KEY: BJjM4ntHCDPVtc9o0YNw5q041hXgprb9hFCxJFchaiWZnW5SSnAaT_198Nb5pQUngarkuYmZFIei4MZreHn1Cq0
+      DASHBOARD_ADMIN_EMAIL: ${DASHBOARD_ADMIN_EMAIL}
+      DASHBOARD_ADMIN_PASSWORD: ${DASHBOARD_ADMIN_PASSWORD}
+      DASHBOARD_ADMIN_NAME: ${DASHBOARD_ADMIN_NAME}
+      DASHBOARD_VAPID_PUBLIC_KEY: ${DASHBOARD_VAPID_PUBLIC_KEY}
       DASHBOARD_VAPID_PRIVATE_KEY_FILE: /app/app/vapid_private.pem
-      DASHBOARD_VAPID_CLAIMS_SUB: mailto:viktor@goryachevviktor.local
+      DASHBOARD_VAPID_CLAIMS_SUB: ${DASHBOARD_VAPID_CLAIMS_SUB}
     depends_on:
       dashboard-db:
         condition: service_healthy
