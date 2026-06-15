@@ -113,7 +113,7 @@ function NodeBox({ node, depth, onAdd, onEdit, onDelete, selectedId, onSelect })
 function EditModal({ nodeId, currentText, onClose, onSave }) {
   const [text, setText] = useState(currentText);
   return (
-    <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <form onSubmit={e => { e.preventDefault(); onSave(nodeId, text); onClose(); }}
         style={{ width: "100%", maxWidth: 400, background: "#fff", borderRadius: 14, padding: 24, boxShadow: "0 24px 64px rgba(30,58,110,.18)" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e", marginBottom: 16 }}>Редактировать узел</div>

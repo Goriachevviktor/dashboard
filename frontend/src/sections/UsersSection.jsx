@@ -113,7 +113,7 @@ function UsersSection({ api, onError }) {
     }
 
     return (
-      <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 330, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 20 }}>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 330, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 20 }}>
         <form onSubmit={handleSubmit} style={{ width: "min(92vw, 460px)", background: "#fff", borderRadius: 16, boxShadow: "0 24px 64px rgba(37,99,235,.22)", overflow: "hidden" }}>
           <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

@@ -58,8 +58,6 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
     onClose();
   }
 
-  function handleBackdrop(e) { if (e.target === e.currentTarget) onClose(); }
-
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
@@ -188,7 +186,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   }
 
   return (
-    <div onClick={handleBackdrop} onTouchStart={handleModalTouchStart} onTouchMove={handleModalTouchMove} style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: isMobile ? "calc(var(--safe-top) + 14px) 14px calc(var(--mobile-tabbar-height) + var(--safe-bottom) + 14px)" : 0, overscrollBehavior: "none", touchAction: isMobile ? "none" : "auto" }}>
+    <div onTouchStart={handleModalTouchStart} onTouchMove={handleModalTouchMove} style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: isMobile ? "calc(var(--safe-top) + 14px) 14px calc(var(--mobile-tabbar-height) + var(--safe-bottom) + 14px)" : 0, overscrollBehavior: "none", touchAction: isMobile ? "none" : "auto" }}>
       <div style={{ background: "#fff", borderRadius: isMobile ? 22 : 20, width: isMobile ? "100%" : "min(92vw, 560px)", height: isMobile ? "min(66dvh, 610px)" : undefined, maxHeight: isMobile ? "min(66dvh, 610px)" : "92vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(37,99,235,.22)", animation: "modalIn .2s ease", overflow: "hidden", touchAction: "auto" }}>
 
         {/* Header */}
@@ -352,8 +350,6 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
     onClose();
   }
 
-  function handleBackdrop(e) { if (e.target === e.currentTarget) onClose(); }
-
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
@@ -364,7 +360,7 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
   const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc", transition: "border-color .15s" };
 
   return (
-    <div onClick={handleBackdrop} style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
       <div style={{ background: "#fff", borderRadius: 20, width: "min(92vw, 520px)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(37,99,235,.20)", animation: "modalIn .2s ease" }}>
         <style>{`@keyframes modalIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }`}</style>
 

@@ -370,7 +370,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const inp = { width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #e2edf8", fontSize:14, color:"#1e3a6e", fontFamily:"Inter", outline:"none", background:"#f8fafc" };
 
     return (
-      <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
+      <div style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
         <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 520px)", maxHeight:"90vh", overflowY:"auto", boxShadow:"0 24px 64px rgba(37,99,235,.22)", animation:"modalIn .2s ease" }}>
           <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
@@ -477,7 +477,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const assignee = team.find(m => m.id === assigneeId) || null;
 
     return (
-      <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
+      <div style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
         <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 460px)", boxShadow:"0 24px 64px rgba(37,99,235,.22)", animation:"modalIn .2s ease" }}>
           <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
@@ -556,7 +556,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     }
 
     return (
-      <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:320, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
+      <div style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:320, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
         <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 560px)", maxHeight:"92vh", overflowY:"auto", boxShadow:"0 24px 64px rgba(37,99,235,.22)" }}>
           <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>

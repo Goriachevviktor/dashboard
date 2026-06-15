@@ -10,16 +10,11 @@ export function ConfirmDialog({ title, message, itemTitle, confirmText = "Уда
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel, onConfirm]);
 
-  function handleBackdrop(e) {
-    if (e.target === e.currentTarget) onCancel();
-  }
-
   const accent = tone === "danger" ? "#ef4444" : "#2563eb";
   const accentSoft = tone === "danger" ? "#fef2f2" : "#eff6ff";
 
   return (
     <div
-      onClick={handleBackdrop}
       style={{
         position: "fixed",
         inset: 0,
