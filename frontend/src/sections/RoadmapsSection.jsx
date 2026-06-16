@@ -983,13 +983,16 @@ function CatalogView({ roadmaps, onOpen, onNew }) {
 
 // ── Timeline (Gantt) ───────────────────────────────────────────────────────
 
+const TIMELINE_TASK_ROW_HEIGHT = 54;
+const TIMELINE_LANE_ROW_HEIGHT = 40;
+
 function GanttBar({ b, hover, setHover, idx, onBarClick }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = (b.start / 12) * 100;
   const width = ((b.end - b.start) / 12) * 100;
   const isHov = hover === idx;
   return (
-    <div style={{ height: 46, display: "flex", alignItems: "center", position: "relative" }}>
+    <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
       <div
         onClick={() => onBarClick && onBarClick(b, idx)}
         onMouseEnter={() => setHover(idx)}
@@ -1030,7 +1033,7 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
     laneBars.forEach(b => rows.push({ type: "bar", b, idx: rm.bars.indexOf(b) }));
   });
 
-  const sideW = 220;
+  const sideW = 340;
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1061,12 +1064,12 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
           {/* Левый сайдбар */}
           <div style={{ width: sideW, flexShrink: 0, borderRight: "1px solid #e8f0fa" }}>
             {rows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 20px", background: "#f7f9fd", fontSize: 12, fontWeight: 700, color: "#1e3a6e" }}>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "#f7f9fd", fontSize: 12, fontWeight: 700, color: "#1e3a6e" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />
                 {r.lane.name}
               </div>
             ) : (
-              <div key={i} style={{ height: 46, padding: "0 20px 0 28px", display: "flex", alignItems: "center", fontSize: 13, color: "#475569", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.b.title}>
+              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: "#475569", whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
                 {r.b.title}
               </div>
             ))}
@@ -1120,7 +1123,7 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
             })}
             {/* Строки */}
             {rows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ height: 40, background: "#f7f9fd" }} />
+              <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "#f7f9fd" }} />
             ) : (
               <GanttBar key={i} b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick} />
             ))}
