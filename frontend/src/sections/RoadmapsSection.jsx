@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getRoadmapToday, ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
+import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
 
 const OWNERS = {
   viktor: { name: "Виктор",  initials: "ВИ", color: "#6d5bd0" },
@@ -624,7 +625,7 @@ const TAG_COLORS = ["#3b6fe0","#6d5bd0","#22b07d","#f3a236","#ec5b6b","#2bb6c4",
 
 const LANE_COLORS = ["#3b6fe0","#6d5bd0","#22b07d","#f3a236","#ec5b6b","#2bb6c4","#8a96ad","#e11d48"];
 
-function RoadmapFormModal({ roadmap, onClose, onSave }) {
+function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
   const isEdit = Boolean(roadmap);
   const [title, setTitle]       = useState(roadmap?.title       || "");
   const [desc, setDesc]         = useState(roadmap?.desc        || "");
@@ -785,16 +786,24 @@ function RoadmapFormModal({ roadmap, onClose, onSave }) {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
-          <button type="button" onClick={onClose} style={{
-            padding: "9px 20px", borderRadius: 9, border: "1.5px solid #dbeafe",
-            background: "#f8fbff", color: "#64748b", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
-          }}>Отмена</button>
-          <button type="submit" style={{
-            padding: "9px 20px", borderRadius: 9, border: "none",
-            background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
-            fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
-          }}>Сохранить</button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+          {isEdit ? (
+            <button type="button" onClick={() => onDelete?.(roadmap)} style={{
+              padding: "9px 16px", borderRadius: 9, border: "1.5px solid #fecaca",
+              background: "#fef2f2", color: "#ef4444", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>Удалить карту</button>
+          ) : <span />}
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button type="button" onClick={onClose} style={{
+              padding: "9px 20px", borderRadius: 9, border: "1.5px solid #dbeafe",
+              background: "#f8fbff", color: "#64748b", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>Отмена</button>
+            <button type="submit" style={{
+              padding: "9px 20px", borderRadius: 9, border: "none",
+              background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
+              fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>Сохранить</button>
+          </div>
         </div>
       </form>
     </div>
@@ -1481,6 +1490,7 @@ function loadRoadmaps() {
 }
 
 export default function RoadmapsSection() {
+  const [confirmAction, confirmDialog] = useConfirmDialog();
   const [roadmaps, setRoadmaps] = useState(loadRoadmaps);
   const [openId, setOpenId]     = useState(null);
   const [rmModal, setRmModal]   = useState(null); // null | "new" | roadmap obj
@@ -1509,6 +1519,22 @@ export default function RoadmapsSection() {
       });
       setRoadmaps(rs => [...rs, newRm]);
     }
+  }
+
+  async function handleDeleteRoadmap(roadmap) {
+    if (!roadmap?.id) return;
+    setRmModal(null);
+    const approved = await confirmAction({
+      title: "Удалить дорожную карту?",
+      message: "Карта будет удалена из локального списка вместе с задачами, вехами и дорожками.",
+      itemTitle: roadmap.title,
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      tone: "danger",
+    });
+    if (!approved) return;
+    setRoadmaps(rs => rs.filter(r => r.id !== roadmap.id));
+    if (openId === roadmap.id) setOpenId(null);
   }
 
   function handleSaveBar(idx, data) {
@@ -1561,8 +1587,10 @@ export default function RoadmapsSection() {
             roadmap={rmModal === "edit" ? rm : null}
             onClose={() => setRmModal(null)}
             onSave={handleSaveRoadmap}
+            onDelete={handleDeleteRoadmap}
           />
         )}
+        {confirmDialog}
         <RoadmapDetail
           rm={rm}
           onBack={() => setOpenId(null)}
@@ -1584,8 +1612,10 @@ export default function RoadmapsSection() {
           roadmap={null}
           onClose={() => setRmModal(null)}
           onSave={handleSaveRoadmap}
+          onDelete={handleDeleteRoadmap}
         />
       )}
+      {confirmDialog}
       <CatalogView roadmaps={roadmaps} onOpen={setOpenId} onNew={() => setRmModal("new")} />
     </>
   );
