@@ -293,15 +293,15 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
             </div>
             <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label style={labelStyle}>Исполнитель</label>
-              <div style={{ position: "relative" }}>
+              <div style={{ display: "grid", gridTemplateColumns: assignee ? (isMobile ? "20px minmax(0, 1fr)" : "24px minmax(0, 1fr)") : "minmax(0, 1fr)", alignItems: "center", gap: 8 }}>
+                {assignee && (
+                  <div style={{ width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, borderRadius: "50%", background: assignee.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: isMobile ? 8 : 9, fontWeight: 700, flexShrink: 0 }}>{assignee.initials}</div>
+                )}
                 <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)}
-                  style={{ ...inputStyle, minWidth: 0, height: isMobile ? 40 : undefined, cursor: "pointer", paddingLeft: assignee ? (isMobile ? 32 : 40) : (isMobile ? 10 : 14), paddingRight: isMobile ? 22 : undefined }}>
+                  style={{ ...inputStyle, minWidth: 0, height: isMobile ? 40 : undefined, cursor: "pointer", paddingLeft: isMobile ? 10 : 14, paddingRight: isMobile ? 22 : undefined }}>
                   <option value="">— Не назначен —</option>
                   {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
-                {assignee && (
-                  <div style={{ position: "absolute", left: isMobile ? 8 : 10, top: "50%", transform: "translateY(-50%)", width: isMobile ? 18 : 22, height: isMobile ? 18 : 22, borderRadius: "50%", background: assignee.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, pointerEvents: "none" }}>{assignee.initials}</div>
-                )}
               </div>
             </div>
           </div>
@@ -309,15 +309,15 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
           {currentUser?.role === "admin" && (
             <div>
               <label style={labelStyle}>Автор</label>
-              <div style={{ position: "relative" }}>
+              <div style={{ display: "grid", gridTemplateColumns: owner ? (isMobile ? "20px minmax(0, 1fr)" : "24px minmax(0, 1fr)") : "minmax(0, 1fr)", alignItems: "center", gap: 8 }}>
+                {owner && (
+                  <div style={{ width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, borderRadius: "50%", background: owner.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: isMobile ? 8 : 9, fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
+                )}
                 <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)}
-                  style={{ ...inputStyle, cursor: "pointer", paddingLeft: owner ? (isMobile ? 32 : 40) : (isMobile ? 10 : 14) }}>
+                  style={{ ...inputStyle, cursor: "pointer", paddingLeft: isMobile ? 10 : 14 }}>
                   <option value="">— Не указан —</option>
                   {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
-                {owner && (
-                  <div style={{ position: "absolute", left: isMobile ? 8 : 10, top: "50%", transform: "translateY(-50%)", width: isMobile ? 18 : 22, height: isMobile ? 18 : 22, borderRadius: "50%", background: owner.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, pointerEvents: "none" }}>{owner.initials}</div>
-                )}
               </div>
             </div>
           )}
