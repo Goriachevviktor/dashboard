@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
@@ -37,6 +37,95 @@ const BAR_COL = {
 
 const MILESTONE_COLORS = ["#6d5bd0", "#3b6fe0", "#22b07d", "#f3a236", "#ec5b6b", "#2bb6c4", "#8a96ad", "#e11d48"];
 const DEFAULT_MILESTONE_COLOR = MILESTONE_COLORS[0];
+
+function memberKey(value) {
+  return value == null ? "" : String(value);
+}
+
+function normalizeMember(member, index = 0) {
+  if (!member) return null;
+  const id = member.id ?? member.key ?? member.slug ?? `member-${index}`;
+  const name = member.name || member.displayName || member.email || "Пользователь";
+  const initials = member.initials || name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "П";
+  return {
+    id,
+    key: memberKey(id),
+    name,
+    initials,
+    color: member.color || OWNERS[memberKey(id)]?.color || ["#2563eb", "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#14b8a6"][index % 8],
+    email: member.email || "",
+  };
+}
+
+function buildMemberRegistry(team = [], currentUser = null) {
+  const registry = new Map();
+  const source = Array.isArray(team) ? team : [];
+  const nameRegistry = new Set();
+  source.forEach((member, index) => {
+    const normalized = normalizeMember(member, index);
+    if (normalized) {
+      registry.set(normalized.key, normalized);
+      nameRegistry.add(normalized.name.trim().toLowerCase());
+      if (normalized.email) nameRegistry.add(normalized.email.trim().toLowerCase());
+    }
+  });
+  if (currentUser) {
+    const normalizedCurrentUser = normalizeMember(currentUser, registry.size);
+    if (normalizedCurrentUser && !registry.has(normalizedCurrentUser.key)) {
+      registry.set(normalizedCurrentUser.key, normalizedCurrentUser);
+      nameRegistry.add(normalizedCurrentUser.name.trim().toLowerCase());
+      if (normalizedCurrentUser.email) nameRegistry.add(normalizedCurrentUser.email.trim().toLowerCase());
+    }
+  }
+  Object.entries(OWNERS).forEach(([id, owner], index) => {
+    const ownerNameKey = owner.name.trim().toLowerCase();
+    if (!registry.has(id) && !nameRegistry.has(ownerNameKey)) {
+      registry.set(id, normalizeMember({ id, name: owner.name, initials: owner.initials, color: owner.color }, source.length + index));
+    }
+  });
+  return Array.from(registry.values());
+}
+
+function getMemberById(members, id) {
+  const key = memberKey(id);
+  return members.find(member => member.key === key) || null;
+}
+
+function sanitizeMemberIds(memberIds, ownerId) {
+  const ownerKey = memberKey(ownerId);
+  return Array.from(new Set((Array.isArray(memberIds) ? memberIds : []).map(memberKey).filter(Boolean))).filter(id => id !== ownerKey);
+}
+
+function AvatarStack({ members = [], size = 22, max = 3 }) {
+  const visible = members.filter(Boolean).slice(0, max);
+  const extra = Math.max(0, members.filter(Boolean).length - visible.length);
+  if (visible.length === 0) return null;
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", paddingLeft: 6 }}>
+      {visible.map((member, index) => (
+        <div key={member.key || member.id || index} style={{ marginLeft: index === 0 ? 0 : -6, border: "2px solid #fff", borderRadius: "50%" }}>
+          <Avatar member={member} size={size} />
+        </div>
+      ))}
+      {extra > 0 && (
+        <span style={{
+          marginLeft: -6,
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          border: "2px solid #fff",
+          background: "#e2edf8",
+          color: "#64748b",
+          fontSize: Math.max(10, size * 0.38),
+          fontWeight: 700,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}>+{extra}</span>
+      )}
+    </div>
+  );
+}
 
 function daysInRoadmapMonth(monthIndex) {
   return new Date(ROADMAP_YEAR, monthIndex + 1, 0).getDate();
@@ -112,8 +201,11 @@ function normalizeBarDates(barItem, baseYear = ROADMAP_YEAR) {
   const startDate = parseIsoDate(barItem?.startDate) || parseIsoDate(legacyStart) || parseIsoDate(`${baseYear}-01-01`);
   const endDate = parseIsoDate(barItem?.endDate) || parseIsoDate(legacyEnd) || startDate;
   const safeEndDate = endDate < startDate ? startDate : endDate;
+  const owner = barItem?.owner ?? "viktor";
   return {
     ...barItem,
+    owner,
+    memberIds: sanitizeMemberIds(barItem?.memberIds, owner),
     startDate: toIsoDate(startDate),
     endDate: toIsoDate(safeEndDate),
   };
@@ -204,8 +296,8 @@ function formatRoadmapMonthRange(startDateValue, endDateValue) {
   return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
 }
 
-function bar(lane, title, start, end, status, progress, owner) {
-  return { lane, title, start, end, status, progress, owner };
+function bar(lane, title, start, end, status, progress, owner, memberIds = []) {
+  return { lane, title, start, end, status, progress, owner, memberIds };
 }
 
 const SAMPLE_ROADMAPS = (() => {
@@ -496,8 +588,10 @@ function DiamondIcon({ size = 14 }) {
 
 // ── Карточки каталога ──────────────────────────────────────────────────────
 
-function RoadmapCard({ rm, onOpen }) {
+function RoadmapCard({ rm, onOpen, members }) {
   const sm = STATUS_META[rm.status] || STATUS_META.archived;
+  const ownerMember = getMemberById(members, rm.owner);
+  const coExecutors = sanitizeMemberIds(rm.memberIds, rm.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <button onClick={() => onOpen(rm.id)} style={{
       textAlign: "left", background: "#fff", border: "1px solid #e2edf8",
@@ -531,15 +625,20 @@ function RoadmapCard({ rm, onOpen }) {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: "#6d5bd0" }}>
             <DiamondIcon size={13} />{rm.milestones.length}
           </span>
-          <Avatar member={OWNERS[rm.owner]} size={30} />
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            <Avatar member={ownerMember} size={30} />
+            <AvatarStack members={coExecutors} size={24} max={2} />
+          </span>
         </div>
       </div>
     </button>
   );
 }
 
-function RoadmapRow({ rm, onOpen }) {
+function RoadmapRow({ rm, onOpen, members }) {
   const sm = STATUS_META[rm.status] || STATUS_META.archived;
+  const ownerMember = getMemberById(members, rm.owner);
+  const coExecutors = sanitizeMemberIds(rm.memberIds, rm.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <button onClick={() => onOpen(rm.id)} style={{
       display: "flex", alignItems: "center", gap: 18, textAlign: "left",
@@ -567,7 +666,10 @@ function RoadmapRow({ rm, onOpen }) {
         <span style={{ fontSize: 13, fontWeight: 700, color: "#1e3a6e", width: 36 }}>{rm.progress}%</span>
       </div>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 999, color: sm.color, background: sm.bg }}>{sm.label}</span>
-      <Avatar member={OWNERS[rm.owner]} size={28} />
+      <span style={{ display: "inline-flex", alignItems: "center" }}>
+        <Avatar member={ownerMember} size={28} />
+        <AvatarStack members={coExecutors} size={22} max={2} />
+      </span>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"><polyline points="9 6 15 12 9 18"/></svg>
     </button>
   );
@@ -583,7 +685,7 @@ const STATUS_OPTIONS = [
   { value: "done",     label: "Завершено" },
 ];
 
-function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
+function BarFormModal({ bar: initBar, lanes, members, defaultOwnerId, onClose, onSave, onDelete }) {
   const isEdit = Boolean(initBar);
   const [title,    setTitle]    = useState(initBar?.title    || "");
   const [lane,     setLane]     = useState(initBar?.lane     || lanes[0]?.id || "");
@@ -591,8 +693,14 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
   const [progress, setProgress] = useState(initBar?.progress ?? 0);
   const [startDate, setStartDate] = useState(initBar?.startDate || monthValueToDate(initBar?.start ?? 0, 0));
   const [endDate,   setEndDate]   = useState(initBar?.endDate || monthValueToDate(initBar?.end ?? 3, 2, true));
-  const [owner,    setOwner]    = useState(initBar?.owner    || "viktor");
+  const [owner,    setOwner]    = useState(memberKey(initBar?.owner || defaultOwnerId || members[0]?.id || "viktor"));
+  const [memberIds, setMemberIds] = useState(sanitizeMemberIds(initBar?.memberIds, initBar?.owner || defaultOwnerId));
   const [error,    setError]    = useState("");
+
+  function toggleMember(id) {
+    const key = memberKey(id);
+    setMemberIds(list => list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -606,7 +714,7 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
       setError("Дата окончания должна быть позже даты начала");
       return;
     }
-    onSave({ title, lane, status, progress: Number(progress), startDate, endDate, owner });
+    onSave({ title, lane, status, progress: Number(progress), startDate, endDate, owner, memberIds: sanitizeMemberIds(memberIds, owner) });
     onClose();
   }
 
@@ -683,11 +791,44 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
 
         <div>
           <label style={labelStyle}>Владелец</label>
-          <select value={owner} onChange={e => setOwner(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-            {Object.entries(OWNERS).map(([key, o]) => (
-              <option key={key} value={key}>{o.name}</option>
+          <select value={owner} onChange={e => { const nextOwner = e.target.value; setOwner(nextOwner); setMemberIds(list => sanitizeMemberIds(list, nextOwner)); }} style={{ ...inputStyle, cursor: "pointer" }}>
+            {members.map(member => (
+              <option key={member.key} value={member.key}>{member.name}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Соисполнители</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {members.filter(member => member.key !== owner).map(member => {
+              const active = memberIds.includes(member.key);
+              return (
+                <button
+                  key={member.key}
+                  type="button"
+                  onClick={() => toggleMember(member.key)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "7px 10px",
+                    borderRadius: 999,
+                    border: "1.5px solid " + (active ? member.color : "#dbeafe"),
+                    background: active ? member.color + "18" : "#f8fbff",
+                    color: active ? member.color : "#64748b",
+                    cursor: "pointer",
+                    fontFamily: "Inter",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  <Avatar member={member} size={22} />
+                  <span>{member.name}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 4 }}>
@@ -824,17 +965,23 @@ const TAG_COLORS = ["#3b6fe0","#6d5bd0","#22b07d","#f3a236","#ec5b6b","#2bb6c4",
 
 const LANE_COLORS = ["#3b6fe0","#6d5bd0","#22b07d","#f3a236","#ec5b6b","#2bb6c4","#8a96ad","#e11d48"];
 
-function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
+function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, onDelete }) {
   const isEdit = Boolean(roadmap);
   const [title, setTitle]       = useState(roadmap?.title       || "");
   const [desc, setDesc]         = useState(roadmap?.desc        || "");
   const [tag, setTag]           = useState(roadmap?.tag         || "");
   const [tagColor, setTagColor] = useState(roadmap?.tagColor    || TAG_COLORS[0]);
-  const [owner, setOwner]       = useState(roadmap?.owner       || "viktor");
+  const [owner, setOwner]       = useState(memberKey(roadmap?.owner || defaultOwnerId || members[0]?.id || "viktor"));
+  const [memberIds, setMemberIds] = useState(sanitizeMemberIds(roadmap?.memberIds, roadmap?.owner || defaultOwnerId));
   const [status, setStatus]     = useState(roadmap?.status      || "active");
   const [lanes, setLanes]       = useState(roadmap?.lanes       || []);
   const [newLaneName, setNewLaneName] = useState("");
   const [newLaneColor, setNewLaneColor] = useState(LANE_COLORS[0]);
+
+  function toggleMember(id) {
+    const key = memberKey(id);
+    setMemberIds(list => list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
+  }
 
   function addLane() {
     if (!newLaneName.trim()) return;
@@ -848,7 +995,7 @@ function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ ...(roadmap || {}), title, desc, tag, tagColor, owner, status, lanes });
+    onSave({ ...(roadmap || {}), title, desc, tag, tagColor, owner, memberIds: sanitizeMemberIds(memberIds, owner), status, lanes });
     onClose();
   }
 
@@ -909,11 +1056,44 @@ function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
 
         <div>
           <label style={labelStyle}>Владелец</label>
-          <select value={owner} onChange={e => setOwner(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-            {Object.entries(OWNERS).map(([key, o]) => (
-              <option key={key} value={key}>{o.name}</option>
+          <select value={owner} onChange={e => { const nextOwner = e.target.value; setOwner(nextOwner); setMemberIds(list => sanitizeMemberIds(list, nextOwner)); }} style={{ ...inputStyle, cursor: "pointer" }}>
+            {members.map(member => (
+              <option key={member.key} value={member.key}>{member.name}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Соисполнители карты</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {members.filter(member => member.key !== owner).map(member => {
+              const active = memberIds.includes(member.key);
+              return (
+                <button
+                  key={member.key}
+                  type="button"
+                  onClick={() => toggleMember(member.key)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "7px 10px",
+                    borderRadius: 999,
+                    border: "1.5px solid " + (active ? member.color : "#dbeafe"),
+                    background: active ? member.color + "18" : "#f8fbff",
+                    color: active ? member.color : "#64748b",
+                    cursor: "pointer",
+                    fontFamily: "Inter",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  <Avatar member={member} size={22} />
+                  <span>{member.name}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -1008,7 +1188,7 @@ function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
   );
 }
 
-function CatalogView({ roadmaps, onOpen, onNew }) {
+function CatalogView({ roadmaps, members, onOpen, onNew }) {
   const [view, setView] = useState("grid");
   const [filter, setFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
@@ -1168,11 +1348,11 @@ function CatalogView({ roadmaps, onOpen, onNew }) {
         <div style={{ padding: "60px 24px", textAlign: "center", color: "#94a3b8", fontSize: 15 }}>Карты не найдены</div>
       ) : view === "grid" ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
-          {list.map(rm => <RoadmapCard key={rm.id} rm={rm} onOpen={onOpen} />)}
+          {list.map(rm => <RoadmapCard key={rm.id} rm={rm} members={members} onOpen={onOpen} />)}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {list.map(rm => <RoadmapRow key={rm.id} rm={rm} onOpen={onOpen} />)}
+          {list.map(rm => <RoadmapRow key={rm.id} rm={rm} members={members} onOpen={onOpen} />)}
         </div>
       )}
     </div>
@@ -1184,11 +1364,13 @@ function CatalogView({ roadmaps, onOpen, onNew }) {
 const TIMELINE_TASK_ROW_HEIGHT = 54;
 const TIMELINE_LANE_ROW_HEIGHT = 40;
 
-function GanttBar({ b, hover, setHover, idx, onBarClick }) {
+function GanttBar({ b, hover, setHover, idx, onBarClick, members }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = percentFromTimelineDate(b.startDate, b.timeline);
   const width = Math.max(0.9, percentFromTimelineDate(b.endDate, b.timeline, true) - left);
   const isHov = hover === idx;
+  const ownerMember = getMemberById(members, b.owner);
+  const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
       <div
@@ -1210,15 +1392,16 @@ function GanttBar({ b, hover, setHover, idx, onBarClick }) {
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: b.progress + "%", background: "rgba(255,255,255,.22)", zIndex: 0 }} />
         )}
         <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1 }}>{b.title}</span>
-        <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0 }}>
-          <Avatar member={OWNERS[b.owner]} size={20} />
+        <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
+          <Avatar member={ownerMember} size={20} />
+          <AvatarStack members={coExecutors} size={18} max={2} />
         </span>
       </div>
     </div>
   );
 }
 
-function TimelineView({ rm, onBarClick, onMilestoneClick }) {
+function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
   const [hover, setHover] = useState(null);
   const timeline = rm.timeline;
   const today = new Date();
@@ -1357,7 +1540,7 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
             {rows.map((r, i) => r.type === "lane" ? (
               <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "#f7f9fd" }} />
             ) : (
-              <GanttBar key={i} b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick} />
+              <GanttBar key={i} b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick} members={members} />
             ))}
           </div>
         </div>
@@ -1387,7 +1570,7 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
 
 // ── Swimlanes ──────────────────────────────────────────────────────────────
 
-function SwimlanesView({ rm, onBarClick }) {
+function SwimlanesView({ rm, members, onBarClick }) {
   return (
     <div style={{ display: "flex", gap: 16, padding: 20, overflowX: "auto" }}>
       {rm.lanes.map(lane => {
@@ -1403,11 +1586,16 @@ function SwimlanesView({ rm, onBarClick }) {
               {bars.map((b, i) => {
                 const c = BAR_COL[b.status] || BAR_COL.planned;
                 const label = b.status === "done" ? "Завершено" : b.status === "progress" ? b.progress + "%" : "Запланировано";
+                const ownerMember = getMemberById(members, b.owner);
+                const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
                 return (
                   <div key={i} onClick={() => onBarClick && onBarClick(b, rm.bars.indexOf(b))} style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 10, padding: "13px 14px", boxShadow: "0 1px 3px rgba(37,99,235,.05)", cursor: "pointer" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: "#1e3a6e" }}>{b.title}</span>
-                      <Avatar member={OWNERS[b.owner]} size={22} />
+                      <span style={{ display: "inline-flex", alignItems: "center" }}>
+                        <Avatar member={ownerMember} size={22} />
+                        <AvatarStack members={coExecutors} size={20} max={3} />
+                      </span>
                     </div>
                     <div style={{ height: 6, background: "#eef2f8", borderRadius: 999, overflow: "hidden", margin: "10px 0 7px" }}>
                       <span style={{ display: "block", height: "100%", borderRadius: 999, background: c.bar, width: b.progress + "%" }} />
@@ -1458,7 +1646,7 @@ function buildNowNextLater(rm) {
   };
 }
 
-function NNLView({ rm, onBarClick }) {
+function NNLView({ rm, members, onBarClick }) {
   const grouped = buildNowNextLater(rm);
   const cols = [
     { key: "now",   label: "Now",   sub: "Сейчас в работе", color: "#3b6fe0" },
@@ -1482,6 +1670,8 @@ function NNLView({ rm, onBarClick }) {
             {grouped[col.key].map((item, i) => {
               const statusColor = (BAR_COL[item.status] || BAR_COL.planned).bar;
               const label = item.status === "progress" ? `${item.progress}%` : "Запланировано";
+              const ownerMember = getMemberById(members, item.owner);
+              const coExecutors = sanitizeMemberIds(item.memberIds, item.owner).map(id => getMemberById(members, id)).filter(Boolean);
               return (
               <div key={i} onClick={() => onBarClick && onBarClick(item, item.idx)} style={{
                 display: "flex", flexDirection: "column", gap: 9,
@@ -1491,7 +1681,10 @@ function NNLView({ rm, onBarClick }) {
               }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <span>{item.title}</span>
-                  <Avatar member={OWNERS[item.owner]} size={22} />
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>
+                    <Avatar member={ownerMember} size={22} />
+                    <AvatarStack members={coExecutors} size={20} max={3} />
+                  </span>
                 </div>
                 <div style={{ height: 6, background: "#eef2f8", borderRadius: 999, overflow: "hidden" }}>
                   <span style={{ display: "block", width: `${item.progress || 0}%`, height: "100%", background: statusColor, borderRadius: 999 }} />
@@ -1574,12 +1767,14 @@ function LaneFormModal({ onClose, onSave }) {
   );
 }
 
-function RoadmapDetail({ rm, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane }) {
+function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane }) {
   const [tab, setTab]               = useState("timeline");
   const [barModal, setBarModal]     = useState(null); // null | "new" | { bar, idx }
   const [mileModal, setMileModal]   = useState(null); // null | "new" | { milestone, idx }
   const [laneModal, setLaneModal]   = useState(false);
   const sm = STATUS_META[rm.status] || STATUS_META.archived;
+  const ownerMember = getMemberById(members, rm.owner);
+  const roadmapCoExecutors = sanitizeMemberIds(rm.memberIds, rm.owner).map(id => getMemberById(members, id)).filter(Boolean);
   const TABS = [
     { id: "timeline", label: "Timeline" },
     { id: "swim",     label: "Дорожки" },
@@ -1622,7 +1817,8 @@ function RoadmapDetail({ rm, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMiles
           </button>
           <div style={{ display: "flex", gap: 20, paddingLeft: 20, borderLeft: "1px solid #e8f0fa" }}>
             {[
-              ["Владелец", <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Avatar member={OWNERS[rm.owner]} size={22} />{OWNERS[rm.owner]?.name}</div>],
+              ["Владелец", <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Avatar member={ownerMember} size={22} />{ownerMember?.name || "Не назначен"}</div>],
+              ["Соисполнители", roadmapCoExecutors.length > 0 ? <AvatarStack members={roadmapCoExecutors} size={22} max={4} /> : "—"],
               ["Период", rm.period],
               ["Прогресс", <span style={{ color: "#3b6fe0", fontWeight: 700 }}>{rm.progress}%</span>],
             ].map(([k, v]) => (
@@ -1683,6 +1879,8 @@ function RoadmapDetail({ rm, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMiles
         <BarFormModal
           bar={barModal === "new" ? null : barModal.bar}
           lanes={rm.lanes}
+          members={members}
+          defaultOwnerId={defaultOwnerId}
           onClose={() => setBarModal(null)}
           onSave={data => onSaveBar(barModal === "new" ? null : barModal.idx, data)}
           onDelete={barModal !== "new" ? () => onDeleteBar(barModal.idx) : undefined}
@@ -1691,9 +1889,9 @@ function RoadmapDetail({ rm, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMiles
 
       {/* Контент вкладки */}
       <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
-        {tab === "timeline" && <TimelineView rm={rm} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} />}
-        {tab === "swim"     && <SwimlanesView rm={rm} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
-        {tab === "nnl"      && <NNLView rm={rm} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
+        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} />}
+        {tab === "swim"     && <SwimlanesView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
+        {tab === "nnl"      && <NNLView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
       </div>
     </div>
   );
@@ -1707,8 +1905,11 @@ function recalc(rm) {
   const milestones = (rm.milestones || []).map(milestone => normalizeMilestoneDate(milestone, baseYear));
   const timeline = buildTimelineMeta({ ...rm, bars, milestones });
   const total = bars.length || 1;
+  const owner = rm?.owner ?? "viktor";
   return {
     ...rm,
+    owner,
+    memberIds: sanitizeMemberIds(rm?.memberIds, owner),
     bars,
     milestones,
     timeline,
@@ -1738,11 +1939,33 @@ function loadRoadmaps() {
   return SAMPLE_ROADMAPS.map(recalc);
 }
 
-export default function RoadmapsSection() {
+export default function RoadmapsSection({ team = [], api, currentUser = null }) {
   const [confirmAction, confirmDialog] = useConfirmDialog();
   const [roadmaps, setRoadmaps] = useState(loadRoadmaps);
   const [openId, setOpenId]     = useState(null);
   const [rmModal, setRmModal]   = useState(null); // null | "new" | roadmap obj
+  const [userDirectory, setUserDirectory] = useState([]);
+  const members = useMemo(() => buildMemberRegistry(userDirectory.length ? userDirectory : team, currentUser), [userDirectory, team, currentUser]);
+  const defaultOwnerId = memberKey(currentUser?.id || members[0]?.id || "viktor");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUserDirectory() {
+      if (!api?.listUsers) return;
+      try {
+        const users = await api.listUsers();
+        if (!cancelled && Array.isArray(users) && users.length) {
+          setUserDirectory(users);
+        }
+      } catch {
+        if (!cancelled) {
+          setUserDirectory([]);
+        }
+      }
+    }
+    loadUserDirectory();
+    return () => { cancelled = true; };
+  }, [api]);
 
   useEffect(() => {
     try {
@@ -1834,6 +2057,8 @@ export default function RoadmapsSection() {
         {rmModal && (
           <RoadmapFormModal
             roadmap={rmModal === "edit" ? rm : null}
+            members={members}
+            defaultOwnerId={defaultOwnerId}
             onClose={() => setRmModal(null)}
             onSave={handleSaveRoadmap}
             onDelete={handleDeleteRoadmap}
@@ -1842,6 +2067,8 @@ export default function RoadmapsSection() {
         {confirmDialog}
         <RoadmapDetail
           rm={rm}
+          members={members}
+          defaultOwnerId={defaultOwnerId}
           onBack={() => setOpenId(null)}
           onEdit={() => setRmModal("edit")}
           onSaveBar={handleSaveBar}
@@ -1859,13 +2086,15 @@ export default function RoadmapsSection() {
       {rmModal && (
         <RoadmapFormModal
           roadmap={null}
+          members={members}
+          defaultOwnerId={defaultOwnerId}
           onClose={() => setRmModal(null)}
           onSave={handleSaveRoadmap}
           onDelete={handleDeleteRoadmap}
         />
       )}
       {confirmDialog}
-      <CatalogView roadmaps={roadmaps} onOpen={setOpenId} onNew={() => setRmModal("new")} />
+      <CatalogView roadmaps={roadmaps} members={members} onOpen={setOpenId} onNew={() => setRmModal("new")} />
     </>
   );
 }
