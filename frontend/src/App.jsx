@@ -14,6 +14,7 @@ import PlanSection from './sections/PlanSection.jsx';
 import UsersSection from './sections/UsersSection.jsx';
 import RoadmapsSection from './sections/RoadmapsSection.jsx';
 import MindMapSection from './sections/MindMapSection.jsx';
+import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
 
 const SECTION_COMPONENTS = {
   tasks:   ({ data, api, onError, currentUser }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
@@ -21,6 +22,7 @@ const SECTION_COMPONENTS = {
   events:  ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   roadmaps:({ data, api, onError }) => <RoadmapsSection />,
   mindmap: ({ data, api, onError }) => <MindMapSection />,
+  diagrams:({ data, api, onError }) => <BlockDiagramSection />,
   syncs:   ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
   ucp:     ({ data, api, onError, currentUser }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   ambp:    ({ data, api, onError }) => <AmbpSection initialTopics={data.ambpTopics} api={api} onError={onError} />,

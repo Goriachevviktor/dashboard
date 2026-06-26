@@ -2,8 +2,11 @@
   root * /srv/frontend-dist
 
   header /index.html Cache-Control "no-cache"
-  header /service-worker.js Cache-Control "no-cache"
-  header /manifest.webmanifest Content-Type "application/manifest+json; charset=utf-8"
+  @sw_missing {
+    path /service-worker.js /manifest.webmanifest
+    not file
+  }
+  respond @sw_missing 404
 
   handle_path /api/* {
     reverse_proxy dashboard-api:8000

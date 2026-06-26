@@ -1528,6 +1528,7 @@ export default function MindMapSection() {
   }
 
   async function handleDeleteMap(map) {
+    setMapModal(null);
     const approved = await confirmAction({
       title: "Удалить ментальную карту?",
       message: "Карта будет удалена из локального хранилища вместе со всеми узлами.",
@@ -1539,7 +1540,6 @@ export default function MindMapSection() {
     if (!approved) return;
     setMaps(current => current.filter(item => item.id !== map.id));
     if (openMapId === map.id) setOpenMapId(null);
-    if (mapModal?.map?.id === map.id) setMapModal(null);
   }
 
   function handleUndo() {

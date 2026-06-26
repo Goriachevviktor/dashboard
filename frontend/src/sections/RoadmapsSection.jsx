@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getRoadmapToday, ROADMAP_YEAR } from '../utils.js';
+import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
 import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
@@ -14,6 +14,8 @@ const OWNERS = {
 
 const MONTHS = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const QUARTERS = ["Q1","Q2","Q3","Q4"];
+const DEFAULT_DATE_MIN = "2024-01-01";
+const DEFAULT_DATE_MAX = "2030-12-31";
 
 const STATUS_META = {
   active:   { label: "Активна",   color: "#22b07d", bg: "#e6f7f0" },
@@ -40,29 +42,166 @@ function daysInRoadmapMonth(monthIndex) {
   return new Date(ROADMAP_YEAR, monthIndex + 1, 0).getDate();
 }
 
-function monthValueToDate(value, fallbackMonth = 0, endOfSpan = false) {
+function monthValueToDate(value, fallbackMonth = 0, endOfSpan = false, year = ROADMAP_YEAR) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
-    return `${ROADMAP_YEAR}-${String(fallbackMonth + 1).padStart(2, "0")}-01`;
+    return `${year}-${String(fallbackMonth + 1).padStart(2, "0")}-01`;
   }
-  if (numeric >= 12) return `${ROADMAP_YEAR}-12-31`;
+  if (numeric >= 12) return `${year}-12-31`;
   const month = Math.max(0, Math.min(11, Math.floor(numeric)));
   const days = daysInRoadmapMonth(month);
   const fraction = Math.max(0, numeric - month);
   const day = endOfSpan
     ? Math.max(1, Math.min(days, Math.ceil(fraction * days) || 1))
     : Math.max(1, Math.min(days, Math.floor(fraction * days) + 1));
-  return `${ROADMAP_YEAR}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function dateToMonthValue(value, endOfSpan = false) {
+function parseIsoDate(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null;
   const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return endOfSpan ? 1 : 0;
-  const month = Math.max(0, Math.min(11, date.getMonth()));
-  const day = date.getDate();
-  const days = daysInRoadmapMonth(month);
-  const fraction = endOfSpan ? day / days : (day - 1) / days;
-  return Math.max(0, Math.min(12, Number((month + fraction).toFixed(3))));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toIsoDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addDays(date, days) {
+  const next = new Date(date.getTime());
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMonths(date, months) {
+  const next = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  return next;
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function endOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function inferRoadmapBaseYear(rm) {
+  const periodMatch = String(rm?.period || "").match(/(20\d{2})/);
+  if (periodMatch) return Number(periodMatch[1]);
+  return ROADMAP_YEAR;
+}
+
+function buildRoadmapPeriodLabel(startDate, endDate) {
+  if (!startDate || !endDate) return `Q1 – Q4 ${ROADMAP_YEAR}`;
+  const startQuarter = QUARTERS[Math.floor(startDate.getMonth() / 3)];
+  const endQuarter = QUARTERS[Math.floor(endDate.getMonth() / 3)];
+  if (startDate.getFullYear() === endDate.getFullYear()) {
+    return `${startQuarter} – ${endQuarter} ${startDate.getFullYear()}`;
+  }
+  return `${startQuarter} ${startDate.getFullYear()} – ${endQuarter} ${endDate.getFullYear()}`;
+}
+
+function normalizeBarDates(barItem, baseYear = ROADMAP_YEAR) {
+  const legacyStart = monthValueToDate(barItem?.start ?? 0, 0, false, baseYear);
+  const legacyEnd = monthValueToDate(barItem?.end ?? Math.min((barItem?.start ?? 0) + 1, 11.9), Math.min(Math.floor(barItem?.start ?? 0), 11), true, baseYear);
+  const startDate = parseIsoDate(barItem?.startDate) || parseIsoDate(legacyStart) || parseIsoDate(`${baseYear}-01-01`);
+  const endDate = parseIsoDate(barItem?.endDate) || parseIsoDate(legacyEnd) || startDate;
+  const safeEndDate = endDate < startDate ? startDate : endDate;
+  return {
+    ...barItem,
+    startDate: toIsoDate(startDate),
+    endDate: toIsoDate(safeEndDate),
+  };
+}
+
+function normalizeMilestoneDate(milestone, baseYear = ROADMAP_YEAR) {
+  const legacyDate = monthValueToDate(milestone?.month ?? 0, 0, false, baseYear);
+  const date = parseIsoDate(milestone?.date) || parseIsoDate(legacyDate) || parseIsoDate(`${baseYear}-01-01`);
+  return {
+    ...milestone,
+    date: toIsoDate(date),
+  };
+}
+
+function buildTimelineMeta(rm) {
+  const barDates = rm.bars.flatMap(barItem => {
+    const startDate = parseIsoDate(barItem.startDate);
+    const endDate = parseIsoDate(barItem.endDate);
+    return [startDate, endDate].filter(Boolean);
+  });
+  const milestoneDates = rm.milestones.map(milestone => parseIsoDate(milestone.date)).filter(Boolean);
+  const allDates = [...barDates, ...milestoneDates];
+  const minDate = allDates.length ? new Date(Math.min(...allDates.map(date => date.getTime()))) : new Date(ROADMAP_YEAR, 0, 1);
+  const maxDate = allDates.length ? new Date(Math.max(...allDates.map(date => date.getTime()))) : new Date(ROADMAP_YEAR, 11, 31);
+  const rangeStart = startOfMonth(minDate);
+  const rangeEnd = endOfMonth(maxDate);
+  const rangeEndExclusive = addDays(rangeEnd, 1);
+  const totalMs = Math.max(24 * 60 * 60 * 1000, rangeEndExclusive.getTime() - rangeStart.getTime());
+  const months = [];
+  for (let cursor = new Date(rangeStart.getTime()); cursor < rangeEndExclusive; cursor = addMonths(cursor, 1)) {
+    const monthStart = startOfMonth(cursor);
+    const monthEnd = endOfMonth(cursor);
+    months.push({
+      key: `${monthStart.getFullYear()}-${monthStart.getMonth()}`,
+      year: monthStart.getFullYear(),
+      month: monthStart.getMonth(),
+      label: MONTHS[monthStart.getMonth()],
+      startDate: toIsoDate(monthStart),
+      endDate: toIsoDate(monthEnd),
+      leftPct: ((monthStart.getTime() - rangeStart.getTime()) / totalMs) * 100,
+      widthPct: ((addDays(monthEnd, 1).getTime() - monthStart.getTime()) / totalMs) * 100,
+    });
+  }
+  const quarterMap = new Map();
+  months.forEach(month => {
+    const quarterIndex = Math.floor(month.month / 3);
+    const key = `${month.year}-q${quarterIndex}`;
+    if (!quarterMap.has(key)) {
+      quarterMap.set(key, {
+        key,
+        label: `${QUARTERS[quarterIndex]} ${month.year}`,
+        leftPct: month.leftPct,
+        widthPct: 0,
+        months: [],
+      });
+    }
+    const quarter = quarterMap.get(key);
+    quarter.months.push(month);
+    quarter.widthPct += month.widthPct;
+  });
+  return {
+    startDate: toIsoDate(rangeStart),
+    endDate: toIsoDate(rangeEnd),
+    totalMs,
+    months,
+    quarters: Array.from(quarterMap.values()),
+  };
+}
+
+function percentFromTimelineDate(dateValue, timeline, endExclusive = false) {
+  const date = parseIsoDate(dateValue);
+  const timelineStart = parseIsoDate(timeline?.startDate);
+  const timelineEnd = parseIsoDate(timeline?.endDate);
+  if (!date || !timelineStart || !timelineEnd) return 0;
+  const effectiveDate = endExclusive ? addDays(date, 1) : date;
+  const rangeStartMs = timelineStart.getTime();
+  const rangeEndMs = addDays(timelineEnd, 1).getTime();
+  const clampedMs = Math.max(rangeStartMs, Math.min(rangeEndMs, effectiveDate.getTime()));
+  return ((clampedMs - rangeStartMs) / Math.max(1, rangeEndMs - rangeStartMs)) * 100;
+}
+
+function formatRoadmapMonthRange(startDateValue, endDateValue) {
+  const startDate = parseIsoDate(startDateValue);
+  const endDate = parseIsoDate(endDateValue);
+  if (!startDate || !endDate) return "—";
+  const startLabel = `${MONTHS[startDate.getMonth()]} ${startDate.getFullYear()}`;
+  const endLabel = `${MONTHS[endDate.getMonth()]} ${endDate.getFullYear()}`;
+  return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
 }
 
 function bar(lane, title, start, end, status, progress, owner) {
@@ -71,6 +210,62 @@ function bar(lane, title, start, end, status, progress, owner) {
 
 const SAMPLE_ROADMAPS = (() => {
   const roadmaps = [
+    {
+      id: "rm-it-2025-2026",
+      title: "Верхнеуровневая ИТ-дорожная карта 2025-2026",
+      desc: "Ключевые вехи ИТ-проекта: требования, разработка, проектные работы и мониторинг",
+      owner: "dmitry",
+      tag: "ИТ-проект",
+      tagColor: "#f3a236",
+      status: "active",
+      period: "Q1 – Q4 2026",
+      milestones: [
+        { name: "БТ на релиз 2 согласованы", month: 0.8 },
+        { name: "Релиз 1 DEV", month: 1.1 },
+        { name: "Релиз 1 PROD", month: 5.9 },
+        { name: "Готовность для пилота в УЦД", month: 10.7 },
+      ],
+      lanes: [
+        { id: "it1", name: "Требования", color: "#3b6fe0" },
+        { id: "it2", name: "Разработка", color: "#6d5bd0" },
+        { id: "it3", name: "Проектные работы", color: "#22b07d" },
+        { id: "it4", name: "Мониторинг", color: "#2bb6c4" },
+      ],
+      bars: [
+        bar("it1", "БТ на релиз 2: описание и согласование", 0.0, 1.2, "progress", 85, "elena"),
+        bar("it1", "Разработка ЕДТ (актуализация требований)", 0.0, 5.0, "progress", 72, "anna"),
+
+        bar("it2", "Актуализация и доработка веб-интерфейса", 0.0, 7.8, "progress", 58, "dmitry"),
+        bar("it2", "Подготовка технической документации", 0.0, 10.8, "progress", 63, "pavel"),
+        bar("it2", "Проектирование и разработка", 0.0, 4.9, "progress", 70, "dmitry"),
+        bar("it2", "ПСИ ИБ релиза 1", 5.4, 5.9, "planned", 0, "elena"),
+        bar("it2", "Постановка на сервис", 9.6, 10.8, "planned", 0, "pavel"),
+
+        bar("it3", "Переход на этап «Реализация»", 2.2, 6.0, "progress", 48, "viktor"),
+        bar("it3", "Сопровождение экспертизы и проектных решений", 1.6, 4.5, "progress", 42, "anna"),
+        bar("it3", "Регистрация РИД", 9.8, 10.8, "planned", 0, "anna"),
+
+        bar("it4", "Реализация сетевой схемы (предпрод)", 1.2, 5.0, "progress", 60, "pavel"),
+        bar("it4", "Реализация сетевой схемы (прод)", 6.8, 11.0, "planned", 0, "pavel"),
+        bar("it4", "Подключение полигона", 10.0, 11.3, "planned", 0, "dmitry"),
+      ],
+      nnl: {
+        now: [
+          { t: "БТ на релиз 2: описание и согласование", o: "elena" },
+          { t: "Разработка ЕДТ (актуализация требований)", o: "anna" },
+          { t: "Актуализация и доработка веб-интерфейса", o: "dmitry" },
+        ],
+        next: [
+          { t: "Переход на этап «Реализация»", o: "viktor" },
+          { t: "Реализация сетевой схемы (предпрод)", o: "pavel" },
+        ],
+        later: [
+          { t: "Релиз 1 PROD", o: "dmitry" },
+          { t: "Постановка на сервис", o: "pavel" },
+          { t: "Подключение полигона", o: "dmitry" },
+        ],
+      },
+    },
     {
       id: "rm-product",
       title: "Продуктовый роадмап 2026",
@@ -278,8 +473,8 @@ function MiniTimeline({ rm }) {
         <div key={i} style={{ position: "relative", height: 7, background: "#f1f4fa", borderRadius: 999 }}>
           <span style={{
             position: "absolute", top: 0, height: 7, borderRadius: 999,
-            left: `${(b.start / 12) * 100}%`,
-            width: `${((b.end - b.start) / 12) * 100}%`,
+            left: `${percentFromTimelineDate(b.startDate, rm.timeline)}%`,
+            width: `${Math.max(1.2, percentFromTimelineDate(b.endDate, rm.timeline, true) - percentFromTimelineDate(b.startDate, rm.timeline))}%`,
             background: col[b.status],
             minWidth: 4,
           }} />
@@ -394,20 +589,24 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
   const [lane,     setLane]     = useState(initBar?.lane     || lanes[0]?.id || "");
   const [status,   setStatus]   = useState(initBar?.status   || "planned");
   const [progress, setProgress] = useState(initBar?.progress ?? 0);
-  const [startDate, setStartDate] = useState(monthValueToDate(initBar?.start ?? 0, 0));
-  const [endDate,   setEndDate]   = useState(monthValueToDate(initBar?.end ?? 3, 2, true));
+  const [startDate, setStartDate] = useState(initBar?.startDate || monthValueToDate(initBar?.start ?? 0, 0));
+  const [endDate,   setEndDate]   = useState(initBar?.endDate || monthValueToDate(initBar?.end ?? 3, 2, true));
   const [owner,    setOwner]    = useState(initBar?.owner    || "viktor");
   const [error,    setError]    = useState("");
 
   function handleSubmit(e) {
     e.preventDefault();
-    const start = dateToMonthValue(startDate);
-    const end = dateToMonthValue(endDate, true);
-    if (end <= start) {
+    const start = parseIsoDate(startDate);
+    const end = parseIsoDate(endDate);
+    if (!start || !end) {
+      setError("Укажите корректные даты начала и окончания");
+      return;
+    }
+    if (end < start) {
       setError("Дата окончания должна быть позже даты начала");
       return;
     }
-    onSave({ title, lane, status, progress: Number(progress), start, end, owner });
+    onSave({ title, lane, status, progress: Number(progress), startDate, endDate, owner });
     onClose();
   }
 
@@ -457,8 +656,8 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
             <label style={labelStyle}>Начало периода</label>
             <input
               type="date"
-              min={`${ROADMAP_YEAR}-01-01`}
-              max={`${ROADMAP_YEAR}-12-31`}
+              min={DEFAULT_DATE_MIN}
+              max={DEFAULT_DATE_MAX}
               value={startDate}
               onChange={e => { setStartDate(e.target.value); setError(""); }}
               style={{ ...inputStyle, cursor: "pointer" }}
@@ -468,8 +667,8 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
             <label style={labelStyle}>Конец периода</label>
             <input
               type="date"
-              min={`${ROADMAP_YEAR}-01-01`}
-              max={`${ROADMAP_YEAR}-12-31`}
+              min={DEFAULT_DATE_MIN}
+              max={DEFAULT_DATE_MAX}
               value={endDate}
               onChange={e => { setEndDate(e.target.value); setError(""); }}
               style={{ ...inputStyle, cursor: "pointer" }}
@@ -522,12 +721,12 @@ function BarFormModal({ bar: initBar, lanes, onClose, onSave, onDelete }) {
 function MilestoneFormModal({ milestone, onClose, onSave, onDelete }) {
   const isEdit = Boolean(milestone);
   const [name, setName] = useState(milestone?.name || "");
-  const [date, setDate] = useState(monthValueToDate(milestone?.month ?? 0));
+  const [date, setDate] = useState(milestone?.date || monthValueToDate(milestone?.month ?? 0));
   const [color, setColor] = useState(milestone?.color || DEFAULT_MILESTONE_COLOR);
 
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ name, month: dateToMonthValue(date), color });
+    onSave({ name, date, color });
     onClose();
   }
 
@@ -561,8 +760,8 @@ function MilestoneFormModal({ milestone, onClose, onSave, onDelete }) {
           <label style={labelStyle}>Дата вехи</label>
           <input
             type="date"
-            min={`${ROADMAP_YEAR}-01-01`}
-            max={`${ROADMAP_YEAR}-12-31`}
+            min={DEFAULT_DATE_MIN}
+            max={DEFAULT_DATE_MAX}
             value={date}
             onChange={e => setDate(e.target.value)}
             style={{ ...inputStyle, cursor: "pointer" }}
@@ -631,7 +830,6 @@ function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
   const [desc, setDesc]         = useState(roadmap?.desc        || "");
   const [tag, setTag]           = useState(roadmap?.tag         || "");
   const [tagColor, setTagColor] = useState(roadmap?.tagColor    || TAG_COLORS[0]);
-  const [period, setPeriod]     = useState(roadmap?.period      || "");
   const [owner, setOwner]       = useState(roadmap?.owner       || "viktor");
   const [status, setStatus]     = useState(roadmap?.status      || "active");
   const [lanes, setLanes]       = useState(roadmap?.lanes       || []);
@@ -650,7 +848,7 @@ function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ ...(roadmap || {}), title, desc, tag, tagColor, period, owner, status, lanes });
+    onSave({ ...(roadmap || {}), title, desc, tag, tagColor, owner, status, lanes });
     onClose();
   }
 
@@ -692,7 +890,7 @@ function RoadmapFormModal({ roadmap, onClose, onSave, onDelete }) {
           </div>
           <div>
             <label style={labelStyle}>Период</label>
-            <input value={period} onChange={e => setPeriod(e.target.value)} style={inputStyle} placeholder="Q1 – Q4 2026" />
+            <input value={roadmap?.period || "Автоматически по срокам задач"} readOnly style={{ ...inputStyle, background: "#f8fbff", color: "#94a3b8" }} />
           </div>
         </div>
 
@@ -988,8 +1186,8 @@ const TIMELINE_LANE_ROW_HEIGHT = 40;
 
 function GanttBar({ b, hover, setHover, idx, onBarClick }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
-  const left = (b.start / 12) * 100;
-  const width = ((b.end - b.start) / 12) * 100;
+  const left = percentFromTimelineDate(b.startDate, b.timeline);
+  const width = Math.max(0.9, percentFromTimelineDate(b.endDate, b.timeline, true) - left);
   const isHov = hover === idx;
   return (
     <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
@@ -1022,36 +1220,57 @@ function GanttBar({ b, hover, setHover, idx, onBarClick }) {
 
 function TimelineView({ rm, onBarClick, onMilestoneClick }) {
   const [hover, setHover] = useState(null);
-  const today = getRoadmapToday();
-  const todayMonth = today.month + today.day / 31;
-  const todayPct = (todayMonth / 12) * 100;
+  const timeline = rm.timeline;
+  const today = new Date();
+  const todayIso = toIsoDate(today);
+  const todayPct = percentFromTimelineDate(todayIso, timeline);
+  const showToday = todayPct >= 0 && todayPct <= 100
+    && today >= parseIsoDate(timeline.startDate)
+    && today <= addDays(parseIsoDate(timeline.endDate), 1);
 
   const rows = [];
   rm.lanes.forEach(lane => {
     const laneBars = rm.bars.filter(b => b.lane === lane.id);
     rows.push({ type: "lane", lane });
-    laneBars.forEach(b => rows.push({ type: "bar", b, idx: rm.bars.indexOf(b) }));
+    laneBars.forEach(b => rows.push({ type: "bar", b: { ...b, timeline }, idx: rm.bars.indexOf(b) }));
   });
 
   const sideW = 340;
+  const stickyTop = 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      <div style={{ overflowX: "auto" }}>
+      <div style={{ overflow: "auto", maxHeight: "min(70vh, 960px)" }}>
         {/* Шапка */}
-        <div style={{ display: "flex", borderBottom: "1px solid #e8f0fa", position: "sticky", top: 0, background: "#fff", zIndex: 4 }}>
-          <div style={{ width: sideW, flexShrink: 0, padding: "14px 20px", fontSize: 12, fontWeight: 700, color: "#94a3b8", borderRight: "1px solid #e8f0fa" }}>
+        <div style={{ display: "flex", borderBottom: "1px solid #e8f0fa", position: "sticky", top: stickyTop, background: "#fff", zIndex: 8 }}>
+          <div style={{
+            width: sideW,
+            flexShrink: 0,
+            padding: "14px 20px",
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#94a3b8",
+            borderRight: "1px solid #e8f0fa",
+            position: "sticky",
+            top: stickyTop,
+            left: 0,
+            zIndex: 10,
+            background: "#fff",
+            boxShadow: "8px 0 16px rgba(15,23,42,.04)",
+          }}>
             Направление / задача
           </div>
-          <div style={{ flex: 1, minWidth: 720, display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
-            {QUARTERS.map((q, qi) => (
-              <div key={q} style={{ borderRight: qi < 3 ? "1px solid #e8f0fa" : "none" }}>
+          <div style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), display: "flex" }}>
+            {timeline.quarters.map((quarter, qi) => (
+              <div key={quarter.key} style={{ width: `${quarter.widthPct}%`, borderRight: qi < timeline.quarters.length - 1 ? "1px solid #e8f0fa" : "none" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, padding: "10px 0 6px", textAlign: "center", color: "#1e3a6e" }}>
-                  {q} <span style={{ color: "#94a3b8", fontWeight: 500, fontSize: 11 }}>2026</span>
+                  {quarter.label}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
-                  {[0,1,2].map(m => (
-                    <div key={m} style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", paddingBottom: 8 }}>{MONTHS[qi*3+m]}</div>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${quarter.months.length}, 1fr)` }}>
+                  {quarter.months.map(month => (
+                    <div key={month.key} style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", paddingBottom: 8 }}>
+                      {month.label}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1062,7 +1281,16 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
         {/* Тело */}
         <div style={{ display: "flex" }}>
           {/* Левый сайдбар */}
-          <div style={{ width: sideW, flexShrink: 0, borderRight: "1px solid #e8f0fa" }}>
+          <div style={{
+            width: sideW,
+            flexShrink: 0,
+            borderRight: "1px solid #e8f0fa",
+            position: "sticky",
+            left: 0,
+            zIndex: 6,
+            background: "#fff",
+            boxShadow: "8px 0 16px rgba(15,23,42,.04)",
+          }}>
             {rows.map((r, i) => r.type === "lane" ? (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "#f7f9fd", fontSize: 12, fontWeight: 700, color: "#1e3a6e" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />
@@ -1076,34 +1304,38 @@ function TimelineView({ rm, onBarClick, onMilestoneClick }) {
           </div>
 
           {/* Сетка Gantt */}
-          <div style={{ flex: 1, minWidth: 720, position: "relative", minHeight: rows.length === 0 ? 120 : undefined }}>
+          <div style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: rows.length === 0 ? 120 : undefined }}>
             {/* Вертикальные линии */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
-              {Array.from({ length: 12 }).map((_, i) => (
+              {timeline.months.map((month, i) => (
                 <span key={i} style={{
                   position: "absolute", top: 0, bottom: 0, width: 1,
-                  background: i % 3 === 0 ? "#dde8f5" : "#eef3fa",
-                  left: `${(i / 12) * 100}%`,
+                  background: month.month % 3 === 0 ? "#dde8f5" : "#eef3fa",
+                  left: `${month.leftPct}%`,
                 }} />
               ))}
+              <span style={{ position: "absolute", top: 0, bottom: 0, width: 1, background: "#dde8f5", left: "100%" }} />
             </div>
             {/* Линия сегодня */}
-            <div style={{ position: "absolute", top: 0, bottom: 0, width: 2, background: "#ef4444", left: todayPct + "%", zIndex: 3 }}>
-              <span style={{
-                position: "absolute", top: -2, left: "50%", transform: "translateX(-50%)",
-                background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700,
-                padding: "2px 7px", borderRadius: "0 0 6px 6px", whiteSpace: "nowrap",
-              }}>сегодня</span>
-            </div>
+            {showToday && (
+              <div style={{ position: "absolute", top: 0, bottom: 0, width: 2, background: "#ef4444", left: todayPct + "%", zIndex: 3 }}>
+                <span style={{
+                  position: "absolute", top: -2, left: "50%", transform: "translateX(-50%)",
+                  background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700,
+                  padding: "2px 7px", borderRadius: "0 0 6px 6px", whiteSpace: "nowrap",
+                }}>сегодня</span>
+              </div>
+            )}
             {/* Вехи */}
             {rm.milestones.map((m, i) => {
               const milestoneColor = m.color || DEFAULT_MILESTONE_COLOR;
+              const milestonePct = percentFromTimelineDate(m.date, timeline);
               return (
                 <div
                   key={i}
                   style={{
                     position: "absolute", top: 0, bottom: 0, zIndex: 3,
-                    left: `${(m.month / 12) * 100}%`, transform: "translateX(-50%)",
+                    left: `${milestonePct}%`, transform: "translateX(-50%)",
                     display: "flex", flexDirection: "column", alignItems: "center",
                     pointerEvents: "none",
                   }}>
@@ -1182,7 +1414,7 @@ function SwimlanesView({ rm, onBarClick }) {
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: c.bar, fontWeight: 600 }}>{label}</span>
-                      <span style={{ color: "#94a3b8" }}>{MONTHS[Math.floor(b.start)]}–{MONTHS[Math.min(11, Math.floor(b.end))]}</span>
+                      <span style={{ color: "#94a3b8" }}>{formatRoadmapMonthRange(b.startDate, b.endDate)}</span>
                     </div>
                   </div>
                 );
@@ -1198,16 +1430,17 @@ function SwimlanesView({ rm, onBarClick }) {
 // ── Now / Next / Later ─────────────────────────────────────────────────────
 
 function buildNowNextLater(rm) {
-  const today = getRoadmapToday();
-  const todayMonth = today.month + (today.day - 1) / daysInRoadmapMonth(today.month);
+  const today = startOfDay(new Date());
   const active = [];
   const upcoming = [];
 
   (rm.bars || []).forEach((barItem, idx) => {
     if (barItem.status === "done") return;
     const item = { ...barItem, idx };
-    const startsNowOrPast = Number(barItem.start) <= todayMonth;
-    const endsFuture = Number(barItem.end) > todayMonth;
+    const startDate = parseIsoDate(barItem.startDate);
+    const endDate = parseIsoDate(barItem.endDate);
+    const startsNowOrPast = startDate && startDate <= today;
+    const endsFuture = endDate && endDate >= today;
     if (barItem.status === "progress" || (startsNowOrPast && endsFuture)) {
       active.push(item);
       return;
@@ -1215,8 +1448,8 @@ function buildNowNextLater(rm) {
     upcoming.push(item);
   });
 
-  active.sort((a, b) => a.end - b.end || a.start - b.start);
-  upcoming.sort((a, b) => a.start - b.start || a.end - b.end);
+  active.sort((a, b) => String(a.endDate).localeCompare(String(b.endDate)) || String(a.startDate).localeCompare(String(b.startDate)));
+  upcoming.sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || String(a.endDate).localeCompare(String(b.endDate)));
 
   return {
     now: active,
@@ -1248,8 +1481,6 @@ function NNLView({ rm, onBarClick }) {
             )}
             {grouped[col.key].map((item, i) => {
               const statusColor = (BAR_COL[item.status] || BAR_COL.planned).bar;
-              const startMonth = MONTHS[Math.max(0, Math.min(11, Math.floor(item.start)))];
-              const endMonth = MONTHS[Math.max(0, Math.min(11, Math.floor(item.end)))];
               const label = item.status === "progress" ? `${item.progress}%` : "Запланировано";
               return (
               <div key={i} onClick={() => onBarClick && onBarClick(item, item.idx)} style={{
@@ -1267,7 +1498,7 @@ function NNLView({ rm, onBarClick }) {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, fontWeight: 600 }}>
                   <span style={{ color: statusColor }}>{label}</span>
-                  <span style={{ color: "#94a3b8", whiteSpace: "nowrap" }}>{startMonth}–{endMonth}</span>
+                  <span style={{ color: "#94a3b8", whiteSpace: "nowrap" }}>{formatRoadmapMonthRange(item.startDate, item.endDate)}</span>
                 </div>
               </div>
               );
@@ -1459,7 +1690,7 @@ function RoadmapDetail({ rm, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMiles
       )}
 
       {/* Контент вкладки */}
-      <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
+      <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
         {tab === "timeline" && <TimelineView rm={rm} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} />}
         {tab === "swim"     && <SwimlanesView rm={rm} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
         {tab === "nnl"      && <NNLView rm={rm} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
@@ -1471,25 +1702,40 @@ function RoadmapDetail({ rm, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMiles
 // ── Главный экспорт ────────────────────────────────────────────────────────
 
 function recalc(rm) {
-  const total = rm.bars.length || 1;
+  const baseYear = inferRoadmapBaseYear(rm);
+  const bars = (rm.bars || []).map(barItem => normalizeBarDates(barItem, baseYear));
+  const milestones = (rm.milestones || []).map(milestone => normalizeMilestoneDate(milestone, baseYear));
+  const timeline = buildTimelineMeta({ ...rm, bars, milestones });
+  const total = bars.length || 1;
   return {
     ...rm,
-    progress: Math.round(rm.bars.reduce((a, b) => a + b.progress, 0) / total),
-    tasksDone: rm.bars.filter(b => b.status === "done").length,
-    tasksTotal: rm.bars.length,
+    bars,
+    milestones,
+    timeline,
+    period: buildRoadmapPeriodLabel(parseIsoDate(timeline.startDate), parseIsoDate(timeline.endDate)),
+    progress: Math.round(bars.reduce((a, b) => a + b.progress, 0) / total),
+    tasksDone: bars.filter(b => b.status === "done").length,
+    tasksTotal: bars.length,
   };
 }
 
 const LS_KEY = "dashboard_roadmaps_v1";
 
+function mergeRoadmapsWithSamples(storedRoadmaps) {
+  const sampleById = new Map(SAMPLE_ROADMAPS.map(roadmap => [roadmap.id, roadmap]));
+  const normalizedStored = (Array.isArray(storedRoadmaps) ? storedRoadmaps : []).map(roadmap => recalc(roadmap));
+  const missingSamples = SAMPLE_ROADMAPS.filter(roadmap => !normalizedStored.some(item => item.id === roadmap.id));
+  return [...missingSamples, ...normalizedStored].map(roadmap => recalc(sampleById.get(roadmap.id) ? { ...sampleById.get(roadmap.id), ...roadmap } : roadmap));
+}
+
 function loadRoadmaps() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return mergeRoadmapsWithSamples(JSON.parse(raw));
   } catch {
     // Ignore corrupted local roadmap state and fall back to samples.
   }
-  return SAMPLE_ROADMAPS;
+  return SAMPLE_ROADMAPS.map(recalc);
 }
 
 export default function RoadmapsSection() {
