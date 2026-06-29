@@ -186,10 +186,15 @@ def delete_event(event_id: int, user: dict[str, Any] = Depends(require_auth)) ->
         return {"ok": True}
 
 
-@router.post("/events/{event_id}/tasks", dependencies=[Depends(require_auth)])
+@router.post("/events/{event_id}/tasks")
 async def create_event_task(event_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
+        event = conn.execute("SELECT * FROM events WHERE id = %s", (event_id,)).fetchone()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        if not can_manage_owner_row(event, user):
+            raise HTTPException(status_code=403, detail="Event access denied")
         row = conn.execute(
             "INSERT INTO event_tasks (event_id, title, description, owner_id, assignee_id, due, done) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
             (
@@ -199,7 +204,7 @@ async def create_event_task(event_id: int, request: Request, user: dict[str, Any
                 resolve_owner_id(conn, user),
                 payload.get("assigneeId"),
                 clean_date(payload.get("due")),
-                payload.get("done", False),
+                clean_bool(payload.get("done", False)),
             ),
         ).fetchone()
         return event_task_json(row)
@@ -223,6 +228,8 @@ async def update_event_task(event_id: int, task_id: int, request: Request, user:
                 fields.append(f"{column} = %s")
                 if key == "due":
                     values.append(clean_date(payload[key]))
+                elif key == "done":
+                    values.append(clean_bool(payload[key]))
                 else:
                     values.append(payload[key])
         if not fields:
