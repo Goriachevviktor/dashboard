@@ -31,8 +31,10 @@ services:
       DASHBOARD_ADMIN_PASSWORD: ${DASHBOARD_ADMIN_PASSWORD}
       DASHBOARD_ADMIN_NAME: ${DASHBOARD_ADMIN_NAME}
       DASHBOARD_VAPID_PUBLIC_KEY: ${DASHBOARD_VAPID_PUBLIC_KEY}
-      DASHBOARD_VAPID_PRIVATE_KEY_FILE: /app/app/vapid_private.pem
+      DASHBOARD_VAPID_PRIVATE_KEY_FILE: /run/secrets/vapid_private_key
       DASHBOARD_VAPID_CLAIMS_SUB: ${DASHBOARD_VAPID_CLAIMS_SUB}
+    volumes:
+      - ./vapid_private.pem:/run/secrets/vapid_private_key:ro
     depends_on:
       dashboard-db:
         condition: service_healthy

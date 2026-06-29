@@ -1,0 +1,3 @@
+api/app/vapid_private.pem
+.env
+*.pem
