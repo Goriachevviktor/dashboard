@@ -412,9 +412,11 @@ def migrate_auth_schema() -> None:
         admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
         if not admin_owner:
             admin_owner = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
-        if admin_owner:
-            for table_name in owner_scoped_tables:
-                conn.execute(f"UPDATE {table_name} SET owner_id = %s WHERE owner_id IS NULL", (admin_owner["id"],))
+        if not applied("010_backfill_owner_id_pre_admin"):
+            if admin_owner:
+                for table_name in owner_scoped_tables:
+                    conn.execute(f"UPDATE {table_name} SET owner_id = %s WHERE owner_id IS NULL", (admin_owner["id"],))
+            mark_applied("010_backfill_owner_id_pre_admin")
         if ADMIN_EMAIL and ADMIN_PASSWORD:
             existing = conn.execute("SELECT id FROM users WHERE lower(email) = lower(%s)", (ADMIN_EMAIL,)).fetchone()
             if not existing:
@@ -422,7 +424,9 @@ def migrate_auth_schema() -> None:
                     "INSERT INTO users (email, password_hash, display_name, role) VALUES (%s, %s, %s, 'admin')",
                     (ADMIN_EMAIL.lower(), hash_password(ADMIN_PASSWORD), ADMIN_NAME),
                 )
-        admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
-        if admin_owner:
-            for table_name in owner_scoped_tables:
-                conn.execute(f"UPDATE {table_name} SET owner_id = %s WHERE owner_id IS NULL", (admin_owner["id"],))
+        if not applied("011_backfill_owner_id_post_admin"):
+            admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+            if admin_owner:
+                for table_name in owner_scoped_tables:
+                    conn.execute(f"UPDATE {table_name} SET owner_id = %s WHERE owner_id IS NULL", (admin_owner["id"],))
+            mark_applied("011_backfill_owner_id_post_admin")
