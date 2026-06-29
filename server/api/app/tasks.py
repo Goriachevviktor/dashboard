@@ -1,4 +1,5 @@
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,6 +13,7 @@ from .utils import (
     resolve_active_user_id, resolve_owner_id,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -161,8 +163,13 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
         ).fetchone()
         sync_task_members(conn, row["id"], row["owner_id"], row["assignee_id"], payload.get("memberIds", []))
         task = fetch_task(conn, row["id"])
-        notify_task_created(conn, task, user)
-        return task
+
+    try:
+        notify_task_created(task, user)
+    except Exception:
+        logger.exception("Failed to send push notification for task %s", task.get("id"))
+
+    return task
 
 
 @router.patch("/tasks/{task_id}")

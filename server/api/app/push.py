@@ -48,7 +48,7 @@ def notify_push_subscriptions(subscriptions: list[dict[str, Any]], payload: dict
     return sum(1 for sub in subscriptions if send_push_notification(sub, payload))
 
 
-def notify_task_created(conn, task: dict[str, Any], actor: dict[str, Any]) -> None:
+def notify_task_created(task: dict[str, Any], actor: dict[str, Any]) -> None:
     actor_name = actor.get("display_name") or actor.get("email") or "Пользователь"
     payload = {
         "title": "Новая задача",
@@ -59,10 +59,11 @@ def notify_task_created(conn, task: dict[str, Any], actor: dict[str, Any]) -> No
     recipient_ids = [uid for uid in {task.get("ownerId"), task.get("assigneeId")} if uid is not None]
     if not recipient_ids:
         return
-    subscriptions = conn.execute(
-        "SELECT * FROM push_subscriptions WHERE user_id = ANY(%s) ORDER BY id",
-        (recipient_ids,),
-    ).fetchall()
+    with db() as conn:
+        subscriptions = conn.execute(
+            "SELECT * FROM push_subscriptions WHERE user_id = ANY(%s) ORDER BY id",
+            (recipient_ids,),
+        ).fetchall()
     notify_push_subscriptions(subscriptions, payload)
 
 
