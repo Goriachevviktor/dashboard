@@ -12,6 +12,7 @@ from .config import (
     REFRESH_COOKIE_NAME, REFRESH_TOKEN_TTL_DAYS,
 )
 from .db import db
+from .main import limiter
 
 router = APIRouter()
 
@@ -216,6 +217,7 @@ def refresh_user_from_token(conn, refresh_token: str | None) -> dict[str, Any]:
 
 
 @router.post("/auth/login")
+@limiter.limit("10/minute")
 async def login(request: Request, response: Response) -> dict[str, Any]:
     payload = await request.json()
     email = (payload.get("email") or "").strip().lower()
@@ -234,7 +236,9 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
 
 
 @router.post("/auth/refresh")
+@limiter.limit("20/minute")
 def refresh_session(
+    request: Request,
     response: Response,
     dashboard_refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
 ) -> dict[str, Any]:

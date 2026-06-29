@@ -3,6 +3,9 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from .ambp import ambp_topic_json, router as ambp_router
 from .auth import require_auth, router as auth_router
@@ -22,6 +25,10 @@ from .utils import visible_owner_rows
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Dashboard API")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
