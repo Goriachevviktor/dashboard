@@ -429,7 +429,9 @@ def migrate_auth_schema() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_development_tasks_owner_id ON development_tasks(owner_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ucp_checkpoints_task_id ON ucp_checkpoints (task_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_dev_checkpoints_task_id ON development_task_checkpoints (task_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_task_members_task_id ON task_members (task_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_task_members_member_id ON task_members (member_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ucp_task_members_member_id ON ucp_task_members (member_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dev_task_members_member_id ON development_task_members (member_id)")
         admin_owner = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
         if not admin_owner:
             admin_owner = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
