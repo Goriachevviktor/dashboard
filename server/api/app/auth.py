@@ -145,15 +145,14 @@ def require_auth(
     authorization: str | None = Header(default=None),
     x_dashboard_token: str | None = Header(default=None, alias="X-Dashboard-Token"),
 ) -> dict[str, Any]:
-    header_ok = x_dashboard_token == API_TOKEN
-    if API_TOKEN and header_ok:
+    if API_TOKEN and x_dashboard_token and secrets.compare_digest(x_dashboard_token, API_TOKEN):
         return {"id": 0, "email": "system", "display_name": "System", "role": "admin", "is_active": True}
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     token = authorization.removeprefix("Bearer ").strip()
-    if API_TOKEN and token == API_TOKEN:
+    if API_TOKEN and secrets.compare_digest(token, API_TOKEN):
         return {"id": 0, "email": "system", "display_name": "System", "role": "admin", "is_active": True}
 
     ensure_auth_config()
