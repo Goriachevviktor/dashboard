@@ -12,7 +12,7 @@ from .config import (
     REFRESH_COOKIE_NAME, REFRESH_TOKEN_TTL_DAYS,
 )
 from .db import db
-from .main import limiter
+from .rate_limiter import limiter
 
 router = APIRouter()
 
