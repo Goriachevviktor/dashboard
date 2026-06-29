@@ -60,29 +60,18 @@ function normalizeMember(member, index = 0) {
 function buildMemberRegistry(team = [], currentUser = null) {
   const registry = new Map();
   const source = Array.isArray(team) ? team : [];
-  const nameRegistry = new Set();
   source.forEach((member, index) => {
     const normalized = normalizeMember(member, index);
     if (normalized) {
       registry.set(normalized.key, normalized);
-      nameRegistry.add(normalized.name.trim().toLowerCase());
-      if (normalized.email) nameRegistry.add(normalized.email.trim().toLowerCase());
     }
   });
   if (currentUser) {
     const normalizedCurrentUser = normalizeMember(currentUser, registry.size);
     if (normalizedCurrentUser && !registry.has(normalizedCurrentUser.key)) {
       registry.set(normalizedCurrentUser.key, normalizedCurrentUser);
-      nameRegistry.add(normalizedCurrentUser.name.trim().toLowerCase());
-      if (normalizedCurrentUser.email) nameRegistry.add(normalizedCurrentUser.email.trim().toLowerCase());
     }
   }
-  Object.entries(OWNERS).forEach(([id, owner], index) => {
-    const ownerNameKey = owner.name.trim().toLowerCase();
-    if (!registry.has(id) && !nameRegistry.has(ownerNameKey)) {
-      registry.set(id, normalizeMember({ id, name: owner.name, initials: owner.initials, color: owner.color }, source.length + index));
-    }
-  });
   return Array.from(registry.values());
 }
 
@@ -94,6 +83,63 @@ function getMemberById(members, id) {
 function sanitizeMemberIds(memberIds, ownerId) {
   const ownerKey = memberKey(ownerId);
   return Array.from(new Set((Array.isArray(memberIds) ? memberIds : []).map(memberKey).filter(Boolean))).filter(id => id !== ownerKey);
+}
+
+function normalizeLookupValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildLegacyOwnerLookup(members) {
+  const lookup = new Map();
+  members.forEach(member => {
+    lookup.set(member.key, member.key);
+    lookup.set(normalizeLookupValue(member.name), member.key);
+    if (member.email) lookup.set(normalizeLookupValue(member.email), member.key);
+  });
+  Object.entries(OWNERS).forEach(([legacyId, owner]) => {
+    const mappedKey = lookup.get(normalizeLookupValue(owner.name)) || lookup.get(normalizeLookupValue(owner.email));
+    if (mappedKey) {
+      lookup.set(legacyId, mappedKey);
+      lookup.set(normalizeLookupValue(owner.name), mappedKey);
+    }
+  });
+  return lookup;
+}
+
+function resolveMemberReference(value, lookup) {
+  const key = memberKey(value);
+  if (!key) return "";
+  return lookup.get(key) || lookup.get(normalizeLookupValue(key)) || "";
+}
+
+function migrateBarAssignments(barItem, lookup) {
+  const migratedOwner = resolveMemberReference(barItem?.owner, lookup);
+  const migratedMemberIds = Array.from(new Set((Array.isArray(barItem?.memberIds) ? barItem.memberIds : [])
+    .map(id => resolveMemberReference(id, lookup))
+    .filter(Boolean)))
+    .filter(id => id !== migratedOwner);
+  const changed = memberKey(barItem?.owner) !== migratedOwner
+    || JSON.stringify(sanitizeMemberIds(barItem?.memberIds, barItem?.owner)) !== JSON.stringify(migratedMemberIds);
+  return changed ? { ...barItem, owner: migratedOwner, memberIds: migratedMemberIds } : barItem;
+}
+
+function migrateRoadmapAssignments(roadmap, lookup) {
+  const migratedOwner = resolveMemberReference(roadmap?.owner, lookup);
+  const migratedMemberIds = Array.from(new Set((Array.isArray(roadmap?.memberIds) ? roadmap.memberIds : [])
+    .map(id => resolveMemberReference(id, lookup))
+    .filter(Boolean)))
+    .filter(id => id !== migratedOwner);
+  const migratedBars = (roadmap?.bars || []).map(barItem => migrateBarAssignments(barItem, lookup));
+  const changedOwner = memberKey(roadmap?.owner) !== migratedOwner;
+  const changedMembers = JSON.stringify(sanitizeMemberIds(roadmap?.memberIds, roadmap?.owner)) !== JSON.stringify(migratedMemberIds);
+  const changedBars = migratedBars.some((barItem, index) => barItem !== (roadmap?.bars || [])[index]);
+  if (!changedOwner && !changedMembers && !changedBars) return roadmap;
+  return {
+    ...roadmap,
+    owner: migratedOwner,
+    memberIds: migratedMemberIds,
+    bars: migratedBars,
+  };
 }
 
 function AvatarStack({ members = [], size = 22, max = 3 }) {
@@ -201,7 +247,7 @@ function normalizeBarDates(barItem, baseYear = ROADMAP_YEAR) {
   const startDate = parseIsoDate(barItem?.startDate) || parseIsoDate(legacyStart) || parseIsoDate(`${baseYear}-01-01`);
   const endDate = parseIsoDate(barItem?.endDate) || parseIsoDate(legacyEnd) || startDate;
   const safeEndDate = endDate < startDate ? startDate : endDate;
-  const owner = barItem?.owner ?? "viktor";
+  const owner = memberKey(barItem?.owner);
   return {
     ...barItem,
     owner,
@@ -1905,7 +1951,7 @@ function recalc(rm) {
   const milestones = (rm.milestones || []).map(milestone => normalizeMilestoneDate(milestone, baseYear));
   const timeline = buildTimelineMeta({ ...rm, bars, milestones });
   const total = bars.length || 1;
-  const owner = rm?.owner ?? "viktor";
+  const owner = memberKey(rm?.owner);
   return {
     ...rm,
     owner,
@@ -1925,8 +1971,7 @@ const LS_KEY = "dashboard_roadmaps_v1";
 function mergeRoadmapsWithSamples(storedRoadmaps) {
   const sampleById = new Map(SAMPLE_ROADMAPS.map(roadmap => [roadmap.id, roadmap]));
   const normalizedStored = (Array.isArray(storedRoadmaps) ? storedRoadmaps : []).map(roadmap => recalc(roadmap));
-  const missingSamples = SAMPLE_ROADMAPS.filter(roadmap => !normalizedStored.some(item => item.id === roadmap.id));
-  return [...missingSamples, ...normalizedStored].map(roadmap => recalc(sampleById.get(roadmap.id) ? { ...sampleById.get(roadmap.id), ...roadmap } : roadmap));
+  return normalizedStored.map(roadmap => recalc(sampleById.get(roadmap.id) ? { ...sampleById.get(roadmap.id), ...roadmap } : roadmap));
 }
 
 function loadRoadmaps() {
@@ -1950,22 +1995,42 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
 
   useEffect(() => {
     let cancelled = false;
+    function migrateAssignments(memberSource) {
+      const resolvedMembers = buildMemberRegistry(memberSource, currentUser);
+      if (!resolvedMembers.length) return;
+      const lookup = buildLegacyOwnerLookup(resolvedMembers);
+      setRoadmaps(currentRoadmaps => {
+        let changed = false;
+        const nextRoadmaps = currentRoadmaps.map(roadmap => {
+          const migrated = migrateRoadmapAssignments(roadmap, lookup);
+          if (migrated !== roadmap) changed = true;
+          return migrated === roadmap ? roadmap : recalc(migrated);
+        });
+        return changed ? nextRoadmaps : currentRoadmaps;
+      });
+    }
+
     async function loadUserDirectory() {
-      if (!api?.listUsers) return;
+      if (!api?.listUsers) {
+        if (!cancelled) migrateAssignments(team);
+        return;
+      }
       try {
         const users = await api.listUsers();
         if (!cancelled && Array.isArray(users) && users.length) {
           setUserDirectory(users);
+          migrateAssignments(users);
         }
       } catch {
         if (!cancelled) {
           setUserDirectory([]);
+          migrateAssignments(team);
         }
       }
     }
     loadUserDirectory();
     return () => { cancelled = true; };
-  }, [api]);
+  }, [api, team, currentUser]);
 
   useEffect(() => {
     try {
