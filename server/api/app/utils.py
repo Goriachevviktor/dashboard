@@ -11,7 +11,7 @@ def clean_date(value: Any) -> str | None:
         return None
     from datetime import date as _date
     if isinstance(value, _date):
-        return value
+        return value.isoformat()
     try:
         _date.fromisoformat(str(value))
         return str(value)

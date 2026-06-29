@@ -210,6 +210,12 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
                         fields.append("completed_at = COALESCE(completed_at, now())")
                     elif next_column != "Архив":
                         fields.append("completed_at = NULL")
+                elif key == "priority":
+                    VALID_PRIORITIES = {"Высокий", "Средний", "Низкий", ""}
+                    raw = (payload[key] or "").strip()
+                    if raw not in VALID_PRIORITIES:
+                        raise HTTPException(status_code=400, detail=f"Invalid priority: {payload[key]!r}")
+                    values.append(raw)
                 else:
                     values.append(payload[key])
         has_members = "memberIds" in payload

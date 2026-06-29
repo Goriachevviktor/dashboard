@@ -166,8 +166,21 @@ async def update_event(event_id: int, request: Request, user: dict[str, Any] = D
                     fields.append(f"{column} = %s")
                     values.append(resolve_active_user_id(conn, payload[key]))
                     continue
-                fields.append(f"{column} = %s")
-                values.append(payload[key])
+                elif key == "month":
+                    val = payload[key]
+                    if not isinstance(val, int) or not (0 <= val <= 11):
+                        raise HTTPException(status_code=400, detail="month must be integer 0-11")
+                    fields.append(f"{column} = %s")
+                    values.append(val)
+                elif key == "day":
+                    val = payload[key]
+                    if not isinstance(val, int) or not (1 <= val <= 31):
+                        raise HTTPException(status_code=400, detail="day must be integer 1-31")
+                    fields.append(f"{column} = %s")
+                    values.append(val)
+                else:
+                    fields.append(f"{column} = %s")
+                    values.append(payload[key])
         row = existing
         if fields:
             values.append(event_id)
