@@ -96,7 +96,7 @@ def sync_event_members(conn, event_id: int, member_ids: list[int]) -> list[int]:
     return member_ids
 
 
-@router.get("/events", dependencies=[Depends(require_auth)])
+@router.get("/events")
 def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     from .ucp import visible_ucp_tasks
     from .development import visible_development_tasks, generated_roadmap_events
@@ -114,7 +114,7 @@ def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, 
         return [event_json(item, members.get(item["id"], [])) for item in events] + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks, development_checkpoints)]
 
 
-@router.post("/events", dependencies=[Depends(require_auth)])
+@router.post("/events")
 async def create_event(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
@@ -134,7 +134,7 @@ async def create_event(request: Request, user: dict[str, Any] = Depends(require_
         return event_json(row, members)
 
 
-@router.patch("/events/{event_id}", dependencies=[Depends(require_auth)])
+@router.patch("/events/{event_id}")
 async def update_event(event_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {"title": "title", "description": "description", "month": "month", "day": "day", "type": "type", "done": "done", "ownerId": "owner_id"}
@@ -174,7 +174,7 @@ async def update_event(event_id: int, request: Request, user: dict[str, Any] = D
         return event_json(row, members)
 
 
-@router.delete("/events/{event_id}", dependencies=[Depends(require_auth)])
+@router.delete("/events/{event_id}")
 def delete_event(event_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM events WHERE id = %s", (event_id,)).fetchone()
@@ -210,7 +210,7 @@ async def create_event_task(event_id: int, request: Request, user: dict[str, Any
         return event_task_json(row)
 
 
-@router.patch("/events/{event_id}/tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.patch("/events/{event_id}/tasks/{task_id}")
 async def update_event_task(event_id: int, task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     from .utils import is_done_column, normalize_task_column
     payload = await request.json()
@@ -244,7 +244,7 @@ async def update_event_task(event_id: int, task_id: int, request: Request, user:
         return event_task_json(row)
 
 
-@router.delete("/events/{event_id}/tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.delete("/events/{event_id}/tasks/{task_id}")
 def delete_event_task(event_id: int, task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM event_tasks WHERE event_id = %s AND id = %s", (event_id, task_id)).fetchone()

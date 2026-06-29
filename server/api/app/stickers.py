@@ -24,13 +24,13 @@ def sticker_json(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/sync-stickers", dependencies=[Depends(require_auth)])
+@router.get("/sync-stickers")
 def list_stickers(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         return [sticker_json(item) for item in visible_owner_rows(conn, "sync_stickers", user)]
 
 
-@router.post("/sync-stickers", dependencies=[Depends(require_auth)])
+@router.post("/sync-stickers")
 async def create_sticker(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
@@ -55,7 +55,7 @@ async def create_sticker(request: Request, user: dict[str, Any] = Depends(requir
         return sticker_json(row)
 
 
-@router.patch("/sync-stickers/{sticker_id}", dependencies=[Depends(require_auth)])
+@router.patch("/sync-stickers/{sticker_id}")
 async def update_sticker(sticker_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
@@ -84,7 +84,7 @@ async def update_sticker(sticker_id: int, request: Request, user: dict[str, Any]
         return sticker_json(row)
 
 
-@router.delete("/sync-stickers/{sticker_id}", dependencies=[Depends(require_auth)])
+@router.delete("/sync-stickers/{sticker_id}")
 def delete_sticker(sticker_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM sync_stickers WHERE id = %s", (sticker_id,)).fetchone()

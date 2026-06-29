@@ -199,7 +199,7 @@ def fetch_development_task(conn, task_id: int) -> dict[str, Any]:
     return development_task_json(task, checkpoints, [item["member_id"] for item in members])
 
 
-@router.get("/development-tasks", dependencies=[Depends(require_auth)])
+@router.get("/development-tasks")
 def list_development_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         tasks = visible_development_tasks(conn, user)
@@ -221,7 +221,7 @@ def list_development_tasks(user: dict[str, Any] = Depends(require_auth)) -> list
         return [development_task_json(item, checkpoint_map.get(item["id"], []), member_map.get(item["id"], [])) for item in tasks]
 
 
-@router.post("/development-tasks", dependencies=[Depends(require_auth)])
+@router.post("/development-tasks")
 async def create_development_task(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     title = (payload.get("title") or "").strip()
@@ -245,7 +245,7 @@ async def create_development_task(request: Request, user: dict[str, Any] = Depen
         return fetch_development_task(conn, row["id"])
 
 
-@router.patch("/development-tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.patch("/development-tasks/{task_id}")
 async def update_development_task(task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
@@ -297,7 +297,7 @@ async def update_development_task(task_id: int, request: Request, user: dict[str
         return fetch_development_task(conn, task_id)
 
 
-@router.delete("/development-tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.delete("/development-tasks/{task_id}")
 def delete_development_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM development_tasks WHERE id = %s", (task_id,)).fetchone()

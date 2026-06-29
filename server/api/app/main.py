@@ -51,7 +51,7 @@ def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/bootstrap", dependencies=[Depends(require_auth)])
+@app.get("/bootstrap")
 def bootstrap(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     with db() as conn:
         team = conn.execute(

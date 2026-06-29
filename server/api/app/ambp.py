@@ -42,13 +42,13 @@ def ambp_payload(payload: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-@router.get("/ambp-topics", dependencies=[Depends(require_auth)])
+@router.get("/ambp-topics")
 def list_ambp_topics(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         return [ambp_topic_json(item) for item in visible_owner_rows(conn, "ambp_topics", user)]
 
 
-@router.post("/ambp-topics", dependencies=[Depends(require_auth)])
+@router.post("/ambp-topics")
 async def create_ambp_topic(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
@@ -66,7 +66,7 @@ async def create_ambp_topic(request: Request, user: dict[str, Any] = Depends(req
         return ambp_topic_json(row)
 
 
-@router.patch("/ambp-topics/{topic_id}", dependencies=[Depends(require_auth)])
+@router.patch("/ambp-topics/{topic_id}")
 async def update_ambp_topic(topic_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
@@ -106,7 +106,7 @@ async def update_ambp_topic(topic_id: int, request: Request, user: dict[str, Any
         return ambp_topic_json(row)
 
 
-@router.delete("/ambp-topics/{topic_id}", dependencies=[Depends(require_auth)])
+@router.delete("/ambp-topics/{topic_id}")
 def delete_ambp_topic(topic_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM ambp_topics WHERE id = %s", (topic_id,)).fetchone()

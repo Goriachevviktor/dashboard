@@ -119,7 +119,7 @@ def can_access_task(conn, task_id: int, user: dict[str, Any]) -> bool:
     return bool(row)
 
 
-@router.get("/tasks", dependencies=[Depends(require_auth)])
+@router.get("/tasks")
 def list_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         tasks = visible_tasks(conn, user)
@@ -157,7 +157,7 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
         return task
 
 
-@router.patch("/tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.patch("/tasks/{task_id}")
 async def update_task(task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     allowed = {
@@ -214,7 +214,7 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
         return fetch_task(conn, task_id)
 
 
-@router.delete("/tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.delete("/tasks/{task_id}")
 def delete_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM tasks WHERE id = %s", (task_id,)).fetchone()
@@ -228,7 +228,7 @@ def delete_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> d
         return {"ok": True}
 
 
-@router.patch("/roadmap/generated-events", dependencies=[Depends(require_auth)])
+@router.patch("/roadmap/generated-events")
 async def update_generated_roadmap_event(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     from .ucp import can_view_ucp_task
     from .development import can_view_development_task

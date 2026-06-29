@@ -89,7 +89,7 @@ def fetch_ucp_task(conn, task_id: int) -> dict[str, Any]:
     return ucp_task_json(task, checkpoints, [item["member_id"] for item in members])
 
 
-@router.get("/ucp/tasks", dependencies=[Depends(require_auth)])
+@router.get("/ucp/tasks")
 def list_ucp_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         tasks = visible_ucp_tasks(conn, user)
@@ -111,7 +111,7 @@ def list_ucp_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[st
         return [ucp_task_json(item, checkpoint_map.get(item["id"], []), member_map.get(item["id"], [])) for item in tasks]
 
 
-@router.post("/ucp/tasks", dependencies=[Depends(require_auth)])
+@router.post("/ucp/tasks")
 async def create_ucp_task(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
@@ -123,7 +123,7 @@ async def create_ucp_task(request: Request, user: dict[str, Any] = Depends(requi
         return fetch_ucp_task(conn, row["id"])
 
 
-@router.patch("/ucp/tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.patch("/ucp/tasks/{task_id}")
 async def update_ucp_task(task_id: int, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     with db() as conn:
@@ -140,7 +140,7 @@ async def update_ucp_task(task_id: int, request: Request, user: dict[str, Any] =
         return fetch_ucp_task(conn, task_id)
 
 
-@router.delete("/ucp/tasks/{task_id}", dependencies=[Depends(require_auth)])
+@router.delete("/ucp/tasks/{task_id}")
 def delete_ucp_task(task_id: int, user: dict[str, Any] = Depends(require_auth)) -> dict[str, bool]:
     with db() as conn:
         existing = conn.execute("SELECT * FROM ucp_tasks WHERE id = %s", (task_id,)).fetchone()
