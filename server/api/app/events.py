@@ -104,7 +104,11 @@ def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, 
         events = visible_events(conn, user)
         ucp_tasks = visible_ucp_tasks(conn, user)
         development_tasks = visible_development_tasks(conn, user)
-        ucp_checkpoints = conn.execute("SELECT * FROM ucp_checkpoints ORDER BY task_id, id").fetchall()
+        ucp_task_ids = [t["id"] for t in ucp_tasks]
+        ucp_checkpoints = conn.execute(
+            "SELECT * FROM ucp_checkpoints WHERE task_id = ANY(%s) ORDER BY task_id, id",
+            (ucp_task_ids or [0],),
+        ).fetchall()
         development_task_ids = [item["id"] for item in development_tasks]
         development_checkpoints = conn.execute(
             "SELECT * FROM development_task_checkpoints WHERE task_id = ANY(%s) ORDER BY task_id, id",
