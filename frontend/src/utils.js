@@ -13,7 +13,7 @@ export function formatDashboardDate(date) {
 export function getRoadmapToday() {
   const now = new Date();
   if (now.getFullYear() !== ROADMAP_YEAR) return ROADMAP_FALLBACK_TODAY;
-  return { year: ROADMAP_YEAR, month: now.getMonth(), day: now.getDate() };
+  return { year: ROADMAP_YEAR, month: now.getMonth(), day: now.getDate() }; // 0-indexed: 0=Jan … 11=Dec, matching backend convention
 }
 
 export function useViewportFlags() {
