@@ -268,6 +268,7 @@ def logout(
 
 
 @router.post("/auth/mobile/login")
+@limiter.limit("10/minute")
 async def mobile_login(request: Request) -> dict[str, Any]:
     payload = await request.json()
     email = (payload.get("email") or "").strip().lower()
@@ -286,6 +287,7 @@ async def mobile_login(request: Request) -> dict[str, Any]:
 
 
 @router.post("/auth/mobile/refresh")
+@limiter.limit("20/minute")
 async def mobile_refresh_session(request: Request) -> dict[str, Any]:
     payload = await request.json()
     refresh_token = payload.get("refreshToken") or ""
