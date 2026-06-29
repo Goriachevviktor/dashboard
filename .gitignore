@@ -9,3 +9,4 @@ dashboard-config.js
 
 # Build output (генерируется при деплое)
 /frontend-dist/
+.worktrees/
