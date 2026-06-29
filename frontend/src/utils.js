@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export const ROADMAP_YEAR = 2026;
+export const ROADMAP_YEAR = new Date().getFullYear();
 export const ROADMAP_FALLBACK_TODAY = { year: ROADMAP_YEAR, month: 3, day: 29 };
 export const FULL_DATE_FORMATTER = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 
