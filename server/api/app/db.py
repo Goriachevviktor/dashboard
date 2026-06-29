@@ -4,6 +4,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from .config import (
     ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD, DATABASE_URL,
@@ -11,12 +12,29 @@ from .config import (
 
 logger = logging.getLogger(__name__)
 
+_pool: ConnectionPool | None = None
+
+
+def init_pool() -> None:
+    global _pool
+    _pool = ConnectionPool(DATABASE_URL, min_size=2, max_size=10, open=True)
+
+
+def close_pool() -> None:
+    if _pool:
+        _pool.close()
+
 
 @contextmanager
 def db():
-    with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
-        with conn.transaction():
+    if _pool is not None:
+        with _pool.connection() as conn:
+            conn.row_factory = dict_row
             yield conn
+    else:
+        with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
+            with conn.transaction():
+                yield conn
 
 
 def migrate_auth_schema() -> None:
