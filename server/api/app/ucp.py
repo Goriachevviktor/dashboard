@@ -133,10 +133,21 @@ async def update_ucp_task(task_id: int, request: Request, user: dict[str, Any] =
         if not can_view_ucp_task(conn, task_id, user):
             raise HTTPException(status_code=403, detail="UCP task access denied")
         conn.execute(
-            "UPDATE ucp_tasks SET title = %s, description = %s, done = %s, updated_at = now() WHERE id = %s RETURNING *",
-            (payload.get("title", "").strip(), payload.get("description", "").strip(), clean_bool(payload.get("done")), task_id),
-        ).fetchone()
-        save_ucp_relations(conn, task_id, payload.get("memberIds", []), payload.get("checkpoints", []))
+            "UPDATE ucp_tasks SET title = %s, description = %s, done = %s, updated_at = now() WHERE id = %s",
+            (payload.get("title", existing["title"]).strip(), payload.get("description", existing["description"] or "").strip(), clean_bool(payload.get("done", existing["done"])), task_id),
+        )
+        # Only update relations when explicitly provided in payload
+        member_ids = payload["memberIds"] if "memberIds" in payload else None
+        checkpoints = payload["checkpoints"] if "checkpoints" in payload else None
+        if member_ids is not None or checkpoints is not None:
+            # Read current values for whichever was not provided
+            current = fetch_ucp_task(conn, task_id)
+            save_ucp_relations(
+                conn,
+                task_id,
+                member_ids if member_ids is not None else current.get("memberIds", []),
+                checkpoints if checkpoints is not None else current.get("checkpoints", []),
+            )
         return fetch_ucp_task(conn, task_id)
 
 
