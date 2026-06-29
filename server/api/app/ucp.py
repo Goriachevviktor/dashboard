@@ -114,10 +114,13 @@ def list_ucp_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[st
 @router.post("/ucp/tasks")
 async def create_ucp_task(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
     with db() as conn:
         row = conn.execute(
             "INSERT INTO ucp_tasks (title, description, done, owner_id) VALUES (%s, %s, %s, %s) RETURNING *",
-            (payload.get("title", "").strip(), payload.get("description", "").strip(), clean_bool(payload.get("done")), resolve_owner_id(conn, user)),
+            (title, (payload.get("description") or "").strip(), clean_bool(payload.get("done")), resolve_owner_id(conn, user)),
         ).fetchone()
         save_ucp_relations(conn, row["id"], payload.get("memberIds", []), payload.get("checkpoints", []))
         return fetch_ucp_task(conn, row["id"])
