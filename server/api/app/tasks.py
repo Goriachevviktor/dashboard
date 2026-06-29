@@ -45,7 +45,6 @@ def archive_expired_done_tasks(conn) -> None:
 
 
 def visible_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
-    archive_expired_done_tasks(conn)
     if user["role"] == "admin":
         return conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
     return conn.execute(

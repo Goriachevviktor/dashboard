@@ -44,6 +44,9 @@ app.include_router(stickers_router)
 @app.on_event("startup")
 def startup() -> None:
     migrate_auth_schema()
+    from .tasks import archive_expired_done_tasks
+    with db() as conn:
+        archive_expired_done_tasks(conn)
 
 
 @app.get("/health")
