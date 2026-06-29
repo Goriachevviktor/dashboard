@@ -121,14 +121,20 @@ def list_events(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, 
 @router.post("/events")
 async def create_event(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
+    month = payload.get("month")
+    day = payload.get("day")
+    if not isinstance(month, int) or not (0 <= month <= 11):
+        raise HTTPException(status_code=400, detail="month must be integer 0-11")
+    if not isinstance(day, int) or not (1 <= day <= 31):
+        raise HTTPException(status_code=400, detail="day must be integer 1-31")
     with db() as conn:
         row = conn.execute(
             "INSERT INTO events (title, description, month, day, type, done, owner_id) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
             (
                 payload.get("title", "").strip(),
                 payload.get("description", "").strip(),
-                payload.get("month"),
-                payload.get("day"),
+                month,
+                day,
                 payload.get("type", "Совещание"),
                 payload.get("done", False),
                 resolve_owner_id(conn, user),

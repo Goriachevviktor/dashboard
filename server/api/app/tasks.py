@@ -129,6 +129,15 @@ def list_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, A
 @router.post("/tasks")
 async def create_task(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
+    title = payload.get("title", "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+
+    VALID_PRIORITIES = {"Высокий", "Средний", "Низкий", ""}
+    raw_priority = (payload.get("priority") or "").strip()
+    if raw_priority not in VALID_PRIORITIES:
+        raise HTTPException(status_code=400, detail=f"Invalid priority: {payload.get('priority')!r}")
+
     with db() as conn:
         column = normalize_task_column(payload.get("column"))
         creator_id = resolve_owner_id(conn, user)
@@ -139,9 +148,9 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
             RETURNING *
             """,
             (
-                payload.get("title", "").strip(),
+                title,
                 payload.get("description", "").strip(),
-                payload.get("priority", "Средний"),
+                raw_priority or "Средний",
                 column,
                 clean_date(payload.get("due")),
                 utcnow() if is_done_column(column) else None,

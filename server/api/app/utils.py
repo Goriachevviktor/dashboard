@@ -9,7 +9,14 @@ from .db import db
 def clean_date(value: Any) -> str | None:
     if value in (None, "", "—"):
         return None
-    return value
+    from datetime import date as _date
+    if isinstance(value, _date):
+        return value
+    try:
+        _date.fromisoformat(str(value))
+        return str(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {value!r}")
 
 
 def clean_bool(value: Any) -> bool:
