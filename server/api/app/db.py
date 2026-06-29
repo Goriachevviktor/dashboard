@@ -22,6 +22,25 @@ def db():
 def migrate_auth_schema() -> None:
     from .auth import hash_password
     with db() as conn:
+        # Migration versioning table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version text PRIMARY KEY,
+                applied_at timestamptz DEFAULT now()
+            )
+        """)
+
+        def applied(version: str) -> bool:
+            return conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = %s", (version,)
+            ).fetchone() is not None
+
+        def mark_applied(version: str) -> None:
+            conn.execute(
+                "INSERT INTO schema_migrations (version) VALUES (%s) ON CONFLICT DO NOTHING",
+                (version,),
+            )
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -207,28 +226,44 @@ def migrate_auth_schema() -> None:
         for table_name in owner_scoped_tables:
             conn.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS creator_id integer REFERENCES users(id) ON DELETE SET NULL")
-        conn.execute("UPDATE tasks SET creator_id = owner_id WHERE creator_id IS NULL")
+        if not applied("001_backfill_creator_id"):
+            conn.execute("UPDATE tasks SET creator_id = owner_id WHERE creator_id IS NULL")
+            mark_applied("001_backfill_creator_id")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS completed_at timestamptz")
-        conn.execute("UPDATE tasks SET completed_at = COALESCE(completed_at, updated_at, now()) WHERE column_name IN ('Готов', 'Готово')")
+        if not applied("002_backfill_completed_at"):
+            conn.execute("UPDATE tasks SET completed_at = COALESCE(completed_at, updated_at, now()) WHERE column_name IN ('Готов', 'Готово')")
+            mark_applied("002_backfill_completed_at")
         conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_assignee_id_fkey")
-        conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
+        if not applied("003_nullify_orphan_task_assignees"):
+            conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
+            mark_applied("003_nullify_orphan_task_assignees")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL")
         conn.execute("ALTER TABLE IF EXISTS task_members ADD COLUMN IF NOT EXISTS member_id integer")
         conn.execute("ALTER TABLE IF EXISTS task_members DROP CONSTRAINT IF EXISTS task_members_member_id_fkey")
-        conn.execute("DELETE FROM task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+        if not applied("004_delete_orphan_task_members"):
+            conn.execute("DELETE FROM task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+            mark_applied("004_delete_orphan_task_members")
         conn.execute("ALTER TABLE IF EXISTS task_members ADD CONSTRAINT task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
         conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_column_name_check")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_column_name_check CHECK (column_name IN ('Беклог', 'В работе', 'Готов', 'Готово', 'Архив'))")
-        conn.execute("UPDATE tasks SET column_name = 'Готов' WHERE column_name = 'Готово'")
-        conn.execute("UPDATE tasks SET column_name = 'Архив' WHERE column_name = 'Готов' AND completed_at <= now() - interval '7 days'")
+        if not applied("005_rename_column_gotovo_to_gotov"):
+            conn.execute("UPDATE tasks SET column_name = 'Готов' WHERE column_name = 'Готово'")
+            mark_applied("005_rename_column_gotovo_to_gotov")
+        if not applied("006_archive_old_done_tasks"):
+            conn.execute("UPDATE tasks SET column_name = 'Архив' WHERE column_name = 'Готов' AND completed_at <= now() - interval '7 days'")
+            mark_applied("006_archive_old_done_tasks")
         conn.execute("ALTER TABLE IF EXISTS event_tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
         conn.execute("ALTER TABLE IF EXISTS event_tasks DROP CONSTRAINT IF EXISTS event_tasks_assignee_id_fkey")
-        conn.execute("UPDATE event_tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
+        if not applied("007_nullify_orphan_event_task_assignees"):
+            conn.execute("UPDATE event_tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
+            mark_applied("007_nullify_orphan_event_task_assignees")
         conn.execute("ALTER TABLE IF EXISTS event_tasks ADD CONSTRAINT event_tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL")
         conn.execute("ALTER TABLE IF EXISTS ucp_task_members ADD COLUMN IF NOT EXISTS member_id integer")
         conn.execute("ALTER TABLE IF EXISTS ucp_task_members DROP CONSTRAINT IF EXISTS ucp_task_members_member_id_fkey")
-        conn.execute("DELETE FROM ucp_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+        if not applied("008_delete_orphan_ucp_task_members"):
+            conn.execute("DELETE FROM ucp_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+            mark_applied("008_delete_orphan_ucp_task_members")
         conn.execute("ALTER TABLE IF EXISTS ucp_task_members ADD CONSTRAINT ucp_task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
         conn.execute("ALTER TABLE IF EXISTS events ADD COLUMN IF NOT EXISTS description text")
         conn.execute("ALTER TABLE IF EXISTS event_tasks ADD COLUMN IF NOT EXISTS description text")
@@ -276,7 +311,9 @@ def migrate_auth_schema() -> None:
         )
         conn.execute("ALTER TABLE IF EXISTS development_task_members ADD COLUMN IF NOT EXISTS member_id integer")
         conn.execute("ALTER TABLE IF EXISTS development_task_members DROP CONSTRAINT IF EXISTS development_task_members_member_id_fkey")
-        conn.execute("DELETE FROM development_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+        if not applied("009_delete_orphan_dev_task_members"):
+            conn.execute("DELETE FROM development_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+            mark_applied("009_delete_orphan_dev_task_members")
         conn.execute("ALTER TABLE IF EXISTS development_task_members ADD CONSTRAINT development_task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
         if not conn.execute("SELECT id FROM development_tasks LIMIT 1").fetchone():
             conn.execute(
