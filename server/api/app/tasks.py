@@ -16,6 +16,8 @@ from .utils import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+VALID_PRIORITIES = {"Высокий", "Средний", "Низкий", ""}
+
 
 def task_json(row: dict[str, Any], member_ids: list[int] | None = None) -> dict[str, Any]:
     from .utils import iso
@@ -135,7 +137,6 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
 
-    VALID_PRIORITIES = {"Высокий", "Средний", "Низкий", ""}
     raw_priority = (payload.get("priority") or "").strip()
     if raw_priority not in VALID_PRIORITIES:
         raise HTTPException(status_code=400, detail=f"Invalid priority: {payload.get('priority')!r}")
@@ -211,7 +212,6 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
                     elif next_column != "Архив":
                         fields.append("completed_at = NULL")
                 elif key == "priority":
-                    VALID_PRIORITIES = {"Высокий", "Средний", "Низкий", ""}
                     raw = (payload[key] or "").strip()
                     if raw not in VALID_PRIORITIES:
                         raise HTTPException(status_code=400, detail=f"Invalid priority: {payload[key]!r}")
