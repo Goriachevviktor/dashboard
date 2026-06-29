@@ -116,7 +116,7 @@ async def create_ucp_task(request: Request, user: dict[str, Any] = Depends(requi
     payload = await request.json()
     title = (payload.get("title") or "").strip()
     if not title:
-        raise HTTPException(status_code=400, detail="title is required")
+        raise HTTPException(status_code=400, detail="Title is required")
     with db() as conn:
         row = conn.execute(
             "INSERT INTO ucp_tasks (title, description, done, owner_id) VALUES (%s, %s, %s, %s) RETURNING *",
