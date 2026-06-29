@@ -91,7 +91,9 @@ def can_change_owner(existing_owner_id: Any, payload_owner_id: Any, user: dict[s
     if user["role"] == "admin":
         return True
     try:
-        return int(user["id"]) == int(creator_id)
+        if creator_id is not None:
+            return int(user["id"]) == int(creator_id)
+        return int(user["id"]) == int(existing_owner_id)
     except (TypeError, ValueError):
         return False
 

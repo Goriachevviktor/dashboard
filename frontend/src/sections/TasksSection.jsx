@@ -152,7 +152,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   const owner = findTeamMember(team, ownerId);
   const assignee = findTeamMember(team, assigneeId);
   const coExecutors = team.filter(member => (memberIds || []).includes(member.id) && member.id !== ownerId && member.id !== assigneeId);
-  const canChangeOwner = currentUser?.id === task.creatorId;
+  const canChangeOwner = currentUser?.id === task.creatorId || (task.creatorId == null && currentUser?.id === task.ownerId);
   const segmentButtonStyle = (active, color) => ({
     flex: 1,
     minHeight: isMobile ? 32 : 40,
