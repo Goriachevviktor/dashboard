@@ -134,7 +134,7 @@ export default function App() {
     }
     load();
     return () => { cancelled = true; };
-  }, [api, onError, active, accessToken, currentUser]);
+  }, [api, onError]);
 
   // Push notifications
   useEffect(() => {
