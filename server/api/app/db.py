@@ -94,6 +94,7 @@ def migrate_auth_schema() -> None:
               column_name text NOT NULL DEFAULT 'Беклог',
               due date,
               completed_at timestamptz,
+              creator_id integer REFERENCES users(id) ON DELETE SET NULL,
               owner_id integer REFERENCES users(id) ON DELETE SET NULL,
               assignee_id integer REFERENCES users(id) ON DELETE SET NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
@@ -114,6 +115,15 @@ def migrate_auth_schema() -> None:
               owner_id integer REFERENCES users(id) ON DELETE SET NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
               updated_at timestamptz NOT NULL DEFAULT now()
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS task_members (
+              task_id integer NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+              member_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              PRIMARY KEY (task_id, member_id)
             )
             """
         )
@@ -196,12 +206,18 @@ def migrate_auth_schema() -> None:
         owner_scoped_tables = ("tasks", "event_tasks", "events", "sync_stickers", "ucp_tasks", "development_tasks", "ambp_topics")
         for table_name in owner_scoped_tables:
             conn.execute(f"ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS owner_id integer REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS creator_id integer REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("UPDATE tasks SET creator_id = owner_id WHERE creator_id IS NULL")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assignee_id integer")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS completed_at timestamptz")
         conn.execute("UPDATE tasks SET completed_at = COALESCE(completed_at, updated_at, now()) WHERE column_name IN ('Готов', 'Готово')")
         conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_assignee_id_fkey")
         conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL")
+        conn.execute("ALTER TABLE IF EXISTS task_members ADD COLUMN IF NOT EXISTS member_id integer")
+        conn.execute("ALTER TABLE IF EXISTS task_members DROP CONSTRAINT IF EXISTS task_members_member_id_fkey")
+        conn.execute("DELETE FROM task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
+        conn.execute("ALTER TABLE IF EXISTS task_members ADD CONSTRAINT task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
         conn.execute("ALTER TABLE IF EXISTS tasks DROP CONSTRAINT IF EXISTS tasks_column_name_check")
         conn.execute("ALTER TABLE IF EXISTS tasks ADD CONSTRAINT tasks_column_name_check CHECK (column_name IN ('Беклог', 'В работе', 'Готов', 'Готово', 'Архив'))")
         conn.execute("UPDATE tasks SET column_name = 'Готов' WHERE column_name = 'Готово'")

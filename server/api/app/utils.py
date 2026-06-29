@@ -82,11 +82,16 @@ def resolve_active_user_id(conn, value: Any) -> int:
     return row["id"]
 
 
-def can_change_owner(existing_owner_id: Any, payload_owner_id: Any, user: dict[str, Any]) -> bool:
+def can_change_owner(existing_owner_id: Any, payload_owner_id: Any, user: dict[str, Any], creator_id: Any = None) -> bool:
+    try:
+        if int(payload_owner_id) == int(existing_owner_id):
+            return True
+    except (TypeError, ValueError):
+        pass
     if user["role"] == "admin":
         return True
     try:
-        return int(payload_owner_id) == int(existing_owner_id)
+        return int(user["id"]) == int(creator_id)
     except (TypeError, ValueError):
         return False
 

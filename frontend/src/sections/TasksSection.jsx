@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import Avatar from '../components/common/Avatar.jsx';
 import AssigneePicker from '../components/common/AssigneePicker.jsx';
 import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
 import { useViewportFlags, formatShortDate, parseTaskDueDate, isTaskOverdue, findTeamMember } from '../utils.js';
@@ -46,6 +45,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   const [due, setDue] = useState(isMobile ? formatDueForMobile(task.due) : (task.due === "—" ? "" : task.due));
   const [assigneeId, setAssigneeId] = useState(task.assigneeId);
   const [ownerId, setOwnerId] = useState(task.ownerId);
+  const [memberIds, setMemberIds] = useState(task.memberIds || []);
   const [error, setError] = useState("");
 
   const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
@@ -54,8 +54,14 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   function handleSave() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
     const normalizedDue = isMobile ? normalizeMobileDue(due) : due;
-    onSave({ ...task, title: title.trim(), description: description.trim(), priority, column, due: normalizedDue || "—", assigneeId, ownerId });
+    const normalizedMembers = (memberIds || []).filter(id => id !== ownerId && id !== assigneeId);
+    onSave({ ...task, title: title.trim(), description: description.trim(), priority, column, due: normalizedDue || "—", assigneeId, ownerId, memberIds: normalizedMembers });
     onClose();
+  }
+
+  function toggleMember(memberId) {
+    if (memberId === ownerId || memberId === assigneeId) return;
+    setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
   }
 
   useEffect(() => {
@@ -145,6 +151,8 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   const inputStyle = { width: "100%", padding: isMobile ? "10px 12px" : "10px 14px", borderRadius: isMobile ? 12 : 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc", transition: "border-color .15s" };
   const owner = findTeamMember(team, ownerId);
   const assignee = findTeamMember(team, assigneeId);
+  const coExecutors = team.filter(member => (memberIds || []).includes(member.id) && member.id !== ownerId && member.id !== assigneeId);
+  const canChangeOwner = currentUser?.id === task.creatorId;
   const segmentButtonStyle = (active, color) => ({
     flex: 1,
     minHeight: isMobile ? 32 : 40,
@@ -211,6 +219,9 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
             </div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#1e3a6e", background: "#eff6ff", border: "1px solid #dbeafe", borderRadius: 999, padding: "6px 10px" }}>
               Исполнитель: {assignee ? assignee.name : "Не назначен"}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 999, padding: "6px 10px" }}>
+              Соисполнители: {coExecutors.length}
             </div>
           </div>
 
@@ -306,21 +317,68 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
             </div>
           </div>
 
-          {currentUser?.role === "admin" && (
-            <div>
-              <label style={labelStyle}>Автор</label>
-              <div style={{ display: "grid", gridTemplateColumns: owner ? (isMobile ? "20px minmax(0, 1fr)" : "24px minmax(0, 1fr)") : "minmax(0, 1fr)", alignItems: "center", gap: 8 }}>
-                {owner && (
-                  <div style={{ width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, borderRadius: "50%", background: owner.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: isMobile ? 8 : 9, fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
-                )}
-                <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)}
-                  style={{ ...inputStyle, cursor: "pointer", paddingLeft: isMobile ? 10 : 14 }}>
-                  <option value="">— Не указан —</option>
-                  {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
-              </div>
+          <div>
+            <label style={labelStyle}>Автор</label>
+            <div style={{ display: "grid", gridTemplateColumns: owner ? (isMobile ? "20px minmax(0, 1fr)" : "24px minmax(0, 1fr)") : "minmax(0, 1fr)", alignItems: "center", gap: 8 }}>
+              {owner && (
+                <div style={{ width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, borderRadius: "50%", background: owner.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: isMobile ? 8 : 9, fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
+              )}
+              <select
+                value={ownerId || ""}
+                onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)}
+                disabled={!canChangeOwner}
+                style={{ ...inputStyle, cursor: canChangeOwner ? "pointer" : "default", paddingLeft: isMobile ? 10 : 14, opacity: canChangeOwner ? 1 : 0.72 }}
+              >
+                <option value="">— Не указан —</option>
+                {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
             </div>
-          )}
+            {!canChangeOwner && (
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>
+                Менять автора может только создатель задачи
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={labelStyle}>Соисполнители</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {team.length === 0 ? (
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>Пользователи не найдены</span>
+              ) : team.map(member => {
+                const disabled = member.id === ownerId || member.id === assigneeId;
+                const active = memberIds.includes(member.id) && !disabled;
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => toggleMember(member.id)}
+                    disabled={disabled}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 7,
+                      padding: "7px 10px",
+                      borderRadius: 999,
+                      border: "1.5px solid " + (active ? "#7c3aed" : disabled ? "#e2e8f0" : "#e2edf8"),
+                      background: active ? "#f5f3ff" : disabled ? "#f8fafc" : "#fff",
+                      color: active ? "#7c3aed" : disabled ? "#94a3b8" : "#64748b",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      fontFamily: "Inter",
+                      opacity: disabled ? 0.65 : 1,
+                    }}
+                  >
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? "#7c3aed" : disabled ? "#e2e8f0" : member.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>
+                      {member.initials}
+                    </span>
+                    <span>{member.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
@@ -339,6 +397,7 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
   const [column, setColumn] = useState("Беклог");
   const [due, setDue] = useState("");
   const [assigneeId, setAssigneeId] = useState(null);
+  const [memberIds, setMemberIds] = useState([]);
   const [error, setError] = useState("");
 
   const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
@@ -346,8 +405,13 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
 
   function handleSubmit() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
-    onAdd({ title: title.trim(), description: description.trim(), priority, column, due: due || "—", assigneeId });
+    onAdd({ title: title.trim(), description: description.trim(), priority, column, due: due || "—", assigneeId, memberIds: (memberIds || []).filter(id => id !== assigneeId) });
     onClose();
+  }
+
+  function toggleMember(memberId) {
+    if (memberId === assigneeId) return;
+    setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
   }
 
   useEffect(() => {
@@ -438,6 +502,45 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
               </select>
             </div>
           </div>
+          <div>
+            <label style={labelStyle}>Соисполнители</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {team.length === 0 ? (
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>Пользователи не найдены</span>
+              ) : team.map(member => {
+                const disabled = member.id === assigneeId;
+                const active = memberIds.includes(member.id) && !disabled;
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => toggleMember(member.id)}
+                    disabled={disabled}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 7,
+                      padding: "7px 10px",
+                      borderRadius: 999,
+                      border: "1.5px solid " + (active ? "#7c3aed" : disabled ? "#e2e8f0" : "#e2edf8"),
+                      background: active ? "#f5f3ff" : disabled ? "#f8fafc" : "#fff",
+                      color: active ? "#7c3aed" : disabled ? "#94a3b8" : "#64748b",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      fontFamily: "Inter",
+                      opacity: disabled ? 0.65 : 1,
+                    }}
+                  >
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? "#7c3aed" : disabled ? "#e2e8f0" : member.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>
+                      {member.initials}
+                    </span>
+                    <span>{member.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
@@ -458,6 +561,7 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
   const [dragging, setDragging] = useState(false);
   const owner = findTeamMember(team, task.ownerId);
   const assignee = findTeamMember(team, task.assigneeId);
+  const coExecutors = team.filter(member => (task.memberIds || []).includes(member.id) && member.id !== task.ownerId && member.id !== task.assigneeId);
   const canDelete = currentUser?.role === "admin" || currentUser?.id === task.ownerId;
   const canArchive = ["Готов", "Готово"].includes(task.column);
   const overdue = isTaskOverdue(task);
@@ -547,6 +651,11 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
         <span style={{ fontSize: 10, fontWeight: 700, color: "#1e3a6e", background: "#eff6ff", padding: "3px 8px", borderRadius: 999 }}>
           Исп.: {assignee ? assignee.name.split(" ")[0] : "Не назначен"}
         </span>
+        {coExecutors.length > 0 && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", padding: "3px 8px", borderRadius: 999 }}>
+            Соисп.: {coExecutors.map(member => member.name.split(" ")[0]).join(", ")}
+          </span>
+        )}
       </div>
 
       {/* Footer: due */}

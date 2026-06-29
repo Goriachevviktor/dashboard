@@ -15,7 +15,7 @@ from .development import (
 from .events import event_json, event_member_map, event_task_json, router as events_router, visible_event_tasks, visible_events
 from .push import router as push_router
 from .stickers import router as stickers_router, sticker_json
-from .tasks import router as tasks_router, task_json, visible_tasks
+from .tasks import router as tasks_router, task_json, task_member_map, visible_tasks
 from .ucp import router as ucp_router, ucp_task_json, visible_ucp_tasks
 from .utils import visible_owner_rows
 
@@ -58,6 +58,7 @@ def bootstrap(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
             "SELECT id, email, display_name as name FROM users WHERE is_active = true ORDER BY display_name, id"
         ).fetchall()
         tasks = visible_tasks(conn, user)
+        task_members = task_member_map(conn, [item["id"] for item in tasks])
         events = visible_events(conn, user)
         event_tasks = visible_event_tasks(conn, user)
         stickers = visible_owner_rows(conn, "sync_stickers", user)
@@ -100,7 +101,7 @@ def bootstrap(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
 
         return {
             "team": team,
-            "tasks": [task_json(item) for item in tasks],
+            "tasks": [task_json(item, task_members.get(item["id"], [])) for item in tasks],
             "events": [event_json(item, event_members.get(item["id"], [])) for item in events]
                 + [event_json(item) for item in generated_roadmap_events(ucp_tasks, ucp_checkpoints, development_tasks, development_checkpoints)],
             "eventTasks": event_task_map,

@@ -7,15 +7,15 @@ from .auth import require_auth, utcnow
 from .db import db
 from .push import notify_task_created
 from .utils import (
-    can_change_owner, can_delete_task, can_edit_task,
-    clean_date, is_done_column, normalize_task_column,
+    can_change_owner, can_delete_task,
+    clean_date, is_done_column, normalize_member_ids, normalize_task_column,
     resolve_active_user_id, resolve_owner_id,
 )
 
 router = APIRouter()
 
 
-def task_json(row: dict[str, Any]) -> dict[str, Any]:
+def task_json(row: dict[str, Any], member_ids: list[int] | None = None) -> dict[str, Any]:
     from .utils import iso
     return {
         "id": row["id"],
@@ -25,8 +25,10 @@ def task_json(row: dict[str, Any]) -> dict[str, Any]:
         "column": row["column_name"],
         "due": iso(row["due"]) or "",
         "completedAt": row["completed_at"].isoformat() if row.get("completed_at") else None,
+        "creatorId": row.get("creator_id"),
         "ownerId": row["owner_id"],
         "assigneeId": row["assignee_id"],
+        "memberIds": member_ids or [],
     }
 
 
@@ -47,15 +49,82 @@ def visible_tasks(conn, user: dict[str, Any]) -> list[dict[str, Any]]:
     if user["role"] == "admin":
         return conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
     return conn.execute(
-        "SELECT * FROM tasks WHERE owner_id = %s OR assignee_id = %s ORDER BY id",
-        (user["id"], user["id"]),
+        """
+        SELECT DISTINCT tasks.*
+        FROM tasks
+        LEFT JOIN task_members ON task_members.task_id = tasks.id
+        WHERE tasks.owner_id = %s OR tasks.assignee_id = %s OR task_members.member_id = %s
+        ORDER BY tasks.id
+        """,
+        (user["id"], user["id"], user["id"]),
     ).fetchall()
+
+
+def task_member_map(conn, task_ids: list[int]) -> dict[int, list[int]]:
+    members = conn.execute(
+        "SELECT task_id, member_id FROM task_members WHERE task_id = ANY(%s) ORDER BY task_id, member_id",
+        (task_ids or [0],),
+    ).fetchall()
+    member_map: dict[int, list[int]] = {}
+    for item in members:
+        member_map.setdefault(item["task_id"], []).append(item["member_id"])
+    return member_map
+
+
+def sync_task_members(conn, task_id: int, owner_id: Any, assignee_id: Any, member_ids: Any) -> list[int]:
+    normalized = normalize_member_ids(conn, member_ids)
+    excluded_ids = set()
+    for raw in (owner_id, assignee_id):
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            excluded_ids.add(value)
+    filtered = [member_id for member_id in normalized if member_id not in excluded_ids]
+    conn.execute("DELETE FROM task_members WHERE task_id = %s", (task_id,))
+    for member_id in filtered:
+        conn.execute(
+            "INSERT INTO task_members (task_id, member_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (task_id, member_id),
+        )
+    return filtered
+
+
+def fetch_task(conn, task_id: int) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM tasks WHERE id = %s", (task_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+    member_map = task_member_map(conn, [task_id])
+    return task_json(row, member_map.get(task_id, []))
+
+
+def can_access_task(conn, task_id: int, user: dict[str, Any]) -> bool:
+    if user["role"] == "admin":
+        return True
+    row = conn.execute(
+        """
+        SELECT tasks.id
+        FROM tasks
+        LEFT JOIN task_members ON task_members.task_id = tasks.id
+        WHERE tasks.id = %s AND (
+            tasks.owner_id = %s
+            OR tasks.assignee_id = %s
+            OR task_members.member_id = %s
+        )
+        LIMIT 1
+        """,
+        (task_id, user["id"], user["id"], user["id"]),
+    ).fetchone()
+    return bool(row)
 
 
 @router.get("/tasks", dependencies=[Depends(require_auth)])
 def list_tasks(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
-        return [task_json(item) for item in visible_tasks(conn, user)]
+        tasks = visible_tasks(conn, user)
+        member_map = task_member_map(conn, [item["id"] for item in tasks])
+        return [task_json(item, member_map.get(item["id"], [])) for item in tasks]
 
 
 @router.post("/tasks")
@@ -63,10 +132,11 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
     payload = await request.json()
     with db() as conn:
         column = normalize_task_column(payload.get("column"))
+        creator_id = resolve_owner_id(conn, user)
         row = conn.execute(
             """
-            INSERT INTO tasks (title, description, priority, column_name, due, completed_at, owner_id, assignee_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO tasks (title, description, priority, column_name, due, completed_at, creator_id, owner_id, assignee_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -76,11 +146,13 @@ async def create_task(request: Request, user: dict[str, Any] = Depends(require_a
                 column,
                 clean_date(payload.get("due")),
                 utcnow() if is_done_column(column) else None,
-                resolve_owner_id(conn, user),
+                creator_id,
+                creator_id,
                 payload.get("assigneeId"),
             ),
         ).fetchone()
-        task = task_json(row)
+        sync_task_members(conn, row["id"], row["owner_id"], row["assignee_id"], payload.get("memberIds", []))
+        task = fetch_task(conn, row["id"])
         notify_task_created(conn, task, user)
         return task
 
@@ -97,21 +169,19 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
         "assigneeId": "assignee_id",
         "ownerId": "owner_id",
     }
-    fields = []
-    values = []
     with db() as conn:
         existing = conn.execute("SELECT * FROM tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Task not found")
-        if not can_edit_task(existing, user):
+        if not can_access_task(conn, task_id, user):
             raise HTTPException(status_code=403, detail="Task access denied")
+        fields = []
+        values = []
         for key, column in allowed.items():
             if key in payload:
                 if key == "ownerId":
-                    if not can_change_owner(existing.get("owner_id"), payload[key], user):
-                        raise HTTPException(status_code=403, detail="Only admin can change owner")
-                    if user["role"] != "admin":
-                        continue
+                    if not can_change_owner(existing.get("owner_id"), payload[key], user, existing.get("creator_id")):
+                        raise HTTPException(status_code=403, detail="Only task creator can change owner")
                     fields.append(f"{column} = %s")
                     values.append(resolve_active_user_id(conn, payload[key]))
                     continue
@@ -127,16 +197,21 @@ async def update_task(task_id: int, request: Request, user: dict[str, Any] = Dep
                         fields.append("completed_at = NULL")
                 else:
                     values.append(payload[key])
-        if not fields:
+        has_members = "memberIds" in payload
+        if not fields and not has_members:
             raise HTTPException(status_code=400, detail="No fields to update")
-        values.append(task_id)
-        row = conn.execute(
-            f"UPDATE tasks SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
-            values,
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Task not found")
-        return task_json(row)
+        row = existing
+        if fields:
+            values.append(task_id)
+            row = conn.execute(
+                f"UPDATE tasks SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
+                values,
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+        if has_members:
+            sync_task_members(conn, task_id, row.get("owner_id"), row.get("assignee_id"), payload.get("memberIds", []))
+        return fetch_task(conn, task_id)
 
 
 @router.delete("/tasks/{task_id}", dependencies=[Depends(require_auth)])
