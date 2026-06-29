@@ -472,6 +472,7 @@ def get_invite(token: str) -> dict[str, Any]:
 
 
 @router.post("/auth/register")
+@limiter.limit("5/minute")
 async def register(request: Request, response: Response) -> dict[str, Any]:
     payload = await request.json()
     token = payload.get("token") or ""
