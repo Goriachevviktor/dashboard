@@ -16,6 +16,8 @@ import RoadmapsSection from './sections/RoadmapsSection.jsx';
 import MindMapSection from './sections/MindMapSection.jsx';
 import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
 
+const ACTIVE_SECTION_KEY = "dashboard_active_section_v1";
+
 const SECTION_COMPONENTS = {
   tasks:   ({ data, api, onError, currentUser }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   archive: ({ data, api, onError, currentUser }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
@@ -34,7 +36,13 @@ export default function App() {
   const { isCompact, isMobile } = useViewportFlags();
 
   // ── 10a: Auth state ──
-  const [active, setActive] = useState("tasks");
+  const [active, setActive] = useState(() => {
+    try {
+      return window.localStorage.getItem(ACTIVE_SECTION_KEY) || "tasks";
+    } catch {
+      return "tasks";
+    }
+  });
   const [collapsed, setCollapsed] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [accessToken, setAccessToken] = useState("");
@@ -84,6 +92,15 @@ export default function App() {
   useEffect(() => {
     if (section && section.id !== active) setActive(section.id);
   }, [active, section]);
+
+  useEffect(() => {
+    if (!section?.id) return;
+    try {
+      window.localStorage.setItem(ACTIVE_SECTION_KEY, section.id);
+    } catch {
+      // Ignore localStorage restrictions.
+    }
+  }, [section?.id]);
 
   // Restore session on mount
   useEffect(() => {

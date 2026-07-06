@@ -13,8 +13,40 @@
     <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/pwa-maskable-icon.svg" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: #f0f6ff;
+      }
+      body {
+        font-family: Inter, Arial, sans-serif;
+      }
+      #root {
+        min-height: 100dvh;
+      }
+      body:not(.booted) #root {
+        visibility: hidden;
+      }
+      #boot-status {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f0f6ff;
+        color: #64748b;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      body.booted #boot-status {
+        display: none;
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-status">Загружаем дашборд...</div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

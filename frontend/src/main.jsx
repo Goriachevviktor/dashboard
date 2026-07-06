@@ -9,3 +9,6 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 );
 
+window.requestAnimationFrame(() => {
+  window.document.body.classList.add('booted');
+});

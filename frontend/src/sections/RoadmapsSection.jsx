@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
 import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 
 const OWNERS = {
   viktor: { name: "Виктор",  initials: "ВИ", color: "#6d5bd0" },
@@ -556,6 +557,38 @@ const SAMPLE_ROADMAPS = (() => {
       },
     },
     {
+      id: "rm-ai-initiatives-2026",
+      title: "AI initiatives 2026",
+      desc: "Пилоты, инфраструктура и внедрение AI-инструментов в основные процессы",
+      owner: "viktor",
+      tag: "AI",
+      tagColor: "#2bb6c4",
+      status: "active",
+      period: "Q2 – Q4 2026",
+      milestones: [
+        { name: "AI governance", month: 4.0 },
+        { name: "Pilot release", month: 7.0 },
+        { name: "Scale-up", month: 10.0 },
+      ],
+      lanes: [
+        { id: "ai1", name: "Платформа", color: "#3b6fe0" },
+        { id: "ai2", name: "Продуктовые пилоты", color: "#6d5bd0" },
+        { id: "ai3", name: "Операционные сценарии", color: "#22b07d" },
+      ],
+      bars: [
+        bar("ai1", "Единый AI-стек и доступы", 3.0, 5.5, "progress", 55, "dmitry"),
+        bar("ai1", "Контур безопасности и аудит", 4.0, 7.0, "planned", 0, "elena"),
+        bar("ai2", "AI-ассистент поддержки", 4.5, 8.0, "progress", 40, "anna"),
+        bar("ai2", "Copilot для внутренних команд", 6.0, 10.0, "planned", 0, "viktor"),
+        bar("ai3", "Поиск по знаниям и документам", 5.0, 9.0, "progress", 35, "pavel"),
+      ],
+      nnl: {
+        now:   [{ t: "Единый AI-стек и доступы", o: "dmitry" }, { t: "AI-ассистент поддержки", o: "anna" }],
+        next:  [{ t: "Контур безопасности и аудит", o: "elena" }, { t: "Поиск по знаниям и документам", o: "pavel" }],
+        later: [{ t: "Copilot для внутренних команд", o: "viktor" }],
+      },
+    },
+    {
       id: "rm-2025",
       title: "Роадмап 2025 (архив)",
       desc: "Завершённые инициативы прошлого года",
@@ -1039,9 +1072,16 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
     setLanes(ls => ls.filter(l => l.id !== id));
   }
 
+  function updateLane(id, patch) {
+    setLanes(ls => ls.map(lane => lane.id === id ? { ...lane, ...patch } : lane));
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ ...(roadmap || {}), title, desc, tag, tagColor, owner, memberIds: sanitizeMemberIds(memberIds, owner), status, lanes });
+    const normalizedLanes = lanes
+      .map(lane => ({ ...lane, name: String(lane.name || "").trim() }))
+      .filter(lane => lane.name);
+    onSave({ ...(roadmap || {}), title, desc, tag, tagColor, owner, memberIds: sanitizeMemberIds(memberIds, owner), status, lanes: normalizedLanes });
     onClose();
   }
 
@@ -1184,7 +1224,12 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
               {lanes.map(l => (
                 <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#f8fbff", borderRadius: 8, border: "1px solid #e2edf8" }}>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 13, color: "#1e3a6e" }}>{l.name}</span>
+                  <input
+                    value={l.name}
+                    onChange={e => updateLane(l.id, { name: e.target.value })}
+                    placeholder="Название дорожки"
+                    style={{ ...inputStyle, flex: 1, height: 32, background: "#fff" }}
+                  />
                   <button type="button" onClick={() => removeLane(l.id)} style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>×</button>
                 </div>
               ))}
@@ -1813,11 +1858,12 @@ function LaneFormModal({ onClose, onSave }) {
   );
 }
 
-function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane }) {
+function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane }) {
   const [tab, setTab]               = useState("timeline");
   const [barModal, setBarModal]     = useState(null); // null | "new" | { bar, idx }
   const [mileModal, setMileModal]   = useState(null); // null | "new" | { milestone, idx }
   const [laneModal, setLaneModal]   = useState(false);
+  const printRootRef = useRef(null);
   const sm = STATUS_META[rm.status] || STATUS_META.archived;
   const ownerMember = getMemberById(members, rm.owner);
   const roadmapCoExecutors = sanitizeMemberIds(rm.memberIds, rm.owner).map(id => getMemberById(members, id)).filter(Boolean);
@@ -1828,10 +1874,10 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onSaveBar,
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div ref={printRootRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Шапка */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16, background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
-        <button onClick={onBack} style={{
+        <button data-print-hidden="true" onClick={onBack} style={{
           width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: "#f1f5fb",
           border: "none", cursor: "pointer", display: "grid", placeItems: "center",
         }}>
@@ -1852,15 +1898,53 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onSaveBar,
           <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>{rm.desc}</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12, flexShrink: 0 }}>
-          <button onClick={onEdit} style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
-            background: "#f8fbff", color: "#2563eb", fontSize: 12, fontWeight: 600,
-            cursor: "pointer", fontFamily: "Inter",
-          }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            Редактировать
-          </button>
+          <div data-print-hidden="true" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => onExportPdf(printRootRef.current, tab)} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
+              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: "Inter",
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h9l5 5v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+              PDF
+            </button>
+            <button onClick={onExportCsv} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
+              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: "Inter",
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+              CSV
+            </button>
+            <button onClick={onExportXls} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
+              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: "Inter",
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 4v16"/><path d="M15 4v16"/><path d="M4 9h16"/><path d="M4 15h16"/></svg>
+              XLSX
+            </button>
+            <button onClick={onExportJson} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
+              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: "Inter",
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+              Экспорт JSON
+            </button>
+            <button onClick={onEdit} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
+              background: "#f8fbff", color: "#2563eb", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: "Inter",
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Редактировать
+            </button>
+          </div>
           <div style={{ display: "flex", gap: 20, paddingLeft: 20, borderLeft: "1px solid #e8f0fa" }}>
             {[
               ["Владелец", <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Avatar member={ownerMember} size={22} />{ownerMember?.name || "Не назначен"}</div>],
@@ -1878,7 +1962,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onSaveBar,
       </div>
 
       {/* Вкладки */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div data-print-hidden="true" style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #e2edf8", borderRadius: 999, padding: 4, gap: 2 }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -1967,6 +2051,8 @@ function recalc(rm) {
 }
 
 const LS_KEY = "dashboard_roadmaps_v1";
+const LS_SEEDED_KEY = "dashboard_roadmaps_seeded_samples_v1";
+const AUTO_ADD_SAMPLE_IDS = ["rm-ai-initiatives-2026"];
 
 function mergeRoadmapsWithSamples(storedRoadmaps) {
   const sampleById = new Map(SAMPLE_ROADMAPS.map(roadmap => [roadmap.id, roadmap]));
@@ -1974,14 +2060,522 @@ function mergeRoadmapsWithSamples(storedRoadmaps) {
   return normalizedStored.map(roadmap => recalc(sampleById.get(roadmap.id) ? { ...sampleById.get(roadmap.id), ...roadmap } : roadmap));
 }
 
+function seedAutoAddedRoadmaps(roadmaps) {
+  const normalized = Array.isArray(roadmaps) ? roadmaps.map(recalc) : [];
+  try {
+    if (window.localStorage.getItem(LS_SEEDED_KEY) === "1") return normalized;
+  } catch {
+    return normalized;
+  }
+
+  const byId = new Set(normalized.map(roadmap => roadmap.id));
+  const additions = SAMPLE_ROADMAPS
+    .filter(roadmap => AUTO_ADD_SAMPLE_IDS.includes(roadmap.id) && !byId.has(roadmap.id))
+    .map(recalc);
+  const seeded = additions.length ? [...normalized, ...additions] : normalized;
+
+  try {
+    window.localStorage.setItem(LS_SEEDED_KEY, "1");
+    window.localStorage.setItem(LS_KEY, JSON.stringify(seeded));
+  } catch {
+    // Ignore localStorage restrictions.
+  }
+  return seeded;
+}
+
 function loadRoadmaps() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return mergeRoadmapsWithSamples(JSON.parse(raw));
+    if (raw) return seedAutoAddedRoadmaps(mergeRoadmapsWithSamples(JSON.parse(raw)));
   } catch {
     // Ignore corrupted local roadmap state and fall back to samples.
   }
-  return SAMPLE_ROADMAPS.map(recalc);
+  return seedAutoAddedRoadmaps(SAMPLE_ROADMAPS.map(recalc));
+}
+
+function buildSafeRoadmapFilename(title) {
+  return String(title || "roadmap")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, "-")
+    .replace(/^-+|-+$/g, "") || "roadmap";
+}
+
+function downloadRoadmapExport(roadmap) {
+  if (!roadmap) return;
+  const payload = JSON.stringify({
+    type: "dashboard-roadmap",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    roadmap,
+  }, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = window.URL.createObjectURL(blob);
+  const link = window.document.createElement("a");
+  link.href = url;
+  link.download = `${buildSafeRoadmapFilename(roadmap.title)}.json`;
+  window.document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function downloadTextFile(content, filename, mimeType = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = window.URL.createObjectURL(blob);
+  const link = window.document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  window.document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function roadmapOwnerName(members, ownerId) {
+  return getMemberById(members, ownerId)?.name || "";
+}
+
+function roadmapCoExecutorNames(members, memberIds = [], ownerId = null) {
+  return sanitizeMemberIds(memberIds, ownerId)
+    .map(id => getMemberById(members, id)?.name || "")
+    .filter(Boolean)
+    .join(", ");
+}
+
+function laneNameById(roadmap, laneId) {
+  return roadmap?.lanes?.find(lane => lane.id === laneId)?.name || laneId || "";
+}
+
+function buildRoadmapCsv(roadmap, members) {
+  const rows = [[
+    "section",
+    "roadmap_id",
+    "roadmap_title",
+    "roadmap_status",
+    "roadmap_tag",
+    "roadmap_period",
+    "lane_id",
+    "lane_name",
+    "item_type",
+    "item_title",
+    "item_status",
+    "progress",
+    "start_date",
+    "end_date",
+    "milestone_date",
+    "owner",
+    "coexecutors",
+    "description",
+  ]];
+
+  rows.push([
+    "roadmap",
+    roadmap.id,
+    roadmap.title,
+    STATUS_META[roadmap.status]?.label || roadmap.status || "",
+    roadmap.tag || "",
+    roadmap.period || "",
+    "",
+    "",
+    "roadmap",
+    roadmap.title,
+    STATUS_META[roadmap.status]?.label || roadmap.status || "",
+    roadmap.progress ?? "",
+    roadmap.timeline?.startDate || "",
+    roadmap.timeline?.endDate || "",
+    "",
+    roadmapOwnerName(members, roadmap.owner),
+    roadmapCoExecutorNames(members, roadmap.memberIds, roadmap.owner),
+    roadmap.desc || "",
+  ]);
+
+  (roadmap.lanes || []).forEach(lane => {
+    rows.push([
+      "lane",
+      roadmap.id,
+      roadmap.title,
+      STATUS_META[roadmap.status]?.label || roadmap.status || "",
+      roadmap.tag || "",
+      roadmap.period || "",
+      lane.id || "",
+      lane.name || "",
+      "lane",
+      lane.name || "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ]);
+  });
+
+  (roadmap.bars || []).forEach(bar => {
+    rows.push([
+      "task",
+      roadmap.id,
+      roadmap.title,
+      STATUS_META[roadmap.status]?.label || roadmap.status || "",
+      roadmap.tag || "",
+      roadmap.period || "",
+      bar.lane || "",
+      laneNameById(roadmap, bar.lane),
+      "task",
+      bar.title || "",
+      STATUS_OPTIONS.find(option => option.value === bar.status)?.label || bar.status || "",
+      bar.progress ?? "",
+      bar.startDate || roadmap.timeline?.startDate || "",
+      bar.endDate || roadmap.timeline?.endDate || "",
+      "",
+      roadmapOwnerName(members, bar.owner),
+      roadmapCoExecutorNames(members, bar.memberIds, bar.owner),
+      "",
+    ]);
+  });
+
+  (roadmap.milestones || []).forEach(milestone => {
+    rows.push([
+      "milestone",
+      roadmap.id,
+      roadmap.title,
+      STATUS_META[roadmap.status]?.label || roadmap.status || "",
+      roadmap.tag || "",
+      roadmap.period || "",
+      "",
+      "",
+      "milestone",
+      milestone.name || "",
+      "",
+      "",
+      "",
+      "",
+      milestone.date || "",
+      "",
+      "",
+      "",
+    ]);
+  });
+
+  return "\uFEFF" + rows.map(row => row.map(csvCell).join(";")).join("\n");
+}
+
+async function downloadRoadmapXls(roadmap, members) {
+  if (!roadmap) return;
+  const buffer = await buildRoadmapWorkbookXlsxBuffer(roadmap, members);
+  downloadTextFile(buffer, `${buildSafeRoadmapFilename(roadmap.title)}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+function buildRoadmapVisualPrintHtml(node, title) {
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('[data-print-hidden="true"]').forEach(item => item.remove());
+  clone.querySelectorAll('button').forEach(button => {
+    button.style.pointerEvents = "none";
+  });
+  const headMarkup = Array.from(window.document.head.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map(element => element.outerHTML)
+    .join("\n");
+  return `
+    <!doctype html>
+    <html lang="ru">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)} - PDF</title>
+        ${headMarkup}
+        <style>
+          html, body { margin: 0; background: #f0f6ff; }
+          body { padding: 24px; font-family: Inter, Arial, sans-serif; color: #1e3a6e; }
+          #print-root { width: 100%; }
+          .visual-print {
+            width: 1280px;
+            transform: scale(0.82);
+            transform-origin: top left;
+          }
+          @media print {
+            @page { size: landscape; margin: 12mm; }
+            html, body { background: #fff; }
+            body { padding: 0; }
+            #print-root { width: 100%; }
+            .visual-print {
+              width: 1280px !important;
+              transform: scale(0.82) !important;
+              transform-origin: top left !important;
+            }
+            #print-root * {
+              animation: none !important;
+              transition: none !important;
+            }
+            #print-root [style*="overflow: auto"],
+            #print-root [style*="overflow:auto"],
+            #print-root [style*="overflow-x: auto"],
+            #print-root [style*='overflowX: "auto"'],
+            #print-root [style*="overflowX: 'auto'"] {
+              overflow: visible !important;
+              max-height: none !important;
+              height: auto !important;
+            }
+            #print-root [style*="position: sticky"],
+            #print-root [style*='position: "sticky"'],
+            #print-root [style*="position: 'sticky'"] {
+              position: static !important;
+              top: auto !important;
+              left: auto !important;
+              box-shadow: none !important;
+            }
+            #print-root [style*="minWidth"] {
+              min-width: 0 !important;
+            }
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div id="print-root"><div class="visual-print">${clone.outerHTML}</div></div>
+      </body>
+    </html>
+  `;
+}
+
+function buildTimelinePrintHtml(roadmap, members) {
+  const timeline = roadmap.timeline;
+  const today = new Date();
+  const todayIso = toIsoDate(today);
+  const todayPct = percentFromTimelineDate(todayIso, timeline);
+  const showToday = todayPct >= 0 && todayPct <= 100
+    && today >= parseIsoDate(timeline.startDate)
+    && today <= addDays(parseIsoDate(timeline.endDate), 1);
+  const rows = [];
+  roadmap.lanes.forEach(lane => {
+    const laneBars = roadmap.bars.filter(b => b.lane === lane.id);
+    rows.push({ type: "lane", lane });
+    laneBars.forEach(b => rows.push({ type: "bar", b }));
+  });
+  const sideW = 320;
+  const chartW = Math.max(900, timeline.months.length * 110);
+  const totalW = sideW + chartW;
+  const gridHeight = rows.reduce((sum, row) => sum + (row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT), 0);
+  let offsetTop = 0;
+  const positionedRows = rows.map(row => {
+    const top = offsetTop;
+    offsetTop += row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT;
+    return { ...row, top };
+  });
+  const sm = STATUS_META[roadmap.status] || STATUS_META.archived;
+  const ownerMember = getMemberById(members, roadmap.owner);
+  const roadmapCoExecutors = sanitizeMemberIds(roadmap.memberIds, roadmap.owner).map(id => getMemberById(members, id)).filter(Boolean);
+  return `
+    <!doctype html>
+    <html lang="ru">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(roadmap.title)} - PDF</title>
+        <style>
+          html, body { margin: 0; background: #fff; }
+          body { padding: 18px; font-family: Inter, Arial, sans-serif; color: #1e3a6e; }
+          .page { width: ${totalW}px; }
+          .card { background: #fff; border: 1px solid #e2edf8; border-radius: 16px; box-shadow: 0 1px 4px rgba(37,99,235,.05); }
+          .header { display: flex; align-items: flex-start; gap: 16px; padding: 20px 24px; margin-bottom: 16px; }
+          .header-main { flex: 1; min-width: 0; }
+          .crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; font-weight: 600; margin-bottom: 6px; }
+          .title-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+          .title-row h1 { margin: 0; font-size: 22px; font-weight: 700; color: #1e3a6e; }
+          .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: ${sm.color}; background: ${sm.bg}; }
+          .status-dot { width: 6px; height: 6px; border-radius: 50%; background: ${sm.color}; }
+          .desc { margin: 0; font-size: 13px; color: #94a3b8; }
+          .meta { display: flex; gap: 20px; padding-left: 20px; border-left: 1px solid #e8f0fa; }
+          .meta-col { display: flex; flex-direction: column; gap: 6px; min-width: 120px; }
+          .meta-label { font-size: 11px; font-weight: 600; color: #94a3b8; letter-spacing: .05em; }
+          .meta-value { font-size: 14px; font-weight: 600; color: #1e3a6e; display: flex; align-items: center; gap: 6px; }
+          .avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; }
+          .timeline-card { overflow: hidden; }
+          .timeline-head { display: flex; border-bottom: 1px solid #e8f0fa; }
+          .side-head { width: ${sideW}px; flex-shrink: 0; padding: 14px 20px; font-size: 12px; font-weight: 700; color: #94a3b8; border-right: 1px solid #e8f0fa; background: #fff; }
+          .months-head { width: ${chartW}px; display: flex; }
+          .quarter { border-right: 1px solid #e8f0fa; }
+          .quarter:last-child { border-right: none; }
+          .quarter-title { font-size: 13px; font-weight: 700; padding: 10px 0 6px; text-align: center; color: #1e3a6e; }
+          .quarter-months { display: grid; }
+          .quarter-month { font-size: 11px; color: #94a3b8; text-align: center; padding-bottom: 8px; }
+          .timeline-body { display: flex; position: relative; }
+          .side-body { width: ${sideW}px; flex-shrink: 0; border-right: 1px solid #e8f0fa; background: #fff; position: relative; z-index: 2; }
+          .lane-row { display: flex; align-items: center; gap: 8px; height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: #f7f9fd; font-size: 12px; font-weight: 700; color: #1e3a6e; }
+          .lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+          .task-label { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #475569; overflow-wrap: anywhere; }
+          .chart { width: ${chartW}px; position: relative; height: ${Math.max(120, gridHeight)}px; }
+          .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
+          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 3; }
+          .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
+          .milestone { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); z-index: 3; display: flex; flex-direction: column; align-items: center; }
+          .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
+          .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
+          .milestone-line { position: absolute; top: 20px; bottom: 0; width: 1px; }
+          .gantt-row { position: absolute; left: 0; right: 0; }
+          .gantt-bar { position: absolute; height: 30px; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; }
+          .gantt-progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.22); }
+          .gantt-title { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
+          .gantt-owner { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; position: relative; z-index: 1; }
+          .legend { display: flex; gap: 20px; padding: 12px 20px; border-top: 1px solid #e8f0fa; }
+          .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; }
+          .legend-box { width: 14px; height: 10px; border-radius: 3px; display: inline-block; }
+          @media print {
+            @page { size: landscape; margin: 10mm; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="card header">
+            <div class="header-main">
+              <div class="crumbs">Дорожные карты &gt; ${escapeHtml(roadmap.tag || "")}</div>
+              <div class="title-row">
+                <h1>${escapeHtml(roadmap.title)}</h1>
+                <span class="status"><span class="status-dot"></span>${escapeHtml(sm.label)}</span>
+              </div>
+              <p class="desc">${escapeHtml(roadmap.desc || "")}</p>
+            </div>
+            <div class="meta">
+              <div class="meta-col">
+                <span class="meta-label">ВЛАДЕЛЕЦ</span>
+                <span class="meta-value">${ownerMember ? `<span class="avatar" style="background:${escapeHtml(ownerMember.color)}">${escapeHtml(ownerMember.initials)}</span>` : ""}${escapeHtml(ownerMember?.name || "Не назначен")}</span>
+              </div>
+              <div class="meta-col">
+                <span class="meta-label">СОИСПОЛНИТЕЛИ</span>
+                <span class="meta-value">${escapeHtml(roadmapCoExecutors.map(item => item?.name).filter(Boolean).join(", ") || "—")}</span>
+              </div>
+              <div class="meta-col">
+                <span class="meta-label">ПЕРИОД</span>
+                <span class="meta-value">${escapeHtml(roadmap.period || "")}</span>
+              </div>
+              <div class="meta-col">
+                <span class="meta-label">ПРОГРЕСС</span>
+                <span class="meta-value">${escapeHtml(String(roadmap.progress ?? 0))}%</span>
+              </div>
+            </div>
+          </div>
+          <div class="card timeline-card">
+            <div class="timeline-head">
+              <div class="side-head">Направление / задача</div>
+              <div class="months-head">
+                ${timeline.quarters.map((quarter, qi) => `
+                  <div class="quarter" style="width:${quarter.widthPct}%;${qi === timeline.quarters.length - 1 ? 'border-right:none;' : ''}">
+                    <div class="quarter-title">${escapeHtml(quarter.label)}</div>
+                    <div class="quarter-months" style="grid-template-columns:repeat(${quarter.months.length},1fr)">
+                      ${quarter.months.map(month => `<div class="quarter-month">${escapeHtml(month.label)}</div>`).join("")}
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+            <div class="timeline-body">
+              <div class="side-body">
+                ${positionedRows.map(row => row.type === "lane"
+                  ? `<div class="lane-row"><span class="lane-dot" style="background:${escapeHtml(row.lane.color)}"></span>${escapeHtml(row.lane.name)}</div>`
+                  : `<div class="task-label">${escapeHtml(row.b.title)}</div>`
+                ).join("")}
+              </div>
+              <div class="chart">
+                ${timeline.months.map(month => `<span class="month-line" style="left:${month.leftPct}%;background:${month.month % 3 === 0 ? "#dde8f5" : "#eef3fa"}"></span>`).join("")}
+                <span class="month-line" style="left:100%;background:#dde8f5"></span>
+                ${showToday ? `<div class="today-line" style="left:${todayPct}%"><span class="today-badge">сегодня</span></div>` : ""}
+                ${(roadmap.milestones || []).map(item => {
+                  const color = item.color || DEFAULT_MILESTONE_COLOR;
+                  const pct = percentFromTimelineDate(item.date, timeline);
+                  return `<div class="milestone" style="left:${pct}%;color:${escapeHtml(color)}">
+                    <span class="milestone-diamond"></span>
+                    <span class="milestone-label" style="color:${escapeHtml(color)};background:${escapeHtml(color)}1f">${escapeHtml(item.name || "")}</span>
+                    <span class="milestone-line" style="background:repeating-linear-gradient(180deg, ${escapeHtml(color)}66 0 4px, transparent 4px 8px)"></span>
+                  </div>`;
+                }).join("")}
+                ${positionedRows.map(row => {
+                  if (row.type !== "bar") return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_LANE_ROW_HEIGHT}px;background:#f7f9fd"></div>`;
+                  const c = BAR_COL[row.b.status] || BAR_COL.planned;
+                  const left = percentFromTimelineDate(row.b.startDate, timeline);
+                  const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
+                  const owner = getMemberById(members, row.b.owner);
+                  const coExecutors = sanitizeMemberIds(row.b.memberIds, row.b.owner).map(id => getMemberById(members, id)).filter(Boolean);
+                  return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_TASK_ROW_HEIGHT}px">
+                    <div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
+                      ${row.b.status === "progress" ? `<span class="gantt-progress" style="width:${escapeHtml(String(row.b.progress || 0))}%"></span>` : ""}
+                      <span class="gantt-title">${escapeHtml(row.b.title)}</span>
+                      <span class="gantt-owner">
+                        ${owner ? `<span class="avatar" style="width:20px;height:20px;background:${escapeHtml(owner.color)};font-size:9px">${escapeHtml(owner.initials)}</span>` : ""}
+                        ${coExecutors.slice(0, 2).map(item => item ? `<span class="avatar" style="width:18px;height:18px;background:${escapeHtml(item.color)};font-size:8px">${escapeHtml(item.initials)}</span>` : "").join("")}
+                      </span>
+                    </div>
+                  </div>`;
+                }).join("")}
+              </div>
+            </div>
+            <div class="legend">
+              <span class="legend-item"><span class="legend-box" style="background:#22b07d"></span>Завершено</span>
+              <span class="legend-item"><span class="legend-box" style="background:#3b6fe0"></span>В работе</span>
+              <span class="legend-item"><span class="legend-box" style="background:#aeb9d0"></span>Запланировано</span>
+              <span class="legend-item" style="color:#6d5bd0;font-weight:600"><span class="milestone-diamond" style="width:12px;height:12px;position:static;transform:rotate(45deg);margin:0 2px 0 0"></span>Веха</span>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "timeline") {
+  if (!node) return;
+  const iframe = window.document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.setAttribute("aria-hidden", "true");
+
+  const cleanup = () => {
+    window.setTimeout(() => {
+      iframe.remove();
+    }, 300);
+  };
+
+  iframe.onload = () => {
+    const frameWindow = iframe.contentWindow;
+    if (!frameWindow) {
+      cleanup();
+      return;
+    }
+    frameWindow.focus();
+    window.setTimeout(() => {
+      try {
+        frameWindow.print();
+      } finally {
+        cleanup();
+      }
+    }, 250);
+  };
+
+  window.document.body.appendChild(iframe);
+  iframe.srcdoc = tab === "timeline" && roadmap
+    ? buildTimelinePrintHtml(roadmap, members)
+    : buildRoadmapVisualPrintHtml(node, title);
 }
 
 export default function RoadmapsSection({ team = [], api, currentUser = null }) {
@@ -2136,6 +2730,10 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
           defaultOwnerId={defaultOwnerId}
           onBack={() => setOpenId(null)}
           onEdit={() => setRmModal("edit")}
+          onExportJson={() => downloadRoadmapExport(rm)}
+          onExportCsv={() => downloadTextFile(buildRoadmapCsv(rm, members), `${buildSafeRoadmapFilename(rm.title)}.csv`, "text/csv;charset=utf-8")}
+          onExportXls={() => downloadRoadmapXls(rm, members)}
+          onExportPdf={(node, activeTab) => openRoadmapPrintView(node, rm.title, rm, members, activeTab)}
           onSaveBar={handleSaveBar}
           onDeleteBar={handleDeleteBar}
           onSaveMilestone={handleSaveMilestone}
