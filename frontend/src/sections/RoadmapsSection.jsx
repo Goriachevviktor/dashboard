@@ -334,6 +334,17 @@ function percentFromTimelineDate(dateValue, timeline, endExclusive = false) {
   return ((clampedMs - rangeStartMs) / Math.max(1, rangeEndMs - rangeStartMs)) * 100;
 }
 
+function timelineDateFromPercent(percentValue, timeline, endExclusive = false) {
+  const timelineStart = parseIsoDate(timeline?.startDate);
+  const timelineEnd = parseIsoDate(timeline?.endDate);
+  if (!timelineStart || !timelineEnd) return "";
+  const clampedPct = Math.max(0, Math.min(100, Number(percentValue) || 0));
+  const totalDays = Math.max(1, Math.round((addDays(timelineEnd, 1).getTime() - timelineStart.getTime()) / (24 * 60 * 60 * 1000)));
+  const rawOffset = Math.max(0, Math.min(totalDays - 1, Math.round((clampedPct / 100) * (totalDays - 1))));
+  const dayOffset = endExclusive ? Math.max(0, rawOffset - 1) : rawOffset;
+  return toIsoDate(addDays(timelineStart, dayOffset));
+}
+
 function formatRoadmapMonthRange(startDateValue, endDateValue) {
   const startDate = parseIsoDate(startDateValue);
   const endDate = parseIsoDate(endDateValue);
@@ -1455,30 +1466,51 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
 const TIMELINE_TASK_ROW_HEIGHT = 54;
 const TIMELINE_LANE_ROW_HEIGHT = 40;
 
-function GanttBar({ b, hover, setHover, idx, onBarClick, members }) {
+function GanttBar({ b, hover, setHover, idx, onBarClick, onBarPointerStart, members, previewLeft = null, previewWidth = null, isDragging = false }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
-  const left = percentFromTimelineDate(b.startDate, b.timeline);
-  const width = Math.max(0.9, percentFromTimelineDate(b.endDate, b.timeline, true) - left);
+  const left = previewLeft ?? percentFromTimelineDate(b.startDate, b.timeline);
+  const width = previewWidth ?? Math.max(0.9, percentFromTimelineDate(b.endDate, b.timeline, true) - left);
   const isHov = hover === idx;
   const ownerMember = getMemberById(members, b.owner);
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
       <div
-        onClick={() => onBarClick && onBarClick(b, idx)}
+        onDoubleClick={() => !isDragging && onBarClick && onBarClick(b, idx)}
+        onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
         onMouseEnter={() => setHover(idx)}
         onMouseLeave={() => setHover(null)}
         style={{
           position: "absolute", height: 30, borderRadius: 9,
           left: left + "%", width: width + "%",
           background: c.bar, display: "flex", alignItems: "center",
-          padding: "0 10px", gap: 8, overflow: "hidden", cursor: "pointer",
+          padding: "0 10px", gap: 8, overflow: "hidden", cursor: isDragging ? "grabbing" : "grab",
           boxShadow: isHov ? "0 6px 16px rgba(31,45,77,.22)" : "0 2px 6px rgba(31,45,77,.14)",
           transform: isHov ? "translateY(-1px)" : "none",
           transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : 2,
           minWidth: 8,
+          userSelect: "none",
+          touchAction: "none",
         }}
       >
+        {isHov && width > 2.5 && (
+          <>
+            <span
+              onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "resize-start")}
+              style={{
+                position: "absolute", left: 0, top: 0, bottom: 0, width: 10,
+                cursor: "ew-resize", zIndex: 2, background: "rgba(255,255,255,.08)",
+              }}
+            />
+            <span
+              onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "resize-end")}
+              style={{
+                position: "absolute", right: 0, top: 0, bottom: 0, width: 10,
+                cursor: "ew-resize", zIndex: 2, background: "rgba(255,255,255,.08)",
+              }}
+            />
+          </>
+        )}
         {b.status === "progress" && (
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: b.progress + "%", background: "rgba(255,255,255,.22)", zIndex: 0 }} />
         )}
@@ -1492,8 +1524,11 @@ function GanttBar({ b, hover, setHover, idx, onBarClick, members }) {
   );
 }
 
-function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
+function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag }) {
   const [hover, setHover] = useState(null);
+  const [milestoneDrag, setMilestoneDrag] = useState(null);
+  const [barDrag, setBarDrag] = useState(null);
+  const gridRef = useRef(null);
   const timeline = rm.timeline;
   const today = new Date();
   const todayIso = toIsoDate(today);
@@ -1511,6 +1546,145 @@ function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
 
   const sideW = 340;
   const stickyTop = 0;
+
+  useEffect(() => {
+    if (!milestoneDrag) return undefined;
+
+    function updateDrag(clientX) {
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
+      const nextPct = ((clientX - rect.left) / rect.width) * 100;
+      const deltaX = clientX - milestoneDrag.startClientX;
+      setMilestoneDrag(current => current ? {
+        ...current,
+        pct: Math.max(0, Math.min(100, nextPct)),
+        moved: current.moved || Math.abs(deltaX) >= 5,
+      } : current);
+    }
+
+    function handlePointerMove(event) {
+      updateDrag(event.clientX);
+    }
+
+    function finishDrag(clientX) {
+      const current = milestoneDrag;
+      if (!current) return;
+      updateDrag(clientX);
+      const finalPct = Math.max(0, Math.min(100, ((clientX - (gridRef.current?.getBoundingClientRect().left || 0)) / Math.max(1, gridRef.current?.getBoundingClientRect().width || 1)) * 100));
+      const finalDate = timelineDateFromPercent(finalPct, timeline);
+      setMilestoneDrag(null);
+      if (current.moved) {
+        onMilestoneDrag && onMilestoneDrag(current.idx, { ...current.milestone, date: finalDate });
+      } else {
+        onMilestoneClick && onMilestoneClick(current.milestone, current.idx);
+      }
+    }
+
+    function handlePointerUp(event) {
+      finishDrag(event.clientX);
+    }
+
+    function handlePointerCancel() {
+      setMilestoneDrag(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline]);
+
+  useEffect(() => {
+    if (!barDrag) return undefined;
+
+    function computePct(clientX) {
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return barDrag.left;
+      return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    }
+
+    function handlePointerMove(event) {
+      const currentPct = computePct(event.clientX);
+      const deltaPct = currentPct - barDrag.startPct;
+      setBarDrag(current => {
+        if (!current) return current;
+        const moved = current.moved || Math.abs(event.clientX - current.startClientX) >= 5;
+        if (current.mode === "move") {
+          const nextLeft = Math.max(0, Math.min(100 - current.width, current.left + deltaPct));
+          return { ...current, previewLeft: nextLeft, previewWidth: current.width, moved };
+        }
+        if (current.mode === "resize-start") {
+          const rightEdge = current.left + current.width;
+          const nextLeft = Math.max(0, Math.min(rightEdge - 0.9, current.left + deltaPct));
+          return { ...current, previewLeft: nextLeft, previewWidth: Math.max(0.9, rightEdge - nextLeft), moved };
+        }
+        const nextWidth = Math.max(0.9, Math.min(100 - current.left, current.width + deltaPct));
+        return { ...current, previewLeft: current.left, previewWidth: nextWidth, moved };
+      });
+    }
+
+    function handlePointerUp() {
+      const current = barDrag;
+      setBarDrag(null);
+      if (!current) return;
+      if (!current.moved) return;
+      const nextStartDate = timelineDateFromPercent(current.previewLeft, timeline);
+      const endPct = current.previewLeft + current.previewWidth;
+      const nextEndDate = timelineDateFromPercent(endPct, timeline, true);
+      onBarDrag && onBarDrag(current.idx, { ...current.bar, startDate: nextStartDate, endDate: nextEndDate });
+    }
+
+    function handlePointerCancel() {
+      setBarDrag(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [barDrag, onBarClick, onBarDrag, timeline]);
+
+  function startMilestoneDrag(event, milestone, idx, milestonePct) {
+    event.preventDefault();
+    event.stopPropagation();
+    setMilestoneDrag({
+      idx,
+      milestone,
+      pct: milestonePct,
+      startPct: milestonePct,
+      startClientX: event.clientX,
+      moved: false,
+    });
+  }
+
+  function startBarPointerAction(event, bar, idx, mode) {
+    event.preventDefault();
+    event.stopPropagation();
+    const left = percentFromTimelineDate(bar.startDate, timeline);
+    const width = Math.max(0.9, percentFromTimelineDate(bar.endDate, timeline, true) - left);
+    const rect = gridRef.current?.getBoundingClientRect();
+    const startPct = rect && rect.width > 0 ? Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)) : left;
+    setBarDrag({
+      idx,
+      mode,
+      bar,
+      left,
+      width,
+      previewLeft: left,
+      previewWidth: width,
+      startPct,
+      startClientX: event.clientX,
+      moved: false,
+    });
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1578,7 +1752,7 @@ function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
           </div>
 
           {/* Сетка Gantt */}
-          <div style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: rows.length === 0 ? 120 : undefined }}>
+          <div ref={gridRef} style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: rows.length === 0 ? 120 : undefined, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : undefined }}>
             {/* Вертикальные линии */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
               {timeline.months.map((month, i) => (
@@ -1603,7 +1777,7 @@ function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
             {/* Вехи */}
             {rm.milestones.map((m, i) => {
               const milestoneColor = m.color || DEFAULT_MILESTONE_COLOR;
-              const milestonePct = percentFromTimelineDate(m.date, timeline);
+              const milestonePct = milestoneDrag?.idx === i ? milestoneDrag.pct : percentFromTimelineDate(m.date, timeline);
               return (
                 <div
                   key={i}
@@ -1614,14 +1788,14 @@ function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
                     pointerEvents: "none",
                   }}>
                   <span
-                    onClick={() => onMilestoneClick && onMilestoneClick(m, i)}
+                    onPointerDown={event => startMilestoneDrag(event, m, i, milestonePct)}
                     title="Редактировать веху"
-                    style={{ color: milestoneColor, marginTop: 4, cursor: "pointer", pointerEvents: "auto" }}
+                    style={{ color: milestoneColor, marginTop: 4, cursor: milestoneDrag?.idx === i ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none" }}
                   ><DiamondIcon size={14} /></span>
                   <span
-                    onClick={() => onMilestoneClick && onMilestoneClick(m, i)}
+                    onPointerDown={event => startMilestoneDrag(event, m, i, milestonePct)}
                     title="Редактировать веху"
-                    style={{ position: "absolute", top: 22, fontSize: 10, fontWeight: 700, color: milestoneColor, background: milestoneColor + "1f", padding: "2px 6px", borderRadius: 5, whiteSpace: "nowrap", cursor: "pointer", pointerEvents: "auto" }}
+                    style={{ position: "absolute", top: 22, fontSize: 10, fontWeight: 700, color: milestoneColor, background: milestoneColor + "1f", padding: "2px 6px", borderRadius: 5, whiteSpace: "nowrap", cursor: milestoneDrag?.idx === i ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none" }}
                   >{m.name}</span>
                   <span style={{ position: "absolute", top: 20, bottom: 0, width: 1, background: `repeating-linear-gradient(180deg, ${milestoneColor}66 0 4px, transparent 4px 8px)`, pointerEvents: "none" }} />
                 </div>
@@ -1631,7 +1805,7 @@ function TimelineView({ rm, members, onBarClick, onMilestoneClick }) {
             {rows.map((r, i) => r.type === "lane" ? (
               <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "#f7f9fd" }} />
             ) : (
-              <GanttBar key={i} b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick} members={members} />
+              <GanttBar key={i} b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick} onBarPointerStart={startBarPointerAction} members={members} previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null} previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null} isDragging={barDrag?.idx === r.idx} />
             ))}
           </div>
         </div>
@@ -2019,7 +2193,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
 
       {/* Контент вкладки */}
       <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
-        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} />}
+        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onBarDrag={(idx, data) => onSaveBar(idx, data)} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} onMilestoneDrag={(idx, data) => onSaveMilestone(idx, data)} />}
         {tab === "swim"     && <SwimlanesView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
         {tab === "nnl"      && <NNLView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
       </div>
@@ -2686,21 +2860,20 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
   }
 
   function handleSaveMilestone(idx, data) {
-    setRoadmaps(rs => rs.map(r =>
-      r.id !== openId
-        ? r
-        : {
-            ...r,
-            milestones: idx === null
-              ? [...r.milestones, data]
-              : r.milestones.map((m, i) => i === idx ? { ...m, ...data } : m),
-          }
-    ));
+    setRoadmaps(rs => rs.map(r => {
+      if (r.id !== openId) return r;
+      return recalc({
+        ...r,
+        milestones: idx === null
+          ? [...r.milestones, data]
+          : r.milestones.map((m, i) => i === idx ? { ...m, ...data } : m),
+      });
+    }));
   }
 
   function handleDeleteMilestone(idx) {
     setRoadmaps(rs => rs.map(r =>
-      r.id !== openId ? r : { ...r, milestones: r.milestones.filter((_, i) => i !== idx) }
+      r.id !== openId ? r : recalc({ ...r, milestones: r.milestones.filter((_, i) => i !== idx) })
     ));
   }
 
