@@ -42,7 +42,7 @@ def migrate_auth_schema() -> None:
     with db() as conn:
         # Migration versioning table
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS schema_migrations (
+            CREATE TABLE IF NOT EXISTS app_schema_migrations (
                 version text PRIMARY KEY,
                 applied_at timestamptz DEFAULT now()
             )
@@ -50,12 +50,12 @@ def migrate_auth_schema() -> None:
 
         def applied(version: str) -> bool:
             return conn.execute(
-                "SELECT 1 FROM schema_migrations WHERE version = %s", (version,)
+                "SELECT 1 FROM app_schema_migrations WHERE version = %s", (version,)
             ).fetchone() is not None
 
         def mark_applied(version: str) -> None:
             conn.execute(
-                "INSERT INTO schema_migrations (version) VALUES (%s) ON CONFLICT DO NOTHING",
+                "INSERT INTO app_schema_migrations (version) VALUES (%s) ON CONFLICT DO NOTHING",
                 (version,),
             )
 
