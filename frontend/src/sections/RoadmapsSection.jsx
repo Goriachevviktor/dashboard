@@ -4,6 +4,13 @@ import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
 import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
+import {
+  applyDependencySchedule,
+  buildDependencyState,
+  ensureRoadmapTaskIds,
+  sanitizePredecessorIds,
+  wouldCreateDependencyCycle,
+} from '../utils/roadmapDependencies.js';
 
 const OWNERS = {
   viktor: { name: "Виктор",  initials: "ВИ", color: "#6d5bd0" },
@@ -251,11 +258,25 @@ function normalizeBarDates(barItem, baseYear = ROADMAP_YEAR) {
   const owner = memberKey(barItem?.owner);
   return {
     ...barItem,
+    id: String(barItem?.id || ""),
     owner,
     memberIds: sanitizeMemberIds(barItem?.memberIds, owner),
+    predecessors: sanitizePredecessorIds(barItem?.predecessors, barItem?.id),
     startDate: toIsoDate(startDate),
     endDate: toIsoDate(safeEndDate),
   };
+}
+
+function createRoadmapTaskId() {
+  return `bar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function removeTaskDependencies(bars, deletedTaskId) {
+  const deletedId = String(deletedTaskId || "");
+  return (Array.isArray(bars) ? bars : []).map(barItem => ({
+    ...barItem,
+    predecessors: sanitizePredecessorIds(barItem?.predecessors, barItem?.id).filter(id => id !== deletedId),
+  }));
 }
 
 function normalizeMilestoneDate(milestone, baseYear = ROADMAP_YEAR) {
@@ -775,8 +796,9 @@ const STATUS_OPTIONS = [
   { value: "done",     label: "Завершено" },
 ];
 
-function BarFormModal({ bar: initBar, lanes, members, defaultOwnerId, onClose, onSave, onDelete }) {
+function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId, onClose, onSave, onDelete }) {
   const isEdit = Boolean(initBar);
+  const taskId = initBar?.id || "";
   const [title,    setTitle]    = useState(initBar?.title    || "");
   const [lane,     setLane]     = useState(initBar?.lane     || lanes[0]?.id || "");
   const [status,   setStatus]   = useState(initBar?.status   || "planned");
@@ -785,7 +807,41 @@ function BarFormModal({ bar: initBar, lanes, members, defaultOwnerId, onClose, o
   const [endDate,   setEndDate]   = useState(initBar?.endDate || monthValueToDate(initBar?.end ?? 3, 2, true));
   const [owner,    setOwner]    = useState(memberKey(initBar?.owner || defaultOwnerId || members[0]?.id || "viktor"));
   const [memberIds, setMemberIds] = useState(sanitizeMemberIds(initBar?.memberIds, initBar?.owner || defaultOwnerId));
+  const [predecessors, setPredecessors] = useState(sanitizePredecessorIds(initBar?.predecessors, initBar?.id));
+  const [candidatePredecessorId, setCandidatePredecessorId] = useState("");
   const [error,    setError]    = useState("");
+
+  const predecessorOptions = useMemo(() => (
+    (Array.isArray(bars) ? bars : [])
+      .filter(item => item?.id && item.id !== taskId)
+      .map(item => ({
+        id: item.id,
+        title: item.title || "Без названия",
+        laneName: lanes.find(laneItem => laneItem.id === item.lane)?.name || "",
+        disabled: isEdit ? wouldCreateDependencyCycle(bars, item.id, taskId) : false,
+      }))
+  ), [bars, isEdit, lanes, taskId]);
+
+  function addPredecessor() {
+    if (!candidatePredecessorId) return;
+    if (predecessors.includes(candidatePredecessorId)) {
+      setError("Такая зависимость уже добавлена");
+      return;
+    }
+    const option = predecessorOptions.find(item => item.id === candidatePredecessorId);
+    if (!option || option.disabled) {
+      setError("Эта связь создаст цикл и не может быть сохранена");
+      return;
+    }
+    setPredecessors(list => [...list, candidatePredecessorId]);
+    setCandidatePredecessorId("");
+    setError("");
+  }
+
+  function removePredecessor(predecessorId) {
+    setPredecessors(list => list.filter(id => id !== predecessorId));
+    setError("");
+  }
 
   function toggleMember(id) {
     const key = memberKey(id);
@@ -804,7 +860,18 @@ function BarFormModal({ bar: initBar, lanes, members, defaultOwnerId, onClose, o
       setError("Дата окончания должна быть позже даты начала");
       return;
     }
-    onSave({ title, lane, status, progress: Number(progress), startDate, endDate, owner, memberIds: sanitizeMemberIds(memberIds, owner) });
+    onSave({
+      id: initBar?.id,
+      title,
+      lane,
+      status,
+      progress: Number(progress),
+      startDate,
+      endDate,
+      owner,
+      memberIds: sanitizeMemberIds(memberIds, owner),
+      predecessors: sanitizePredecessorIds(predecessors, initBar?.id),
+    });
     onClose();
   }
 
@@ -918,6 +985,90 @@ function BarFormModal({ bar: initBar, lanes, members, defaultOwnerId, onClose, o
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Предшественники</label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {predecessors.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {predecessors.map(predecessorId => {
+                  const predecessor = bars.find(item => item.id === predecessorId);
+                  return (
+                    <span
+                      key={predecessorId}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #dbeafe",
+                        background: "#f8fbff",
+                        color: "#1e3a6e",
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>{predecessor?.title || predecessorId}</span>
+                      <button
+                        type="button"
+                        onClick={() => removePredecessor(predecessorId)}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "#94a3b8",
+                          cursor: "pointer",
+                          fontSize: 14,
+                          lineHeight: 1,
+                          padding: 0,
+                        }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>Нет зависимостей по FS</div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+              <select
+                value={candidatePredecessorId}
+                onChange={e => { setCandidatePredecessorId(e.target.value); setError(""); }}
+                style={{ ...inputStyle, cursor: "pointer" }}
+              >
+                <option value="">Выберите задачу-предшественника</option>
+                {predecessorOptions.map(option => (
+                  <option
+                    key={option.id}
+                    value={option.id}
+                    disabled={option.disabled || predecessors.includes(option.id)}
+                  >
+                    {option.title}{option.laneName ? ` · ${option.laneName}` : ""}{option.disabled ? " · цикл" : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={addPredecessor}
+                style={{
+                  padding: "0 14px",
+                  borderRadius: 9,
+                  border: "none",
+                  background: "#2563eb",
+                  color: "#fff",
+                  fontFamily: "Inter",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Добавить
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1466,34 +1617,51 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
 const TIMELINE_TASK_ROW_HEIGHT = 54;
 const TIMELINE_LANE_ROW_HEIGHT = 40;
 
-function GanttBar({ b, hover, setHover, idx, onBarClick, onBarPointerStart, members, previewLeft = null, previewWidth = null, isDragging = false }) {
+function GanttBar({
+  b,
+  hover,
+  setHover,
+  idx,
+  onBarClick,
+  onBarPointerStart,
+  onBarLinkClick,
+  members,
+  previewLeft = null,
+  previewWidth = null,
+  isDragging = false,
+  linkMode = false,
+  isLinked = false,
+  isHighlighted = false,
+}) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = previewLeft ?? percentFromTimelineDate(b.startDate, b.timeline);
   const width = previewWidth ?? Math.max(0.9, percentFromTimelineDate(b.endDate, b.timeline, true) - left);
-  const isHov = hover === idx;
+  const isHov = hover === idx || isHighlighted;
   const ownerMember = getMemberById(members, b.owner);
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
       <div
-        onDoubleClick={() => !isDragging && onBarClick && onBarClick(b, idx)}
-        onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
+        onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
+        onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
+        onPointerDown={event => !linkMode && onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
         onMouseEnter={() => setHover(idx)}
         onMouseLeave={() => setHover(null)}
         style={{
           position: "absolute", height: 30, borderRadius: 9,
           left: left + "%", width: width + "%",
           background: c.bar, display: "flex", alignItems: "center",
-          padding: "0 10px", gap: 8, overflow: "hidden", cursor: isDragging ? "grabbing" : "grab",
-          boxShadow: isHov ? "0 6px 16px rgba(31,45,77,.22)" : "0 2px 6px rgba(31,45,77,.14)",
+          padding: "0 10px", gap: 8, overflow: "hidden", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
+          boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
           transform: isHov ? "translateY(-1px)" : "none",
           transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : 2,
           minWidth: 8,
           userSelect: "none",
           touchAction: "none",
+          outline: linkMode && isLinked ? "2px solid rgba(255,255,255,.72)" : "none",
         }}
       >
-        {isHov && width > 2.5 && (
+        {!linkMode && isHov && width > 2.5 && (
           <>
             <span
               onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "resize-start")}
@@ -1514,7 +1682,21 @@ function GanttBar({ b, hover, setHover, idx, onBarClick, onBarPointerStart, memb
         {b.status === "progress" && (
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: b.progress + "%", background: "rgba(255,255,255,.22)", zIndex: 0 }} />
         )}
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1 }}>{b.title}</span>
+        {isLinked && (
+          <span style={{
+            position: "absolute",
+            left: 8,
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "#fff",
+            boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
+            zIndex: 1,
+          }} />
+        )}
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1, paddingLeft: isLinked ? 12 : 0 }}>{b.title}</span>
         <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
           <Avatar member={ownerMember} size={20} />
           <AvatarStack members={coExecutors} size={18} max={2} />
@@ -1524,7 +1706,7 @@ function GanttBar({ b, hover, setHover, idx, onBarClick, onBarPointerStart, memb
   );
 }
 
-function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag }) {
+function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag, linkMode = false, linkSourceId = "", onLinkTaskSelect }) {
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
   const [barDrag, setBarDrag] = useState(null);
@@ -1543,6 +1725,61 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     rows.push({ type: "lane", lane });
     laneBars.forEach(b => rows.push({ type: "bar", b: { ...b, timeline }, idx: rm.bars.indexOf(b) }));
   });
+
+  let offsetTop = 0;
+  const positionedRows = rows.map(row => {
+    const top = offsetTop;
+    offsetTop += row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT;
+    return { ...row, top };
+  });
+  const gridHeight = positionedRows.length ? offsetTop : 120;
+  const chartWidth = Math.max(720, timeline.months.length * 110);
+  const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
+  const hoveredBar = hover == null ? null : positionedRows.find(row => row.type === "bar" && row.idx === hover)?.b || null;
+  const focusTaskId = hoveredBar?.id || linkSourceId || "";
+  const highlightedTaskIds = useMemo(() => {
+    if (!focusTaskId) return new Set();
+    return new Set([
+      focusTaskId,
+      ...(dependencyState.predecessorsById.get(focusTaskId) || []),
+      ...(dependencyState.successorsById.get(focusTaskId) || []),
+    ]);
+  }, [dependencyState.predecessorsById, dependencyState.successorsById, focusTaskId]);
+  const rowByTaskId = useMemo(() => {
+    const map = new Map();
+    positionedRows.forEach(row => {
+      if (row.type === "bar" && row.b?.id) map.set(row.b.id, row);
+    });
+    return map;
+  }, [positionedRows]);
+  const dependencyLines = useMemo(() => (
+    positionedRows
+      .filter(row => row.type === "bar")
+      .flatMap(row => {
+        const predecessors = dependencyState.predecessorsById.get(row.b.id) || [];
+        return predecessors.map(predecessorId => {
+          const predecessorRow = rowByTaskId.get(predecessorId);
+          if (!predecessorRow) return null;
+          const startX = (percentFromTimelineDate(predecessorRow.b.endDate, timeline, true) / 100) * chartWidth;
+          const rawEndX = (percentFromTimelineDate(row.b.startDate, timeline) / 100) * chartWidth;
+          const endX = Math.max(startX + 8, rawEndX - 6);
+          const startY = predecessorRow.top + TIMELINE_TASK_ROW_HEIGHT / 2;
+          const endY = row.top + TIMELINE_TASK_ROW_HEIGHT / 2;
+          const middleX = endX > startX + 24 ? startX + 12 : (startX + endX) / 2;
+          return {
+            id: `${predecessorId}->${row.b.id}`,
+            predecessorId,
+            taskId: row.b.id,
+            startX,
+            endX,
+            startY,
+            endY,
+            middleX,
+            active: highlightedTaskIds.has(predecessorId) || highlightedTaskIds.has(row.b.id),
+          };
+        }).filter(Boolean);
+      })
+  ), [chartWidth, dependencyState.predecessorsById, highlightedTaskIds, positionedRows, rowByTaskId, timeline]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -1599,7 +1836,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline]);
 
   useEffect(() => {
-    if (!barDrag) return undefined;
+    if (!barDrag || linkMode) return undefined;
 
     function computePct(clientX) {
       const rect = gridRef.current?.getBoundingClientRect();
@@ -1650,7 +1887,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [barDrag, onBarClick, onBarDrag, timeline]);
+  }, [barDrag, linkMode, onBarClick, onBarDrag, timeline]);
 
   function startMilestoneDrag(event, milestone, idx, milestonePct) {
     event.preventDefault();
@@ -1666,6 +1903,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   }
 
   function startBarPointerAction(event, bar, idx, mode) {
+    if (linkMode) return;
     event.preventDefault();
     event.stopPropagation();
     const left = percentFromTimelineDate(bar.startDate, timeline);
@@ -1739,20 +1977,20 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             background: "#fff",
             boxShadow: "8px 0 16px rgba(15,23,42,.04)",
           }}>
-            {rows.map((r, i) => r.type === "lane" ? (
+            {positionedRows.map((r, i) => r.type === "lane" ? (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "#f7f9fd", fontSize: 12, fontWeight: 700, color: "#1e3a6e" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />
                 {r.lane.name}
               </div>
             ) : (
-              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: "#475569", whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
+              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: highlightedTaskIds.has(r.b.id) ? "#1e3a6e" : "#475569", fontWeight: highlightedTaskIds.has(r.b.id) ? 600 : 400, whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
                 {r.b.title}
               </div>
             ))}
           </div>
 
           {/* Сетка Gantt */}
-          <div ref={gridRef} style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: rows.length === 0 ? 120 : undefined, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : undefined }}>
+          <div ref={gridRef} style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: gridHeight, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
             {/* Вертикальные линии */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
               {timeline.months.map((month, i) => (
@@ -1773,6 +2011,35 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                   padding: "2px 7px", borderRadius: "0 0 6px 6px", whiteSpace: "nowrap",
                 }}>сегодня</span>
               </div>
+            )}
+            {dependencyLines.length > 0 && (
+              <svg
+                viewBox={`0 0 ${chartWidth} ${gridHeight}`}
+                style={{ position: "absolute", inset: 0, width: "100%", height: gridHeight, pointerEvents: "none", zIndex: 2 }}
+              >
+                <defs>
+                  <marker id="timeline-dependency-arrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#9fb1ca" />
+                  </marker>
+                  <marker id="timeline-dependency-arrow-active" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#2563eb" />
+                  </marker>
+                </defs>
+                {dependencyLines.map(line => (
+                  <path
+                    key={line.id}
+                    d={`M ${line.startX} ${line.startY} H ${line.middleX} V ${line.endY} H ${line.endX}`}
+                    fill="none"
+                    stroke={line.active ? "#2563eb" : "#aabbd4"}
+                    strokeWidth={1}
+                    strokeDasharray="4 3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                    markerEnd={`url(#${line.active ? "timeline-dependency-arrow-active" : "timeline-dependency-arrow"})`}
+                  />
+                ))}
+              </svg>
             )}
             {/* Вехи */}
             {rm.milestones.map((m, i) => {
@@ -1802,17 +2069,33 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               );
             })}
             {/* Строки */}
-            {rows.map((r, i) => r.type === "lane" ? (
+            {positionedRows.map((r, i) => r.type === "lane" ? (
               <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "#f7f9fd" }} />
             ) : (
-              <GanttBar key={i} b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick} onBarPointerStart={startBarPointerAction} members={members} previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null} previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null} isDragging={barDrag?.idx === r.idx} />
+              <GanttBar
+                key={i}
+                b={r.b}
+                idx={r.idx}
+                hover={hover}
+                setHover={setHover}
+                onBarClick={onBarClick}
+                onBarPointerStart={startBarPointerAction}
+                onBarLinkClick={onLinkTaskSelect}
+                members={members}
+                previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null}
+                previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null}
+                isDragging={barDrag?.idx === r.idx}
+                linkMode={linkMode}
+                isLinked={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0 || (dependencyState.successorsById.get(r.b.id) || []).length > 0}
+                isHighlighted={highlightedTaskIds.has(r.b.id)}
+              />
             ))}
           </div>
         </div>
       </div>
 
       {/* Empty state — нет дорожек */}
-      {rows.length === 0 && (
+      {positionedRows.length === 0 && (
         <div style={{ padding: "32px 24px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
           Нет дорожек. Нажмите «Редактировать» карту и добавьте направления.
         </div>
@@ -2032,11 +2315,14 @@ function LaneFormModal({ onClose, onSave }) {
   );
 }
 
-function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane }) {
+function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks }) {
   const [tab, setTab]               = useState("timeline");
   const [barModal, setBarModal]     = useState(null); // null | "new" | { bar, idx }
   const [mileModal, setMileModal]   = useState(null); // null | "new" | { milestone, idx }
   const [laneModal, setLaneModal]   = useState(false);
+  const [linkMode, setLinkMode]     = useState(false);
+  const [linkSourceId, setLinkSourceId] = useState("");
+  const [linkMessage, setLinkMessage] = useState("");
   const printRootRef = useRef(null);
   const sm = STATUS_META[rm.status] || STATUS_META.archived;
   const ownerMember = getMemberById(members, rm.owner);
@@ -2046,6 +2332,54 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
     { id: "swim",     label: "Дорожки" },
     { id: "nnl",      label: "Now · Next · Later" },
   ];
+
+  useEffect(() => {
+    if (!linkMode) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setLinkMode(false);
+        setLinkSourceId("");
+        setLinkMessage("");
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [linkMode]);
+
+  function toggleLinkMode() {
+    setLinkMode(current => {
+      const next = !current;
+      if (!next) {
+        setLinkSourceId("");
+        setLinkMessage("");
+      } else {
+        setLinkMessage("Выберите задачу-источник, затем зависимую задачу");
+      }
+      return next;
+    });
+  }
+
+  function handleLinkTaskSelect(bar) {
+    if (!bar?.id) return;
+    if (!linkMode) return;
+    if (!linkSourceId) {
+      setLinkSourceId(bar.id);
+      setLinkMessage(`Источник: ${bar.title}. Теперь выберите зависимую задачу`);
+      return;
+    }
+    if (linkSourceId === bar.id) {
+      setLinkMessage("Нельзя связать задачу саму с собой");
+      return;
+    }
+    const result = onLinkTasks ? onLinkTasks(linkSourceId, bar.id) : { ok: false };
+    if (result?.ok) {
+      setLinkMode(false);
+      setLinkSourceId("");
+      setLinkMessage("");
+      return;
+    }
+    setLinkMessage(result?.message || "Связь не удалось создать");
+  }
 
   return (
     <div ref={printRootRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2147,6 +2481,24 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
           ))}
         </div>
         <div style={{ flex: 1 }} />
+        {tab === "timeline" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 4 }}>
+            {linkMessage && (
+              <span style={{ fontSize: 12, color: linkSourceId ? "#2563eb" : "#64748b", maxWidth: 320, textAlign: "right" }}>
+                {linkMessage}
+              </span>
+            )}
+            <button onClick={toggleLinkMode} style={{
+              display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 10,
+              border: linkMode ? "1px solid #2563eb" : "1px solid #e2edf8",
+              background: linkMode ? "#eff6ff" : "#fff",
+              color: linkMode ? "#2563eb" : "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter",
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              {linkMode ? "Отменить связь" : "Связать"}
+            </button>
+          </div>
+        )}
         <button onClick={() => setLaneModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 10, border: "1px solid #e2edf8", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="11" width="18" height="5" rx="1"/><rect x="3" y="18" width="18" height="3" rx="1"/></svg>
           Дорожка
@@ -2182,6 +2534,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
       {barModal && (
         <BarFormModal
           bar={barModal === "new" ? null : barModal.bar}
+          bars={rm.bars}
           lanes={rm.lanes}
           members={members}
           defaultOwnerId={defaultOwnerId}
@@ -2193,7 +2546,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
 
       {/* Контент вкладки */}
       <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
-        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onBarDrag={(idx, data) => onSaveBar(idx, data)} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} onMilestoneDrag={(idx, data) => onSaveMilestone(idx, data)} />}
+        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onBarDrag={(idx, data) => onSaveBar(idx, data)} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} onMilestoneDrag={(idx, data) => onSaveMilestone(idx, data)} linkMode={linkMode} linkSourceId={linkSourceId} onLinkTaskSelect={handleLinkTaskSelect} />}
         {tab === "swim"     && <SwimlanesView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
         {tab === "nnl"      && <NNLView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
       </div>
@@ -2205,7 +2558,8 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
 
 function recalc(rm) {
   const baseYear = inferRoadmapBaseYear(rm);
-  const bars = (rm.bars || []).map(barItem => normalizeBarDates(barItem, baseYear));
+  const barsWithIds = ensureRoadmapTaskIds(rm?.id || "roadmap", rm.bars || []);
+  const bars = applyDependencySchedule(barsWithIds.map(barItem => normalizeBarDates(barItem, baseYear)));
   const milestones = (rm.milestones || []).map(milestone => normalizeMilestoneDate(milestone, baseYear));
   const timeline = buildTimelineMeta({ ...rm, bars, milestones });
   const total = bars.length || 1;
@@ -2346,12 +2700,14 @@ function buildRoadmapCsv(roadmap, members) {
     "lane_id",
     "lane_name",
     "item_type",
+    "item_id",
     "item_title",
     "item_status",
     "progress",
     "start_date",
     "end_date",
     "milestone_date",
+    "predecessors",
     "owner",
     "coexecutors",
     "description",
@@ -2367,6 +2723,7 @@ function buildRoadmapCsv(roadmap, members) {
     "",
     "",
     "roadmap",
+    roadmap.id,
     roadmap.title,
     STATUS_META[roadmap.status]?.label || roadmap.status || "",
     roadmap.progress ?? "",
@@ -2389,6 +2746,7 @@ function buildRoadmapCsv(roadmap, members) {
       lane.id || "",
       lane.name || "",
       "lane",
+      lane.id || "",
       lane.name || "",
       "",
       "",
@@ -2412,12 +2770,17 @@ function buildRoadmapCsv(roadmap, members) {
       bar.lane || "",
       laneNameById(roadmap, bar.lane),
       "task",
+      bar.id || "",
       bar.title || "",
       STATUS_OPTIONS.find(option => option.value === bar.status)?.label || bar.status || "",
       bar.progress ?? "",
       bar.startDate || roadmap.timeline?.startDate || "",
       bar.endDate || roadmap.timeline?.endDate || "",
       "",
+      sanitizePredecessorIds(bar.predecessors, bar.id).map(id => {
+        const predecessor = roadmap.bars.find(item => item.id === id);
+        return predecessor?.title || id;
+      }).join(", "),
       roadmapOwnerName(members, bar.owner),
       roadmapCoExecutorNames(members, bar.memberIds, bar.owner),
       "",
@@ -2435,12 +2798,14 @@ function buildRoadmapCsv(roadmap, members) {
       "",
       "",
       "milestone",
+      "",
       milestone.name || "",
       "",
       "",
       "",
       "",
       milestone.date || "",
+      "",
       "",
       "",
       "",
@@ -2846,8 +3211,8 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
     setRoadmaps(rs => rs.map(r => {
       if (r.id !== openId) return r;
       const bars = idx === null
-        ? [...r.bars, data]
-        : r.bars.map((b, i) => i === idx ? { ...b, ...data } : b);
+        ? [...r.bars, { ...data, id: data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, data.id) }]
+        : r.bars.map((b, i) => i === idx ? { ...b, ...data, id: b.id || data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, b.id || data.id) } : b);
       return recalc({ ...r, bars });
     }));
   }
@@ -2855,7 +3220,9 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
   function handleDeleteBar(idx) {
     setRoadmaps(rs => rs.map(r => {
       if (r.id !== openId) return r;
-      return recalc({ ...r, bars: r.bars.filter((_, i) => i !== idx) });
+      const deletedTaskId = r.bars[idx]?.id;
+      const remainingBars = r.bars.filter((_, i) => i !== idx);
+      return recalc({ ...r, bars: removeTaskDependencies(remainingBars, deletedTaskId) });
     }));
   }
 
@@ -2883,6 +3250,31 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
     ));
   }
 
+  function handleLinkTasks(sourceId, targetId) {
+    const currentRoadmap = roadmaps.find(item => item.id === openId);
+    if (!currentRoadmap) return { ok: false, message: "Карта не найдена" };
+    if (sourceId === targetId) return { ok: false, message: "Нельзя связать задачу саму с собой" };
+    if (wouldCreateDependencyCycle(currentRoadmap.bars, sourceId, targetId)) {
+      return { ok: false, message: "Связь создаст цикл" };
+    }
+    const targetTask = currentRoadmap.bars.find(barItem => barItem.id === targetId);
+    if (!targetTask) return { ok: false, message: "Задача-приемник не найдена" };
+    const nextPredecessors = sanitizePredecessorIds([...(targetTask.predecessors || []), sourceId], targetTask.id);
+    if (nextPredecessors.length === (targetTask.predecessors || []).length) {
+      return { ok: false, message: "Такая связь уже существует" };
+    }
+    setRoadmaps(rs => rs.map(r => {
+      if (r.id !== openId) return r;
+      const bars = r.bars.map(barItem => (
+        barItem.id === targetId
+          ? { ...barItem, predecessors: nextPredecessors }
+          : barItem
+      ));
+      return recalc({ ...r, bars });
+    }));
+    return { ok: true };
+  }
+
   if (rm) {
     return (
       <>
@@ -2898,6 +3290,7 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
         )}
         {confirmDialog}
         <RoadmapDetail
+          key={rm.id}
           rm={rm}
           members={members}
           defaultOwnerId={defaultOwnerId}
@@ -2912,6 +3305,7 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
           onSaveMilestone={handleSaveMilestone}
           onDeleteMilestone={handleDeleteMilestone}
           onSaveLane={handleSaveLane}
+          onLinkTasks={handleLinkTasks}
         />
       </>
     );
