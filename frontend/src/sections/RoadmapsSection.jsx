@@ -11,13 +11,14 @@ import {
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
+import { COLORS, FONT_STACK, ROADMAP_BAR_COL, ROADMAP_MILESTONE_COLORS, ROADMAP_STATUS_COLOR, segmentedWrapStyle, segmentedItemStyle } from '../theme.js';
 
 const OWNERS = {
-  viktor: { name: "Виктор",  initials: "ВИ", color: "#6d5bd0" },
-  anna:   { name: "Анна",    initials: "АК", color: "#22b07d" },
-  dmitry: { name: "Дмитрий", initials: "ДМ", color: "#3b6fe0" },
-  elena:  { name: "Елена",   initials: "ЕС", color: "#f3a236" },
-  pavel:  { name: "Павел",   initials: "ПР", color: "#2bb6c4" },
+  viktor: { name: "Виктор",  initials: "ВИ", color: "#5856d6" },
+  anna:   { name: "Анна",    initials: "АК", color: "#34c759" },
+  dmitry: { name: "Дмитрий", initials: "ДМ", color: "#007aff" },
+  elena:  { name: "Елена",   initials: "ЕС", color: "#ff9500" },
+  pavel:  { name: "Павел",   initials: "ПР", color: "#30b0c7" },
 };
 
 const MONTHS = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
@@ -26,9 +27,9 @@ const DEFAULT_DATE_MIN = "2024-01-01";
 const DEFAULT_DATE_MAX = "2030-12-31";
 
 const STATUS_META = {
-  active:   { label: "Активна",   color: "#22b07d", bg: "#e6f7f0" },
-  draft:    { label: "Черновик",  color: "#f3a236", bg: "#fdf1df" },
-  archived: { label: "Архив",     color: "#8a96ad", bg: "#eef1f6" },
+  active:   { label: "Активна",   color: ROADMAP_STATUS_COLOR.active,   bg: "transparent" },
+  draft:    { label: "Черновик",  color: ROADMAP_STATUS_COLOR.draft,    bg: "transparent" },
+  archived: { label: "Архив",     color: ROADMAP_STATUS_COLOR.archived, bg: "transparent" },
 };
 
 const ROADMAP_STATUS_OPTIONS = [
@@ -37,13 +38,9 @@ const ROADMAP_STATUS_OPTIONS = [
   { value: "archived", label: "Архив" },
 ];
 
-const BAR_COL = {
-  done:     { bar: "#22b07d", soft: "#cdeede" },
-  progress: { bar: "#3b6fe0", soft: "#cfddf8" },
-  planned:  { bar: "#aeb9d0", soft: "#dde3ee" },
-};
+const BAR_COL = ROADMAP_BAR_COL;
 
-const MILESTONE_COLORS = ["#6d5bd0", "#3b6fe0", "#22b07d", "#f3a236", "#ec5b6b", "#2bb6c4", "#8a96ad", "#e11d48"];
+const MILESTONE_COLORS = ROADMAP_MILESTONE_COLORS;
 const DEFAULT_MILESTONE_COLOR = MILESTONE_COLORS[0];
 
 function memberKey(value) {
@@ -60,7 +57,7 @@ function normalizeMember(member, index = 0) {
     key: memberKey(id),
     name,
     initials,
-    color: member.color || OWNERS[memberKey(id)]?.color || ["#2563eb", "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#14b8a6"][index % 8],
+    color: member.color || OWNERS[memberKey(id)]?.color || ["#007aff", "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ff3b30", "#6366f1", "#14b8a6"][index % 8],
     email: member.email || "",
   };
 }
@@ -168,8 +165,8 @@ function AvatarStack({ members = [], size = 22, max = 3 }) {
           height: size,
           borderRadius: "50%",
           border: "2px solid #fff",
-          background: "#e2edf8",
-          color: "#64748b",
+          background: "rgba(15,23,42,.08)",
+          color: "#86868b",
           fontSize: Math.max(10, size * 0.38),
           fontWeight: 700,
           display: "inline-flex",
@@ -387,7 +384,7 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Ключевые вехи ИТ-проекта: требования, разработка, проектные работы и мониторинг",
       owner: "dmitry",
       tag: "ИТ-проект",
-      tagColor: "#f3a236",
+      tagColor: "#ff9500",
       status: "active",
       period: "Q1 – Q4 2026",
       milestones: [
@@ -397,10 +394,10 @@ const SAMPLE_ROADMAPS = (() => {
         { name: "Готовность для пилота в УЦД", month: 10.7 },
       ],
       lanes: [
-        { id: "it1", name: "Требования", color: "#3b6fe0" },
-        { id: "it2", name: "Разработка", color: "#6d5bd0" },
-        { id: "it3", name: "Проектные работы", color: "#22b07d" },
-        { id: "it4", name: "Мониторинг", color: "#2bb6c4" },
+        { id: "it1", name: "Требования", color: "#007aff" },
+        { id: "it2", name: "Разработка", color: "#5856d6" },
+        { id: "it3", name: "Проектные работы", color: "#34c759" },
+        { id: "it4", name: "Мониторинг", color: "#30b0c7" },
       ],
       bars: [
         bar("it1", "БТ на релиз 2: описание и согласование", 0.0, 1.2, "progress", 85, "elena"),
@@ -443,7 +440,7 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Ключевые продуктовые инициативы и релизы на год",
       owner: "viktor",
       tag: "Продукт",
-      tagColor: "#3b6fe0",
+      tagColor: "#007aff",
       status: "active",
       period: "Q1 – Q4 2026",
       milestones: [
@@ -453,9 +450,9 @@ const SAMPLE_ROADMAPS = (() => {
         { name: "Итоги года", month: 11.4 },
       ],
       lanes: [
-        { id: "l1", name: "Платформа", color: "#3b6fe0" },
-        { id: "l2", name: "Мобильное приложение", color: "#6d5bd0" },
-        { id: "l3", name: "Аналитика", color: "#22b07d" },
+        { id: "l1", name: "Платформа", color: "#007aff" },
+        { id: "l2", name: "Мобильное приложение", color: "#5856d6" },
+        { id: "l3", name: "Аналитика", color: "#34c759" },
       ],
       bars: [
         bar("l1", "Новая система ролей", 0, 2.4, "done", 100, "dmitry"),
@@ -480,7 +477,7 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Инфраструктура, рефакторинг и технический долг",
       owner: "dmitry",
       tag: "Инженерия",
-      tagColor: "#6d5bd0",
+      tagColor: "#5856d6",
       status: "active",
       period: "Q1 – Q3 2026",
       milestones: [
@@ -488,9 +485,9 @@ const SAMPLE_ROADMAPS = (() => {
         { name: "Zero-downtime", month: 7.0 },
       ],
       lanes: [
-        { id: "p1", name: "Инфраструктура", color: "#6d5bd0" },
-        { id: "p2", name: "Безопасность", color: "#ec5b6b" },
-        { id: "p3", name: "DevOps", color: "#2bb6c4" },
+        { id: "p1", name: "Инфраструктура", color: "#5856d6" },
+        { id: "p2", name: "Безопасность", color: "#ff3b30" },
+        { id: "p3", name: "DevOps", color: "#30b0c7" },
       ],
       bars: [
         bar("p1", "Миграция на Kubernetes", 0, 3.0, "progress", 70, "dmitry"),
@@ -512,7 +509,7 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Кампании, контент и привлечение пользователей",
       owner: "elena",
       tag: "Маркетинг",
-      tagColor: "#f3a236",
+      tagColor: "#ff9500",
       status: "active",
       period: "Q2 – Q4 2026",
       milestones: [
@@ -520,9 +517,9 @@ const SAMPLE_ROADMAPS = (() => {
         { name: "Конференция", month: 9.0 },
       ],
       lanes: [
-        { id: "m1", name: "Контент", color: "#f3a236" },
-        { id: "m2", name: "Performance", color: "#3b6fe0" },
-        { id: "m3", name: "PR / Бренд", color: "#22b07d" },
+        { id: "m1", name: "Контент", color: "#ff9500" },
+        { id: "m2", name: "Performance", color: "#007aff" },
+        { id: "m3", name: "PR / Бренд", color: "#34c759" },
       ],
       bars: [
         bar("m1", "Контент-стратегия", 3.0, 5.5, "progress", 40, "elena"),
@@ -543,13 +540,13 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Улучшение первого опыта и удержания",
       owner: "anna",
       tag: "CX",
-      tagColor: "#22b07d",
+      tagColor: "#34c759",
       status: "draft",
       period: "Q3 – Q4 2026",
       milestones: [{ name: "Пилот", month: 8.0 }],
       lanes: [
-        { id: "o1", name: "Активация", color: "#22b07d" },
-        { id: "o2", name: "Поддержка", color: "#3b6fe0" },
+        { id: "o1", name: "Активация", color: "#34c759" },
+        { id: "o2", name: "Поддержка", color: "#007aff" },
       ],
       bars: [
         bar("o1", "Интерактивный тур", 6.5, 9.0, "planned", 0, "anna"),
@@ -568,13 +565,13 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "User research, интервью и гипотезы",
       owner: "pavel",
       tag: "Research",
-      tagColor: "#2bb6c4",
+      tagColor: "#30b0c7",
       status: "active",
       period: "Q1 – Q2 2026",
       milestones: [{ name: "Отчёт по сегментам", month: 2.5 }, { name: "Гипотезы Q3", month: 5.5 }],
       lanes: [
-        { id: "r1", name: "Качественные", color: "#2bb6c4" },
-        { id: "r2", name: "Количественные", color: "#6d5bd0" },
+        { id: "r1", name: "Качественные", color: "#30b0c7" },
+        { id: "r2", name: "Количественные", color: "#5856d6" },
       ],
       bars: [
         bar("r1", "Глубинные интервью", 0, 2.5, "done", 100, "pavel"),
@@ -594,7 +591,7 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Пилоты, инфраструктура и внедрение AI-инструментов в основные процессы",
       owner: "viktor",
       tag: "AI",
-      tagColor: "#2bb6c4",
+      tagColor: "#30b0c7",
       status: "active",
       period: "Q2 – Q4 2026",
       milestones: [
@@ -603,9 +600,9 @@ const SAMPLE_ROADMAPS = (() => {
         { name: "Scale-up", month: 10.0 },
       ],
       lanes: [
-        { id: "ai1", name: "Платформа", color: "#3b6fe0" },
-        { id: "ai2", name: "Продуктовые пилоты", color: "#6d5bd0" },
-        { id: "ai3", name: "Операционные сценарии", color: "#22b07d" },
+        { id: "ai1", name: "Платформа", color: "#007aff" },
+        { id: "ai2", name: "Продуктовые пилоты", color: "#5856d6" },
+        { id: "ai3", name: "Операционные сценарии", color: "#34c759" },
       ],
       bars: [
         bar("ai1", "Единый AI-стек и доступы", 3.0, 5.5, "progress", 55, "dmitry"),
@@ -626,11 +623,11 @@ const SAMPLE_ROADMAPS = (() => {
       desc: "Завершённые инициативы прошлого года",
       owner: "viktor",
       tag: "Архив",
-      tagColor: "#8a96ad",
+      tagColor: "#8e8e93",
       status: "archived",
       period: "Q1 – Q4 2025",
       milestones: [{ name: "Запуск v1", month: 6.0 }],
-      lanes: [{ id: "a1", name: "Продукт", color: "#8a96ad" }],
+      lanes: [{ id: "a1", name: "Продукт", color: "#8e8e93" }],
       bars: [
         bar("a1", "Первый релиз", 0, 6.0, "done", 100, "viktor"),
         bar("a1", "Стабилизация", 6.0, 11.0, "done", 100, "dmitry"),
@@ -654,10 +651,10 @@ const SAMPLE_ROADMAPS = (() => {
 function ProgressRing({ value, size = 46 }) {
   const r = (size - 6) / 2;
   const c = 2 * Math.PI * r;
-  const col = value === 100 ? "#22b07d" : value >= 50 ? "#3b6fe0" : "#f3a236";
+  const col = value === 100 ? "#34c759" : value >= 50 ? "#007aff" : "#ff9500";
   return (
     <svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
-      <circle cx={size/2} cy={size/2} r={r} stroke="#eef2f8" strokeWidth="5" fill="none" />
+      <circle cx={size/2} cy={size/2} r={r} stroke="rgba(118,118,128,.08)" strokeWidth="5" fill="none" />
       <circle cx={size/2} cy={size/2} r={r} stroke={col} strokeWidth="5" fill="none"
         strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - value / 100)}
         style={{ transition: "stroke-dashoffset .6s ease" }} />
@@ -669,7 +666,7 @@ function ProgressRing({ value, size = 46 }) {
 }
 
 function MiniTimeline({ rm }) {
-  const col = { done: "#22b07d", progress: "#3b6fe0", planned: "#c7d2e6" };
+  const col = { done: "#34c759", progress: "#007aff", planned: "#c7d2e6" };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5, padding: "4px 0" }}>
       {rm.bars.slice(0, 5).map((b, i) => (
@@ -705,10 +702,10 @@ function RoadmapCard({ rm, onOpen, members }) {
   const coExecutors = sanitizeMemberIds(rm.memberIds, rm.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <button onClick={() => onOpen(rm.id)} style={{
-      textAlign: "left", background: "#fff", border: "1px solid #e2edf8",
+      textAlign: "left", background: "#fff", border: "1px solid rgba(15,23,42,.08)",
       borderRadius: 16, padding: 22, boxShadow: "0 1px 4px rgba(37,99,235,.05)",
       display: "flex", flexDirection: "column", gap: 14, cursor: "pointer",
-      transition: "transform .15s, box-shadow .18s", fontFamily: "Inter", width: "100%",
+      transition: "transform .15s, box-shadow .18s", fontFamily: FONT_STACK, width: "100%",
     }}
       onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(37,99,235,.12)"; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 1px 4px rgba(37,99,235,.05)"; }}
@@ -720,20 +717,20 @@ function RoadmapCard({ rm, onOpen, members }) {
         </span>
       </div>
       <div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#1e3a6e", marginBottom: 4 }}>{rm.title}</div>
-        <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{rm.desc}</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#1d1d1f", letterSpacing: -.4, marginBottom: 4 }}>{rm.title}</div>
+        <div style={{ fontSize: 13, color: "#a1a1a6", lineHeight: 1.5 }}>{rm.desc}</div>
       </div>
       <MiniTimeline rm={rm} />
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #f1f5fb", paddingTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid rgba(118,118,128,.06)", paddingTop: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <ProgressRing value={rm.progress} />
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#1e3a6e" }}>{rm.tasksDone}/{rm.tasksTotal} задач</div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{rm.period}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#1d1d1f" }}>{rm.tasksDone}/{rm.tasksTotal} задач</div>
+            <div style={{ fontSize: 12, color: "#a1a1a6", marginTop: 2 }}>{rm.period}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: "#6d5bd0" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: "#5856d6" }}>
             <DiamondIcon size={13} />{rm.milestones.length}
           </span>
           <span style={{ display: "inline-flex", alignItems: "center" }}>
@@ -753,35 +750,35 @@ function RoadmapRow({ rm, onOpen, members }) {
   return (
     <button onClick={() => onOpen(rm.id)} style={{
       display: "flex", alignItems: "center", gap: 18, textAlign: "left",
-      background: "#fff", border: "1px solid #e2edf8", borderRadius: 12,
+      background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 12,
       padding: "14px 20px", boxShadow: "0 1px 3px rgba(37,99,235,.05)",
-      cursor: "pointer", fontFamily: "Inter", width: "100%",
+      cursor: "pointer", fontFamily: FONT_STACK, width: "100%",
       transition: "border-color .15s, box-shadow .15s",
     }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "#bfdbfe"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(37,99,235,.1)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = "#e2edf8"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(37,99,235,.05)"; }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,122,255,.3)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(37,99,235,.1)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(15,23,42,.08)"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(37,99,235,.05)"; }}
     >
       <span style={{ width: 5, alignSelf: "stretch", borderRadius: 999, background: rm.tagColor, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e3a6e" }}>{rm.title}</div>
-        <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rm.desc}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1d1d1f" }}>{rm.title}</div>
+        <div style={{ fontSize: 13, color: "#a1a1a6", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rm.desc}</div>
       </div>
-      <div style={{ fontSize: 13, color: "#475569", fontWeight: 500, width: 120, flexShrink: 0 }}>{rm.period}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 600, color: "#6d5bd0", width: 80, flexShrink: 0 }}>
+      <div style={{ fontSize: 13, color: "#3a3a3c", fontWeight: 500, width: 120, flexShrink: 0 }}>{rm.period}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 600, color: "#5856d6", width: 80, flexShrink: 0 }}>
         <DiamondIcon size={13} />{rm.milestones.length} вех
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, width: 160, flexShrink: 0 }}>
-        <div style={{ flex: 1, height: 7, background: "#eef2f8", borderRadius: 999, overflow: "hidden" }}>
-          <span style={{ display: "block", height: "100%", background: "#3b6fe0", borderRadius: 999, width: rm.progress + "%" }} />
+        <div style={{ flex: 1, height: 7, background: "rgba(118,118,128,.08)", borderRadius: 999, overflow: "hidden" }}>
+          <span style={{ display: "block", height: "100%", background: "#007aff", borderRadius: 999, width: rm.progress + "%" }} />
         </div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#1e3a6e", width: 36 }}>{rm.progress}%</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#1d1d1f", width: 36 }}>{rm.progress}%</span>
       </div>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 999, color: sm.color, background: sm.bg }}>{sm.label}</span>
       <span style={{ display: "inline-flex", alignItems: "center" }}>
         <Avatar member={ownerMember} size={28} />
         <AvatarStack members={coExecutors} size={22} max={2} />
       </span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"><polyline points="9 6 15 12 9 18"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a1a1a6" strokeWidth="2" strokeLinecap="round"><polyline points="9 6 15 12 9 18"/></svg>
     </button>
   );
 }
@@ -876,23 +873,23 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
   }
 
   const inputStyle = {
-    width: "100%", height: 38, border: "1.5px solid #dbeafe", borderRadius: 8,
-    padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none",
-    color: "#1e3a6e", boxSizing: "border-box", background: "#fff",
+    width: "100%", height: 38, border: "1px solid rgba(15,23,42,.08)", borderRadius: 11,
+    padding: "0 12px", fontFamily: FONT_STACK, fontSize: 14, outline: "none",
+    color: "#1d1d1f", boxSizing: "border-box", background: "#fff",
   };
-  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 5 };
+  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#3a3a3c", marginBottom: 5 };
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000,
+      position: "fixed", inset: 0, background: "rgba(15,23,42,.30)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", zIndex: 1000,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }}>
       <form onSubmit={handleSubmit} style={{
-        width: "100%", maxWidth: 480, background: "#fff", borderRadius: 18,
-        padding: 28, boxShadow: "0 24px 64px rgba(30,58,110,.18)",
+        width: "100%", maxWidth: 480, background: "rgba(255,255,255,.85)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", border: "1px solid rgba(255,255,255,.9)", borderRadius: 22,
+        padding: 28, boxShadow: "0 32px 80px rgba(15,23,42,.18)",
         display: "flex", flexDirection: "column", gap: 14,
       }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#1e3a6e", marginBottom: 4 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#1d1d1f", letterSpacing: -.4, marginBottom: 4 }}>
           {isEdit ? "Редактировать задачу" : "Новая задача"}
         </div>
 
@@ -910,9 +907,14 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
           </div>
           <div>
             <label style={labelStyle}>Статус</label>
-            <select value={status} onChange={e => setStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <div style={{ ...segmentedWrapStyle, display: "flex", width: "100%" }}>
+              {STATUS_OPTIONS.map(o => (
+                <button key={o.value} type="button" onClick={() => setStatus(o.value)}
+                  style={{ ...segmentedItemStyle(status === o.value, o.value === "done" ? COLORS.greenText : o.value === "progress" ? COLORS.accent : COLORS.gray), flex: 1, padding: "8px 4px", whiteSpace: "nowrap" }}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -944,7 +946,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
             <input type="number" min="0" max="100" value={progress} onChange={e => setProgress(e.target.value)} style={inputStyle} />
           </div>
         </div>
-        {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: -6 }}>{error}</div>}
+        {error && <div style={{ fontSize: 12, color: "#ff3b30", marginTop: -6 }}>{error}</div>}
 
         <div>
           <label style={labelStyle}>Владелец</label>
@@ -971,11 +973,11 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
                     gap: 8,
                     padding: "7px 10px",
                     borderRadius: 999,
-                    border: "1.5px solid " + (active ? member.color : "#dbeafe"),
-                    background: active ? member.color + "18" : "#f8fbff",
-                    color: active ? member.color : "#64748b",
+                    border: "1.5px solid " + (active ? member.color : "#e8f2ff"),
+                    background: active ? member.color + "18" : "rgba(118,118,128,.03)",
+                    color: active ? member.color : "#86868b",
                     cursor: "pointer",
-                    fontFamily: "Inter",
+                    fontFamily: FONT_STACK,
                     fontSize: 12,
                     fontWeight: 700,
                   }}
@@ -1004,9 +1006,9 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
                         gap: 8,
                         padding: "7px 10px",
                         borderRadius: 999,
-                        border: "1px solid #dbeafe",
-                        background: "#f8fbff",
-                        color: "#1e3a6e",
+                        border: "1px solid #e8f2ff",
+                        background: "rgba(118,118,128,.03)",
+                        color: "#1d1d1f",
                         fontSize: 12,
                         fontWeight: 600,
                       }}
@@ -1018,7 +1020,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
                         style={{
                           border: "none",
                           background: "transparent",
-                          color: "#94a3b8",
+                          color: "#a1a1a6",
                           cursor: "pointer",
                           fontSize: 14,
                           lineHeight: 1,
@@ -1032,7 +1034,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
                 })}
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: "#94a3b8" }}>Нет зависимостей по FS</div>
+              <div style={{ fontSize: 12, color: "#a1a1a6" }}>Нет зависимостей по FS</div>
             )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
               <select
@@ -1055,12 +1057,12 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
                 type="button"
                 onClick={addPredecessor}
                 style={{
-                  padding: "0 14px",
-                  borderRadius: 9,
+                  padding: "0 16px",
+                  borderRadius: 999,
                   border: "none",
-                  background: "#2563eb",
+                  background: "#007aff",
                   color: "#fff",
-                  fontFamily: "Inter",
+                  fontFamily: FONT_STACK,
                   fontSize: 13,
                   fontWeight: 700,
                   cursor: "pointer",
@@ -1076,20 +1078,20 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
           <div>
             {isEdit && (
               <button type="button" onClick={() => { onDelete(); onClose(); }} style={{
-                padding: "9px 16px", borderRadius: 9, border: "1.5px solid #fca5a5",
-                background: "#fff", color: "#ef4444", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                padding: "8px 18px", borderRadius: 999, border: "none",
+                background: "rgba(118,118,128,.08)", color: "#e03131", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>Удалить</button>
             )}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" onClick={onClose} style={{
-              padding: "9px 20px", borderRadius: 9, border: "1.5px solid #dbeafe",
-              background: "#f8fbff", color: "#64748b", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 20px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.12)", color: "#1d1d1f", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Отмена</button>
             <button type="submit" style={{
-              padding: "9px 20px", borderRadius: 9, border: "none",
-              background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
-              fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 22px", borderRadius: 999, border: "none",
+              background: "#007aff", color: "#fff", boxShadow: "0 2px 8px rgba(0,122,255,.28)",
+              fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Сохранить</button>
           </div>
         </div>
@@ -1113,23 +1115,23 @@ function MilestoneFormModal({ milestone, onClose, onSave, onDelete }) {
   }
 
   const inputStyle = {
-    width: "100%", height: 38, border: "1.5px solid #dbeafe", borderRadius: 8,
-    padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none",
-    color: "#1e3a6e", boxSizing: "border-box",
+    width: "100%", height: 38, border: "1px solid rgba(15,23,42,.08)", borderRadius: 11,
+    padding: "0 12px", fontFamily: FONT_STACK, fontSize: 14, outline: "none",
+    color: "#1d1d1f", boxSizing: "border-box",
   };
-  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 5 };
+  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#3a3a3c", marginBottom: 5 };
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000,
+      position: "fixed", inset: 0, background: "rgba(15,23,42,.30)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", zIndex: 1000,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }}>
       <form onSubmit={handleSubmit} style={{
-        width: "100%", maxWidth: 380, background: "#fff", borderRadius: 18,
-        padding: 28, boxShadow: "0 24px 64px rgba(30,58,110,.18)",
+        width: "100%", maxWidth: 380, background: "rgba(255,255,255,.85)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", border: "1px solid rgba(255,255,255,.9)", borderRadius: 22,
+        padding: 28, boxShadow: "0 32px 80px rgba(15,23,42,.18)",
         display: "flex", flexDirection: "column", gap: 16,
       }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#1e3a6e", marginBottom: 4 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#1d1d1f", letterSpacing: -.4, marginBottom: 4 }}>
           {isEdit ? "Редактировать веху" : "Новая веха"}
         </div>
 
@@ -1178,20 +1180,20 @@ function MilestoneFormModal({ milestone, onClose, onSave, onDelete }) {
           <div>
             {isEdit && (
               <button type="button" onClick={() => { onDelete(); onClose(); }} style={{
-                padding: "9px 16px", borderRadius: 9, border: "1.5px solid #fca5a5",
-                background: "#fff", color: "#ef4444", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                padding: "8px 18px", borderRadius: 999, border: "none",
+                background: "rgba(118,118,128,.08)", color: "#e03131", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>Удалить</button>
             )}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" onClick={onClose} style={{
-              padding: "9px 20px", borderRadius: 9, border: "1.5px solid #dbeafe",
-              background: "#f8fbff", color: "#64748b", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 20px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.12)", color: "#1d1d1f", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Отмена</button>
             <button type="submit" style={{
-              padding: "9px 20px", borderRadius: 9, border: "none",
-              background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
-              fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 22px", borderRadius: 999, border: "none",
+              background: "#007aff", color: "#fff", boxShadow: "0 2px 8px rgba(0,122,255,.28)",
+              fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>{isEdit ? "Сохранить" : "Добавить"}</button>
           </div>
         </div>
@@ -1202,9 +1204,9 @@ function MilestoneFormModal({ milestone, onClose, onSave, onDelete }) {
 
 // ── Модалка создания/редактирования карты ─────────────────────────────────
 
-const TAG_COLORS = ["#3b6fe0","#6d5bd0","#22b07d","#f3a236","#ec5b6b","#2bb6c4","#8a96ad"];
+const TAG_COLORS = ["#007aff","#5856d6","#34c759","#ff9500","#ff3b30","#30b0c7","#8e8e93"];
 
-const LANE_COLORS = ["#3b6fe0","#6d5bd0","#22b07d","#f3a236","#ec5b6b","#2bb6c4","#8a96ad","#e11d48"];
+const LANE_COLORS = ["#007aff","#5856d6","#34c759","#ff9500","#ff3b30","#30b0c7","#8e8e93","#ff2d55"];
 
 function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, onDelete }) {
   const isEdit = Boolean(roadmap);
@@ -1248,23 +1250,23 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
   }
 
   const inputStyle = {
-    width: "100%", height: 38, border: "1.5px solid #dbeafe", borderRadius: 8,
-    padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none",
-    color: "#1e3a6e", boxSizing: "border-box",
+    width: "100%", height: 38, border: "1px solid rgba(15,23,42,.08)", borderRadius: 11,
+    padding: "0 12px", fontFamily: FONT_STACK, fontSize: 14, outline: "none",
+    color: "#1d1d1f", boxSizing: "border-box",
   };
-  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 5 };
+  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#3a3a3c", marginBottom: 5 };
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000,
+      position: "fixed", inset: 0, background: "rgba(15,23,42,.30)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", zIndex: 1000,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }}>
       <form onSubmit={handleSubmit} style={{
-        width: "100%", maxWidth: 500, background: "#fff", borderRadius: 18,
-        padding: 28, boxShadow: "0 24px 64px rgba(30,58,110,.18)",
+        width: "100%", maxWidth: 500, background: "rgba(255,255,255,.85)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", border: "1px solid rgba(255,255,255,.9)", borderRadius: 22,
+        padding: 28, boxShadow: "0 32px 80px rgba(15,23,42,.18)",
         display: "flex", flexDirection: "column", gap: 16,
       }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#1e3a6e", marginBottom: 4 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#1d1d1f", letterSpacing: -.4, marginBottom: 4 }}>
           {isEdit ? "Редактировать карту" : "Новая дорожная карта"}
         </div>
 
@@ -1285,7 +1287,7 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
           </div>
           <div>
             <label style={labelStyle}>Период</label>
-            <input value={roadmap?.period || "Автоматически по срокам задач"} readOnly style={{ ...inputStyle, background: "#f8fbff", color: "#94a3b8" }} />
+            <input value={roadmap?.period || "Автоматически по срокам задач"} readOnly style={{ ...inputStyle, background: "rgba(118,118,128,.03)", color: "#a1a1a6" }} />
           </div>
         </div>
 
@@ -1327,11 +1329,11 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
                     gap: 8,
                     padding: "7px 10px",
                     borderRadius: 999,
-                    border: "1.5px solid " + (active ? member.color : "#dbeafe"),
-                    background: active ? member.color + "18" : "#f8fbff",
-                    color: active ? member.color : "#64748b",
+                    border: "1.5px solid " + (active ? member.color : "#e8f2ff"),
+                    background: active ? member.color + "18" : "rgba(118,118,128,.03)",
+                    color: active ? member.color : "#86868b",
                     cursor: "pointer",
-                    fontFamily: "Inter",
+                    fontFamily: FONT_STACK,
                     fontSize: 12,
                     fontWeight: 700,
                   }}
@@ -1346,7 +1348,7 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
 
         <div>
           <label style={labelStyle}>Статус карты</label>
-          <div style={{ display: "inline-flex", background: "#f8fbff", border: "1.5px solid #dbeafe", borderRadius: 999, padding: 4, gap: 2 }}>
+          <div style={{ ...segmentedWrapStyle, gap: 0 }}>
             {ROADMAP_STATUS_OPTIONS.map(option => {
               const active = status === option.value;
               const meta = STATUS_META[option.value];
@@ -1355,22 +1357,9 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
                   key={option.value}
                   type="button"
                   onClick={() => setStatus(option.value)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "7px 13px",
-                    borderRadius: 999,
-                    border: "none",
-                    background: active ? meta.bg : "transparent",
-                    color: active ? meta.color : "#64748b",
-                    fontFamily: "Inter",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
+                  style={{ ...segmentedItemStyle(active, meta.color), display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 13 }}
                 >
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: active ? meta.color : "#cbd5e1" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color }} />
                   {option.label}
                 </button>
               );
@@ -1384,7 +1373,7 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
           {lanes.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
               {lanes.map(l => (
-                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#f8fbff", borderRadius: 8, border: "1px solid #e2edf8" }}>
+                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "rgba(118,118,128,.03)", borderRadius: 8, border: "1px solid rgba(15,23,42,.08)" }}>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
                   <input
                     value={l.name}
@@ -1392,7 +1381,7 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
                     placeholder="Название дорожки"
                     style={{ ...inputStyle, flex: 1, height: 32, background: "#fff" }}
                   />
-                  <button type="button" onClick={() => removeLane(l.id)} style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>×</button>
+                  <button type="button" onClick={() => removeLane(l.id)} style={{ border: "none", background: "none", color: "#a1a1a6", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>×</button>
                 </div>
               ))}
             </div>
@@ -1411,8 +1400,8 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
               onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addLane())}
               placeholder="Название дорожки" style={{ ...inputStyle, flex: 1 }} />
             <button type="button" onClick={addLane} style={{
-              padding: "0 14px", borderRadius: 8, border: "none", background: "#2563eb",
-              color: "#fff", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0,
+              padding: "0 14px", borderRadius: 8, border: "none", background: "#007aff",
+              color: "#fff", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0,
             }}>+</button>
           </div>
         </div>
@@ -1420,19 +1409,19 @@ function RoadmapFormModal({ roadmap, members, defaultOwnerId, onClose, onSave, o
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
           {isEdit ? (
             <button type="button" onClick={() => onDelete?.(roadmap)} style={{
-              padding: "9px 16px", borderRadius: 9, border: "1.5px solid #fecaca",
-              background: "#fef2f2", color: "#ef4444", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 18px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.08)", color: "#e03131", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Удалить карту</button>
           ) : <span />}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button type="button" onClick={onClose} style={{
-              padding: "9px 20px", borderRadius: 9, border: "1.5px solid #dbeafe",
-              background: "#f8fbff", color: "#64748b", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 20px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.12)", color: "#1d1d1f", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Отмена</button>
             <button type="submit" style={{
-              padding: "9px 20px", borderRadius: 9, border: "none",
-              background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
-              fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              padding: "8px 22px", borderRadius: 999, border: "none",
+              background: "#007aff", color: "#fff", boxShadow: "0 2px 8px rgba(0,122,255,.28)",
+              fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Сохранить</button>
           </div>
         </div>
@@ -1460,7 +1449,7 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
         .filter(r => (r.tag || "").trim())
         .map(r => {
           const tag = r.tag.trim();
-          return [tag.toLowerCase(), { label: tag, color: r.tagColor || "#8a96ad", count: 0 }];
+          return [tag.toLowerCase(), { label: tag, color: r.tagColor || "#8e8e93", count: 0 }];
         })
     ).values()
   ).map(tag => ({
@@ -1497,10 +1486,10 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Статы */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-        <StatCard label="ВСЕГО КАРТ" value={roadmaps.length} sub="в портфеле" color="#1e3a6e" />
-        <StatCard label="АКТИВНЫХ" value={counts.active} sub="в работе" color="#3b6fe0" />
-        <StatCard label="ВЕХ" value={totalMiles} sub="ключевых событий" color="#6d5bd0" />
-        <StatCard label="СРЕДНИЙ ПРОГРЕСС" value={avgProgress + "%"} sub="по портфелю" color="#22b07d" />
+        <StatCard label="ВСЕГО КАРТ" value={roadmaps.length} sub="в портфеле" color="#1d1d1f" />
+        <StatCard label="АКТИВНЫХ" value={counts.active} sub="в работе" color="#007aff" />
+        <StatCard label="ВЕХ" value={totalMiles} sub="ключевых событий" color="#5856d6" />
+        <StatCard label="СРЕДНИЙ ПРОГРЕСС" value={avgProgress + "%"} sub="по портфелю" color="#34c759" />
       </div>
 
       {/* Тулбар */}
@@ -1509,17 +1498,17 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
           {FCHIP.map(c => (
             <button key={c.id} onClick={() => setFilter(c.id)} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              background: filter === c.id ? "#eff6ff" : "#fff",
-              border: filter === c.id ? "1px solid #bfdbfe" : "1px solid #e2edf8",
-              color: filter === c.id ? "#2563eb" : "#475569",
+              background: filter === c.id ? "#e8f2ff" : "#fff",
+              border: filter === c.id ? "1px solid rgba(0,122,255,.3)" : "1px solid rgba(15,23,42,.08)",
+              color: filter === c.id ? "#007aff" : "#3a3a3c",
               fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 999,
-              cursor: "pointer", fontFamily: "Inter",
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               {c.label}
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                background: filter === c.id ? "#fff" : "#eef2f8",
-                color: filter === c.id ? "#2563eb" : "#94a3b8",
+                background: filter === c.id ? "#fff" : "rgba(118,118,128,.08)",
+                color: filter === c.id ? "#007aff" : "#a1a1a6",
               }}>{counts[c.id]}</span>
             </button>
           ))}
@@ -1528,17 +1517,17 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button onClick={() => setTagFilter("all")} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              background: tagFilter === "all" ? "#f8fbff" : "#fff",
-              border: tagFilter === "all" ? "1px solid #bfdbfe" : "1px solid #e2edf8",
-              color: tagFilter === "all" ? "#2563eb" : "#64748b",
+              background: tagFilter === "all" ? "rgba(118,118,128,.03)" : "#fff",
+              border: tagFilter === "all" ? "1px solid rgba(0,122,255,.3)" : "1px solid rgba(15,23,42,.08)",
+              color: tagFilter === "all" ? "#007aff" : "#86868b",
               fontSize: 13, fontWeight: 600, padding: "7px 12px", borderRadius: 999,
-              cursor: "pointer", fontFamily: "Inter",
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               Все теги
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                background: tagFilter === "all" ? "#fff" : "#eef2f8",
-                color: tagFilter === "all" ? "#2563eb" : "#94a3b8",
+                background: tagFilter === "all" ? "#fff" : "rgba(118,118,128,.08)",
+                color: tagFilter === "all" ? "#007aff" : "#a1a1a6",
               }}>{roadmaps.length}</span>
             </button>
             {tags.map(tag => {
@@ -1547,17 +1536,17 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
                 <button key={tag.label} onClick={() => setTagFilter(tag.label.toLowerCase())} style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   background: active ? tag.color + "18" : "#fff",
-                  border: active ? `1px solid ${tag.color}55` : "1px solid #e2edf8",
-                  color: active ? tag.color : "#64748b",
+                  border: active ? `1px solid ${tag.color}55` : "1px solid rgba(15,23,42,.08)",
+                  color: active ? tag.color : "#86868b",
                   fontSize: 13, fontWeight: 600, padding: "7px 12px", borderRadius: 999,
-                  cursor: "pointer", fontFamily: "Inter",
+                  cursor: "pointer", fontFamily: FONT_STACK,
                 }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: tag.color }} />
                   {tag.label}
                   <span style={{
                     fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                    background: active ? "#fff" : "#eef2f8",
-                    color: active ? tag.color : "#94a3b8",
+                    background: active ? "#fff" : "rgba(118,118,128,.08)",
+                    color: active ? tag.color : "#a1a1a6",
                   }}>{tag.count}</span>
                 </button>
               );
@@ -1566,18 +1555,18 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
         )}
         <div style={{ flex: 1 }} />
         {/* Поиск */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #e2edf8", borderRadius: 999, padding: "7px 14px", width: 220 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 999, padding: "7px 14px", width: 220 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a1a1a6" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск карт…"
-            style={{ border: "none", outline: "none", fontSize: 13, color: "#1e3a6e", background: "none", width: "100%", fontFamily: "Inter" }} />
+            style={{ border: "none", outline: "none", fontSize: 13, color: "#1d1d1f", background: "none", width: "100%", fontFamily: FONT_STACK }} />
         </div>
         {/* Grid/List */}
-        <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #e2edf8", borderRadius: 999, padding: 4, gap: 2 }}>
+        <div style={{ display: "inline-flex", background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 999, padding: 4, gap: 2 }}>
           {[["grid", "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"], ["list", "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"]].map(([id, d]) => (
             <button key={id} onClick={() => setView(id)} style={{
               width: 30, height: 30, borderRadius: 999, border: "none", cursor: "pointer",
-              background: view === id ? "#2563eb" : "none",
-              color: view === id ? "#fff" : "#94a3b8", display: "grid", placeItems: "center",
+              background: view === id ? "#007aff" : "none",
+              color: view === id ? "#fff" : "#a1a1a6", display: "grid", placeItems: "center",
             }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d={d}/></svg>
             </button>
@@ -1587,8 +1576,8 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
         <button onClick={onNew} style={{
           display: "inline-flex", alignItems: "center", gap: 7,
           padding: "8px 16px", borderRadius: 10, border: "none",
-          background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
-          fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter",
+          background: "#007aff", color: "#fff",
+          fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK,
           boxShadow: "0 2px 8px rgba(37,99,235,.25)",
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1598,7 +1587,7 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
 
       {/* Контент */}
       {list.length === 0 ? (
-        <div style={{ padding: "60px 24px", textAlign: "center", color: "#94a3b8", fontSize: 15 }}>Карты не найдены</div>
+        <div style={{ padding: "60px 24px", textAlign: "center", color: "#a1a1a6", fontSize: 15 }}>Карты не найдены</div>
       ) : view === "grid" ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
           {list.map(rm => <RoadmapCard key={rm.id} rm={rm} members={members} onOpen={onOpen} />)}
@@ -1928,15 +1917,15 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     <div style={{ display: "flex", flexDirection: "column" }}>
       <div style={{ overflow: "auto", maxHeight: "min(70vh, 960px)" }}>
         {/* Шапка */}
-        <div style={{ display: "flex", borderBottom: "1px solid #e8f0fa", position: "sticky", top: stickyTop, background: "#fff", zIndex: 8 }}>
+        <div style={{ display: "flex", borderBottom: "1px solid rgba(15,23,42,.06)", position: "sticky", top: stickyTop, background: "#fff", zIndex: 8 }}>
           <div style={{
             width: sideW,
             flexShrink: 0,
             padding: "14px 20px",
             fontSize: 12,
             fontWeight: 700,
-            color: "#94a3b8",
-            borderRight: "1px solid #e8f0fa",
+            color: "#a1a1a6",
+            borderRight: "1px solid rgba(15,23,42,.06)",
             position: "sticky",
             top: stickyTop,
             left: 0,
@@ -1948,13 +1937,13 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           </div>
           <div style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), display: "flex" }}>
             {timeline.quarters.map((quarter, qi) => (
-              <div key={quarter.key} style={{ width: `${quarter.widthPct}%`, borderRight: qi < timeline.quarters.length - 1 ? "1px solid #e8f0fa" : "none" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, padding: "10px 0 6px", textAlign: "center", color: "#1e3a6e" }}>
+              <div key={quarter.key} style={{ width: `${quarter.widthPct}%`, borderRight: qi < timeline.quarters.length - 1 ? "1px solid rgba(15,23,42,.06)" : "none" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, padding: "10px 0 6px", textAlign: "center", color: "#1d1d1f" }}>
                   {quarter.label}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(${quarter.months.length}, 1fr)` }}>
                   {quarter.months.map(month => (
-                    <div key={month.key} style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", paddingBottom: 8 }}>
+                    <div key={month.key} style={{ fontSize: 11, color: "#a1a1a6", textAlign: "center", paddingBottom: 8 }}>
                       {month.label}
                     </div>
                   ))}
@@ -1970,7 +1959,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           <div style={{
             width: sideW,
             flexShrink: 0,
-            borderRight: "1px solid #e8f0fa",
+            borderRight: "1px solid rgba(15,23,42,.06)",
             position: "sticky",
             left: 0,
             zIndex: 6,
@@ -1978,12 +1967,12 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             boxShadow: "8px 0 16px rgba(15,23,42,.04)",
           }}>
             {positionedRows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "#f7f9fd", fontSize: 12, fontWeight: 700, color: "#1e3a6e" }}>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "rgba(118,118,128,.04)", fontSize: 12, fontWeight: 700, color: "#1d1d1f" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />
                 {r.lane.name}
               </div>
             ) : (
-              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: highlightedTaskIds.has(r.b.id) ? "#1e3a6e" : "#475569", fontWeight: highlightedTaskIds.has(r.b.id) ? 600 : 400, whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
+              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: highlightedTaskIds.has(r.b.id) ? "#1d1d1f" : "#3a3a3c", fontWeight: highlightedTaskIds.has(r.b.id) ? 600 : 400, whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
                 {r.b.title}
               </div>
             ))}
@@ -1996,18 +1985,18 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               {timeline.months.map((month, i) => (
                 <span key={i} style={{
                   position: "absolute", top: 0, bottom: 0, width: 1,
-                  background: month.month % 3 === 0 ? "#dde8f5" : "#eef3fa",
+                  background: month.month % 3 === 0 ? "rgba(15,23,42,.08)" : "rgba(118,118,128,.06)",
                   left: `${month.leftPct}%`,
                 }} />
               ))}
-              <span style={{ position: "absolute", top: 0, bottom: 0, width: 1, background: "#dde8f5", left: "100%" }} />
+              <span style={{ position: "absolute", top: 0, bottom: 0, width: 1, background: "rgba(15,23,42,.08)", left: "100%" }} />
             </div>
             {/* Линия сегодня */}
             {showToday && (
-              <div style={{ position: "absolute", top: 0, bottom: 0, width: 2, background: "#ef4444", left: todayPct + "%", zIndex: 3 }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, width: 1.5, background: "#ff3b30", left: todayPct + "%", zIndex: 3 }}>
                 <span style={{
                   position: "absolute", top: -2, left: "50%", transform: "translateX(-50%)",
-                  background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700,
+                  background: "#ff3b30", color: "#fff", fontSize: 10, fontWeight: 700,
                   padding: "2px 7px", borderRadius: "0 0 6px 6px", whiteSpace: "nowrap",
                 }}>сегодня</span>
               </div>
@@ -2019,10 +2008,10 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               >
                 <defs>
                   <marker id="timeline-dependency-arrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
-                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#9fb1ca" />
+                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#a1a1a6" />
                   </marker>
                   <marker id="timeline-dependency-arrow-active" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
-                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#2563eb" />
+                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#007aff" />
                   </marker>
                 </defs>
                 {dependencyLines.map(line => (
@@ -2030,9 +2019,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     key={line.id}
                     d={`M ${line.startX} ${line.startY} H ${line.middleX} V ${line.endY} H ${line.endX}`}
                     fill="none"
-                    stroke={line.active ? "#2563eb" : "#aabbd4"}
+                    stroke={line.active ? "#007aff" : "#a1a1a6"}
                     strokeWidth={1}
-                    strokeDasharray="4 3"
+                    strokeDasharray="2 2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
@@ -2070,7 +2059,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             })}
             {/* Строки */}
             {positionedRows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "#f7f9fd" }} />
+              <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "rgba(118,118,128,.04)" }} />
             ) : (
               <GanttBar
                 key={i}
@@ -2096,20 +2085,28 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
       {/* Empty state — нет дорожек */}
       {positionedRows.length === 0 && (
-        <div style={{ padding: "32px 24px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+        <div style={{ padding: "32px 24px", textAlign: "center", color: "#a1a1a6", fontSize: 13 }}>
           Нет дорожек. Нажмите «Редактировать» карту и добавьте направления.
         </div>
       )}
 
       {/* Легенда */}
-      <div style={{ display: "flex", gap: 20, padding: "12px 20px", borderTop: "1px solid #e8f0fa" }}>
-        {[["#22b07d","Завершено"],["#3b6fe0","В работе"],["#aeb9d0","Запланировано"]].map(([col, label]) => (
-          <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#475569" }}>
+      <div style={{ display: "flex", gap: 20, padding: "12px 20px", borderTop: "1px solid rgba(15,23,42,.06)" }}>
+        {[["#34c759","Завершено"],["#007aff","В работе"],["#c7c7cc","Запланировано"]].map(([col, label]) => (
+          <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#3a3a3c" }}>
             <span style={{ width: 14, height: 10, borderRadius: 3, background: col, display: "inline-block" }} />{label}
           </span>
         ))}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#6d5bd0", fontWeight: 600 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#5856d6", fontWeight: 600 }}>
           <DiamondIcon size={12} />Веха
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#3a3a3c" }}>
+          <svg width="24" height="8" viewBox="0 0 24 8"><path d="M0 4 H17" stroke="#a1a1a6" strokeWidth="1" strokeDasharray="2 2" fill="none"/><path d="M21 4 l-4 -2.5 M21 4 l-4 2.5" stroke="#a1a1a6" strokeWidth="1" fill="none"/></svg>
+          Зависимость
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#3a3a3c" }}>
+          <span style={{ width: 2, height: 12, background: "#ff3b30", borderRadius: 1, display: "inline-block" }} />
+          Сегодня
         </span>
       </div>
     </div>
@@ -2125,10 +2122,10 @@ function SwimlanesView({ rm, members, onBarClick }) {
         const bars = rm.bars.filter(b => b.lane === lane.id);
         return (
           <div key={lane.id} style={{ flexShrink: 0, width: 300, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#f7f9fd", borderRadius: 10, borderLeft: `4px solid ${lane.color}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(118,118,128,.04)", borderRadius: 10, borderLeft: `4px solid ${lane.color}` }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: lane.color }} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: "#1e3a6e", flex: 1 }}>{lane.name}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", background: "#fff", padding: "2px 8px", borderRadius: 999 }}>{bars.length}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#1d1d1f", flex: 1 }}>{lane.name}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#a1a1a6", background: "#fff", padding: "2px 8px", borderRadius: 999 }}>{bars.length}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {bars.map((b, i) => {
@@ -2137,20 +2134,20 @@ function SwimlanesView({ rm, members, onBarClick }) {
                 const ownerMember = getMemberById(members, b.owner);
                 const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
                 return (
-                  <div key={i} onClick={() => onBarClick && onBarClick(b, rm.bars.indexOf(b))} style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 10, padding: "13px 14px", boxShadow: "0 1px 3px rgba(37,99,235,.05)", cursor: "pointer" }}>
+                  <div key={i} onClick={() => onBarClick && onBarClick(b, rm.bars.indexOf(b))} style={{ background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 10, padding: "13px 14px", boxShadow: "0 1px 3px rgba(37,99,235,.05)", cursor: "pointer" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "#1e3a6e" }}>{b.title}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f" }}>{b.title}</span>
                       <span style={{ display: "inline-flex", alignItems: "center" }}>
                         <Avatar member={ownerMember} size={22} />
                         <AvatarStack members={coExecutors} size={20} max={3} />
                       </span>
                     </div>
-                    <div style={{ height: 6, background: "#eef2f8", borderRadius: 999, overflow: "hidden", margin: "10px 0 7px" }}>
+                    <div style={{ height: 6, background: "rgba(118,118,128,.08)", borderRadius: 999, overflow: "hidden", margin: "10px 0 7px" }}>
                       <span style={{ display: "block", height: "100%", borderRadius: 999, background: c.bar, width: b.progress + "%" }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                       <span style={{ color: c.bar, fontWeight: 600 }}>{label}</span>
-                      <span style={{ color: "#94a3b8" }}>{formatRoadmapMonthRange(b.startDate, b.endDate)}</span>
+                      <span style={{ color: "#a1a1a6" }}>{formatRoadmapMonthRange(b.startDate, b.endDate)}</span>
                     </div>
                   </div>
                 );
@@ -2197,23 +2194,23 @@ function buildNowNextLater(rm) {
 function NNLView({ rm, members, onBarClick }) {
   const grouped = buildNowNextLater(rm);
   const cols = [
-    { key: "now",   label: "Now",   sub: "Сейчас в работе", color: "#3b6fe0" },
-    { key: "next",  label: "Next",  sub: "Следующий шаг",   color: "#6d5bd0" },
-    { key: "later", label: "Later", sub: "В перспективе",   color: "#8a96ad" },
+    { key: "now",   label: "Now",   sub: "Сейчас в работе", color: "#007aff" },
+    { key: "next",  label: "Next",  sub: "Следующий шаг",   color: "#5856d6" },
+    { key: "later", label: "Later", sub: "В перспективе",   color: "#8e8e93" },
   ];
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, padding: 20 }}>
       {cols.map(col => (
-        <div key={col.key} style={{ background: "#f7f9fd", borderRadius: 12, padding: 14 }}>
+        <div key={col.key} style={{ background: "rgba(118,118,128,.04)", borderRadius: 12, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px 12px", color: col.color }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
             <span style={{ fontSize: 15, fontWeight: 700 }}>{col.label}</span>
-            <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 500 }}>{col.sub}</span>
-            <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#94a3b8", background: "#fff", padding: "1px 8px", borderRadius: 999 }}>{grouped[col.key].length}</span>
+            <span style={{ fontSize: 12, color: "#a1a1a6", fontWeight: 500 }}>{col.sub}</span>
+            <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#a1a1a6", background: "#fff", padding: "1px 8px", borderRadius: 999 }}>{grouped[col.key].length}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {grouped[col.key].length === 0 && (
-              <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, padding: 20, border: "1.5px dashed #d6deeb", borderRadius: 8 }}>Пусто</div>
+              <div style={{ textAlign: "center", color: "#a1a1a6", fontSize: 12, padding: 20, border: "1.5px dashed #d6deeb", borderRadius: 8 }}>Пусто</div>
             )}
             {grouped[col.key].map((item, i) => {
               const statusColor = (BAR_COL[item.status] || BAR_COL.planned).bar;
@@ -2223,8 +2220,8 @@ function NNLView({ rm, members, onBarClick }) {
               return (
               <div key={i} onClick={() => onBarClick && onBarClick(item, item.idx)} style={{
                 display: "flex", flexDirection: "column", gap: 9,
-                background: "#fff", border: "1px solid #e2edf8", borderTop: `3px solid ${col.color}`,
-                borderRadius: 8, padding: "12px 13px", fontSize: 13, fontWeight: 600, color: "#1e3a6e",
+                background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderTop: `3px solid ${col.color}`,
+                borderRadius: 8, padding: "12px 13px", fontSize: 13, fontWeight: 600, color: "#1d1d1f",
                 boxShadow: "0 1px 3px rgba(37,99,235,.04)", cursor: "pointer",
               }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -2234,12 +2231,12 @@ function NNLView({ rm, members, onBarClick }) {
                     <AvatarStack members={coExecutors} size={20} max={3} />
                   </span>
                 </div>
-                <div style={{ height: 6, background: "#eef2f8", borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ height: 6, background: "rgba(118,118,128,.08)", borderRadius: 999, overflow: "hidden" }}>
                   <span style={{ display: "block", width: `${item.progress || 0}%`, height: "100%", background: statusColor, borderRadius: 999 }} />
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, fontWeight: 600 }}>
                   <span style={{ color: statusColor }}>{label}</span>
-                  <span style={{ color: "#94a3b8", whiteSpace: "nowrap" }}>{formatRoadmapMonthRange(item.startDate, item.endDate)}</span>
+                  <span style={{ color: "#a1a1a6", whiteSpace: "nowrap" }}>{formatRoadmapMonthRange(item.startDate, item.endDate)}</span>
                 </div>
               </div>
               );
@@ -2264,30 +2261,30 @@ function LaneFormModal({ onClose, onSave }) {
   }
 
   const inputStyle = {
-    width: "100%", height: 38, border: "1.5px solid #dbeafe", borderRadius: 8,
-    padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none",
-    color: "#1e3a6e", boxSizing: "border-box",
+    width: "100%", height: 38, border: "1px solid rgba(15,23,42,.08)", borderRadius: 11,
+    padding: "0 12px", fontFamily: FONT_STACK, fontSize: 14, outline: "none",
+    color: "#1d1d1f", boxSizing: "border-box",
   };
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000,
+      position: "fixed", inset: 0, background: "rgba(15,23,42,.30)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", zIndex: 1000,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }}>
       <form onSubmit={handleSubmit} style={{
-        width: "100%", maxWidth: 380, background: "#fff", borderRadius: 18,
-        padding: 28, boxShadow: "0 24px 64px rgba(30,58,110,.18)",
+        width: "100%", maxWidth: 380, background: "rgba(255,255,255,.85)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", border: "1px solid rgba(255,255,255,.9)", borderRadius: 22,
+        padding: 28, boxShadow: "0 32px 80px rgba(15,23,42,.18)",
         display: "flex", flexDirection: "column", gap: 16,
       }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#1e3a6e" }}>Новая дорожка</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "#1d1d1f" }}>Новая дорожка</div>
 
         <div>
-          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 5 }}>Название *</label>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#3a3a3c", marginBottom: 5 }}>Название *</label>
           <input value={name} onChange={e => setName(e.target.value)} required autoFocus style={inputStyle} placeholder="Платформа" />
         </div>
 
         <div>
-          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Цвет</label>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#3a3a3c", marginBottom: 8 }}>Цвет</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {LANE_COLORS.map(c => (
               <button key={c} type="button" onClick={() => setColor(c)} style={{
@@ -2301,13 +2298,13 @@ function LaneFormModal({ onClose, onSave }) {
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button type="button" onClick={onClose} style={{
-            padding: "9px 20px", borderRadius: 9, border: "1.5px solid #dbeafe",
-            background: "#f8fbff", color: "#64748b", fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            padding: "8px 20px", borderRadius: 999, border: "none",
+            background: "rgba(118,118,128,.12)", color: "#1d1d1f", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
           }}>Отмена</button>
           <button type="submit" style={{
-            padding: "9px 20px", borderRadius: 9, border: "none",
-            background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff",
-            fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            padding: "8px 22px", borderRadius: 999, border: "none",
+            background: "#007aff", color: "#fff", boxShadow: "0 2px 8px rgba(0,122,255,.28)",
+            fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
           }}>Добавить</button>
         </div>
       </form>
@@ -2384,85 +2381,85 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
   return (
     <div ref={printRootRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Шапка */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 16, background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 16, background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
         <button data-print-hidden="true" onClick={onBack} style={{
-          width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: "#f1f5fb",
+          width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: "rgba(118,118,128,.06)",
           border: "none", cursor: "pointer", display: "grid", placeItems: "center",
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round"><polyline points="15 6 9 12 15 18"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3a3a3c" strokeWidth="2" strokeLinecap="round"><polyline points="15 6 9 12 15 18"/></svg>
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8", fontWeight: 600, marginBottom: 6 }}>
-            <span style={{ cursor: "pointer", color: "#2563eb" }} onClick={onBack}>Дорожные карты</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#a1a1a6", fontWeight: 600, marginBottom: 6 }}>
+            <span style={{ cursor: "pointer", color: "#007aff" }} onClick={onBack}>Дорожные карты</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 6 15 12 9 18"/></svg>
             <span>{rm.tag}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#1e3a6e" }}>{rm.title}</h2>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#1d1d1f" }}>{rm.title}</h2>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999, color: sm.color, background: sm.bg, flexShrink: 0 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: sm.color }} />{sm.label}
             </span>
           </div>
-          <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>{rm.desc}</p>
+          <p style={{ margin: 0, fontSize: 13, color: "#a1a1a6" }}>{rm.desc}</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12, flexShrink: 0 }}>
           <div data-print-hidden="true" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={() => onExportPdf(printRootRef.current, tab)} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
-              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
-              cursor: "pointer", fontFamily: "Inter",
+              padding: "7px 14px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.08)", color: "#3a3a3c", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h9l5 5v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
               PDF
             </button>
             <button onClick={onExportCsv} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
-              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
-              cursor: "pointer", fontFamily: "Inter",
+              padding: "7px 14px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.08)", color: "#3a3a3c", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
               CSV
             </button>
             <button onClick={onExportXls} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
-              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
-              cursor: "pointer", fontFamily: "Inter",
+              padding: "7px 14px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.08)", color: "#3a3a3c", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 4v16"/><path d="M15 4v16"/><path d="M4 9h16"/><path d="M4 15h16"/></svg>
               XLSX
             </button>
             <button onClick={onExportJson} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
-              background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600,
-              cursor: "pointer", fontFamily: "Inter",
+              padding: "7px 14px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.08)", color: "#3a3a3c", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
               Экспорт JSON
             </button>
             <button onClick={onEdit} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8, border: "1.5px solid #dbeafe",
-              background: "#f8fbff", color: "#2563eb", fontSize: 12, fontWeight: 600,
-              cursor: "pointer", fontFamily: "Inter",
+              padding: "7px 14px", borderRadius: 999, border: "none",
+              background: "rgba(118,118,128,.08)", color: "#007aff", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Редактировать
             </button>
           </div>
-          <div style={{ display: "flex", gap: 20, paddingLeft: 20, borderLeft: "1px solid #e8f0fa" }}>
+          <div style={{ display: "flex", gap: 20, paddingLeft: 20, borderLeft: "1px solid rgba(15,23,42,.06)" }}>
             {[
               ["Владелец", <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Avatar member={ownerMember} size={22} />{ownerMember?.name || "Не назначен"}</div>],
               ["Соисполнители", roadmapCoExecutors.length > 0 ? <AvatarStack members={roadmapCoExecutors} size={22} max={4} /> : "—"],
               ["Период", rm.period],
-              ["Прогресс", <span style={{ color: "#3b6fe0", fontWeight: 700 }}>{rm.progress}%</span>],
+              ["Прогресс", <span style={{ color: "#007aff", fontWeight: 700 }}>{rm.progress}%</span>],
             ].map(([k, v]) => (
               <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", letterSpacing: ".05em" }}>{k.toUpperCase()}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e3a6e", display: "flex", alignItems: "center", gap: 6 }}>{v}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#a1a1a6", letterSpacing: ".05em" }}>{k.toUpperCase()}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1d1d1f", display: "flex", alignItems: "center", gap: 6 }}>{v}</span>
               </div>
             ))}
           </div>
@@ -2471,12 +2468,12 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
 
       {/* Вкладки */}
       <div data-print-hidden="true" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #e2edf8", borderRadius: 999, padding: 4, gap: 2 }}>
+        <div style={{ display: "inline-flex", background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 999, padding: 4, gap: 2 }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
-              fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "Inter",
-              background: tab === t.id ? "#2563eb" : "none",
-              color: tab === t.id ? "#fff" : "#94a3b8",
+              fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: FONT_STACK,
+              background: tab === t.id ? "#007aff" : "none",
+              color: tab === t.id ? "#fff" : "#a1a1a6",
             }}>{t.label}</button>
           ))}
         </div>
@@ -2484,29 +2481,29 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
         {tab === "timeline" && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 4 }}>
             {linkMessage && (
-              <span style={{ fontSize: 12, color: linkSourceId ? "#2563eb" : "#64748b", maxWidth: 320, textAlign: "right" }}>
+              <span style={{ fontSize: 12, color: linkSourceId ? "#007aff" : "#86868b", maxWidth: 320, textAlign: "right" }}>
                 {linkMessage}
               </span>
             )}
             <button onClick={toggleLinkMode} style={{
-              display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 10,
-              border: linkMode ? "1px solid #2563eb" : "1px solid #e2edf8",
-              background: linkMode ? "#eff6ff" : "#fff",
-              color: linkMode ? "#2563eb" : "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter",
+              display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 999,
+              border: "none",
+              background: linkMode ? "#e8f2ff" : "rgba(118,118,128,.08)",
+              color: linkMode ? "#007aff" : "#3a3a3c", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK,
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               {linkMode ? "Отменить связь" : "Связать"}
             </button>
           </div>
         )}
-        <button onClick={() => setLaneModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 10, border: "1px solid #e2edf8", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>
+        <button onClick={() => setLaneModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.08)", color: "#3a3a3c", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="11" width="18" height="5" rx="1"/><rect x="3" y="18" width="18" height="3" rx="1"/></svg>
           Дорожка
         </button>
-        <button onClick={() => setMileModal("new")} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 10, border: "1px solid #e2edf8", background: "#fff", color: "#1e3a6e", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>
+        <button onClick={() => setMileModal("new")} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.08)", color: "#1d1d1f", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>
           <DiamondIcon size={14} />Добавить веху
         </button>
-        <button onClick={() => setBarModal("new")} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>
+        <button onClick={() => setBarModal("new")} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 999, border: "none", background: "#007aff", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK, boxShadow: "0 2px 8px rgba(0,122,255,.28)" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить задачу
         </button>
@@ -2545,7 +2542,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
       )}
 
       {/* Контент вкладки */}
-      <div style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
+      <div style={{ background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
         {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onBarDrag={(idx, data) => onSaveBar(idx, data)} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} onMilestoneDrag={(idx, data) => onSaveMilestone(idx, data)} linkMode={linkMode} linkSourceId={linkSourceId} onLinkTaskSelect={handleLinkTaskSelect} />}
         {tab === "swim"     && <SwimlanesView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
         {tab === "nnl"      && <NNLView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
@@ -2839,7 +2836,7 @@ function buildRoadmapVisualPrintHtml(node, title) {
         ${headMarkup}
         <style>
           html, body { margin: 0; background: #f0f6ff; }
-          body { padding: 24px; font-family: Inter, Arial, sans-serif; color: #1e3a6e; }
+          body { padding: 24px; font-family: Inter, Arial, sans-serif; color: #1d1d1f; }
           #print-root { width: 100%; }
           .visual-print {
             width: 1280px;
@@ -2929,40 +2926,40 @@ function buildTimelinePrintHtml(roadmap, members) {
         <title>${escapeHtml(roadmap.title)} - PDF</title>
         <style>
           html, body { margin: 0; background: #fff; }
-          body { padding: 18px; font-family: Inter, Arial, sans-serif; color: #1e3a6e; }
+          body { padding: 18px; font-family: Inter, Arial, sans-serif; color: #1d1d1f; }
           .page { width: ${totalW}px; }
-          .card { background: #fff; border: 1px solid #e2edf8; border-radius: 16px; box-shadow: 0 1px 4px rgba(37,99,235,.05); }
+          .card { background: #fff; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; box-shadow: 0 1px 4px rgba(37,99,235,.05); }
           .header { display: flex; align-items: flex-start; gap: 16px; padding: 20px 24px; margin-bottom: 16px; }
           .header-main { flex: 1; min-width: 0; }
-          .crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; font-weight: 600; margin-bottom: 6px; }
+          .crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #a1a1a6; font-weight: 600; margin-bottom: 6px; }
           .title-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-          .title-row h1 { margin: 0; font-size: 22px; font-weight: 700; color: #1e3a6e; }
+          .title-row h1 { margin: 0; font-size: 22px; font-weight: 700; color: #1d1d1f; }
           .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: ${sm.color}; background: ${sm.bg}; }
           .status-dot { width: 6px; height: 6px; border-radius: 50%; background: ${sm.color}; }
-          .desc { margin: 0; font-size: 13px; color: #94a3b8; }
-          .meta { display: flex; gap: 20px; padding-left: 20px; border-left: 1px solid #e8f0fa; }
+          .desc { margin: 0; font-size: 13px; color: #a1a1a6; }
+          .meta { display: flex; gap: 20px; padding-left: 20px; border-left: 1px solid rgba(15,23,42,.06); }
           .meta-col { display: flex; flex-direction: column; gap: 6px; min-width: 120px; }
-          .meta-label { font-size: 11px; font-weight: 600; color: #94a3b8; letter-spacing: .05em; }
-          .meta-value { font-size: 14px; font-weight: 600; color: #1e3a6e; display: flex; align-items: center; gap: 6px; }
+          .meta-label { font-size: 11px; font-weight: 600; color: #a1a1a6; letter-spacing: .05em; }
+          .meta-value { font-size: 14px; font-weight: 600; color: #1d1d1f; display: flex; align-items: center; gap: 6px; }
           .avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; }
           .timeline-card { overflow: hidden; }
-          .timeline-head { display: flex; border-bottom: 1px solid #e8f0fa; }
-          .side-head { width: ${sideW}px; flex-shrink: 0; padding: 14px 20px; font-size: 12px; font-weight: 700; color: #94a3b8; border-right: 1px solid #e8f0fa; background: #fff; }
+          .timeline-head { display: flex; border-bottom: 1px solid rgba(15,23,42,.06); }
+          .side-head { width: ${sideW}px; flex-shrink: 0; padding: 14px 20px; font-size: 12px; font-weight: 700; color: #a1a1a6; border-right: 1px solid rgba(15,23,42,.06); background: #fff; }
           .months-head { width: ${chartW}px; display: flex; }
-          .quarter { border-right: 1px solid #e8f0fa; }
+          .quarter { border-right: 1px solid rgba(15,23,42,.06); }
           .quarter:last-child { border-right: none; }
-          .quarter-title { font-size: 13px; font-weight: 700; padding: 10px 0 6px; text-align: center; color: #1e3a6e; }
+          .quarter-title { font-size: 13px; font-weight: 700; padding: 10px 0 6px; text-align: center; color: #1d1d1f; }
           .quarter-months { display: grid; }
-          .quarter-month { font-size: 11px; color: #94a3b8; text-align: center; padding-bottom: 8px; }
+          .quarter-month { font-size: 11px; color: #a1a1a6; text-align: center; padding-bottom: 8px; }
           .timeline-body { display: flex; position: relative; }
-          .side-body { width: ${sideW}px; flex-shrink: 0; border-right: 1px solid #e8f0fa; background: #fff; position: relative; z-index: 2; }
-          .lane-row { display: flex; align-items: center; gap: 8px; height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: #f7f9fd; font-size: 12px; font-weight: 700; color: #1e3a6e; }
+          .side-body { width: ${sideW}px; flex-shrink: 0; border-right: 1px solid rgba(15,23,42,.06); background: #fff; position: relative; z-index: 2; }
+          .lane-row { display: flex; align-items: center; gap: 8px; height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
           .lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-          .task-label { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #475569; overflow-wrap: anywhere; }
+          .task-label { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #3a3a3c; overflow-wrap: anywhere; }
           .chart { width: ${chartW}px; position: relative; height: ${Math.max(120, gridHeight)}px; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
-          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 3; }
-          .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
+          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
+          .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
           .milestone { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); z-index: 3; display: flex; flex-direction: column; align-items: center; }
           .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
           .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
@@ -2972,8 +2969,8 @@ function buildTimelinePrintHtml(roadmap, members) {
           .gantt-progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.22); }
           .gantt-title { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
           .gantt-owner { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; position: relative; z-index: 1; }
-          .legend { display: flex; gap: 20px; padding: 12px 20px; border-top: 1px solid #e8f0fa; }
-          .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; }
+          .legend { display: flex; gap: 20px; padding: 12px 20px; border-top: 1px solid rgba(15,23,42,.06); }
+          .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #3a3a3c; }
           .legend-box { width: 14px; height: 10px; border-radius: 3px; display: inline-block; }
           @media print {
             @page { size: landscape; margin: 10mm; }
@@ -3033,8 +3030,8 @@ function buildTimelinePrintHtml(roadmap, members) {
                 ).join("")}
               </div>
               <div class="chart">
-                ${timeline.months.map(month => `<span class="month-line" style="left:${month.leftPct}%;background:${month.month % 3 === 0 ? "#dde8f5" : "#eef3fa"}"></span>`).join("")}
-                <span class="month-line" style="left:100%;background:#dde8f5"></span>
+                ${timeline.months.map(month => `<span class="month-line" style="left:${month.leftPct}%;background:${month.month % 3 === 0 ? "rgba(15,23,42,.08)" : "rgba(118,118,128,.06)"}"></span>`).join("")}
+                <span class="month-line" style="left:100%;background:rgba(15,23,42,.08)"></span>
                 ${showToday ? `<div class="today-line" style="left:${todayPct}%"><span class="today-badge">сегодня</span></div>` : ""}
                 ${(roadmap.milestones || []).map(item => {
                   const color = item.color || DEFAULT_MILESTONE_COLOR;
@@ -3046,7 +3043,7 @@ function buildTimelinePrintHtml(roadmap, members) {
                   </div>`;
                 }).join("")}
                 ${positionedRows.map(row => {
-                  if (row.type !== "bar") return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_LANE_ROW_HEIGHT}px;background:#f7f9fd"></div>`;
+                  if (row.type !== "bar") return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_LANE_ROW_HEIGHT}px;background:rgba(118,118,128,.04)"></div>`;
                   const c = BAR_COL[row.b.status] || BAR_COL.planned;
                   const left = percentFromTimelineDate(row.b.startDate, timeline);
                   const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
@@ -3066,10 +3063,10 @@ function buildTimelinePrintHtml(roadmap, members) {
               </div>
             </div>
             <div class="legend">
-              <span class="legend-item"><span class="legend-box" style="background:#22b07d"></span>Завершено</span>
-              <span class="legend-item"><span class="legend-box" style="background:#3b6fe0"></span>В работе</span>
-              <span class="legend-item"><span class="legend-box" style="background:#aeb9d0"></span>Запланировано</span>
-              <span class="legend-item" style="color:#6d5bd0;font-weight:600"><span class="milestone-diamond" style="width:12px;height:12px;position:static;transform:rotate(45deg);margin:0 2px 0 0"></span>Веха</span>
+              <span class="legend-item"><span class="legend-box" style="background:#34c759"></span>Завершено</span>
+              <span class="legend-item"><span class="legend-box" style="background:#007aff"></span>В работе</span>
+              <span class="legend-item"><span class="legend-box" style="background:#c7c7cc"></span>Запланировано</span>
+              <span class="legend-item" style="color:#5856d6;font-weight:600"><span class="milestone-diamond" style="width:12px;height:12px;position:static;transform:rotate(45deg);margin:0 2px 0 0"></span>Веха</span>
             </div>
           </div>
         </div>
