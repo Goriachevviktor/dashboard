@@ -1,18 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
 import { useViewportFlags } from '../utils.js';
+import { COLORS, FONT_STACK, STICKER_COLORS as THEME_STICKER_COLORS, pillButtonStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
+
+// мобильная ветка, удалить при рестайле мобильной
+const LEGACY_STICKER_COLORS = [
+  { id: "sky", label: "Голубой", surface: "#eff6ff", accent: "#2563eb", text: "#2563eb", border: "#bfdbfe" },
+  { id: "mint", label: "Мятный", surface: "#ecfdf5", accent: "#10b981", text: "#10b981", border: "#a7f3d0" },
+  { id: "amber", label: "Янтарный", surface: "#fffbeb", accent: "#f59e0b", text: "#f59e0b", border: "#fde68a" },
+  { id: "violet", label: "Лавандовый", surface: "#f5f3ff", accent: "#8b5cf6", text: "#8b5cf6", border: "#ddd6fe" },
+  { id: "rose", label: "Розовый", surface: "#fff1f2", accent: "#e11d48", text: "#e11d48", border: "#fecdd3" },
+];
 
 function SyncsSection({ initialStickers = null, api, onError }) {
   const { isMobile } = useViewportFlags();
   const MIN_STICKER_WIDTH = 220;
   const MIN_STICKER_HEIGHT = 160;
-  const STICKER_COLORS = [
-    { id: "sky", label: "Голубой", surface: "#eff6ff", accent: "#2563eb", border: "#bfdbfe" },
-    { id: "mint", label: "Мятный", surface: "#ecfdf5", accent: "#10b981", border: "#a7f3d0" },
-    { id: "amber", label: "Янтарный", surface: "#fffbeb", accent: "#f59e0b", border: "#fde68a" },
-    { id: "violet", label: "Лавандовый", surface: "#f5f3ff", accent: "#8b5cf6", border: "#ddd6fe" },
-    { id: "rose", label: "Розовый", surface: "#fff1f2", accent: "#e11d48", border: "#fecdd3" },
-  ];
+  const STICKER_COLORS = isMobile ? LEGACY_STICKER_COLORS : THEME_STICKER_COLORS;
   const boardRef = useRef(null);
   const dragRef = useRef(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -141,19 +145,19 @@ function SyncsSection({ initialStickers = null, api, onError }) {
       onClose();
     }
 
-    const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc" };
-    const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
+    const inputStyle = themeInputStyle;
+    const labelStyle = themeLabelStyle;
 
     return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 310, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-        <div style={{ width: "min(92vw, 500px)", background: "#fff", borderRadius: 20, boxShadow: "0 24px 64px rgba(37,99,235,.22)" }}>
-          <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={modalOverlayStyle(Z.modalNested)}>
+        <div style={{ ...modalCardStyle(500), display: "block" }}>
+          <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid " + COLORS.hairline, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>Новый стикер</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Добавьте карточку для заметок</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.ink, letterSpacing: -.4 }}>Новый стикер</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Добавьте карточку для заметок</div>
             </div>
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+            <button onClick={onClose} style={modalCloseButtonStyle}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
             </button>
           </div>
           <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -164,8 +168,8 @@ function SyncsSection({ initialStickers = null, api, onError }) {
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Тема спикера *</label>
-                <input value={topic} onChange={e => { setTopic(e.target.value); setError(""); }} placeholder="О чём будет блок" style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#e2edf8" }} />
-                {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>{error}</div>}
+                <input value={topic} onChange={e => { setTopic(e.target.value); setError(""); }} placeholder="О чём будет блок" style={{ ...inputStyle, borderColor: error ? COLORS.redText : "rgba(15,23,42,.08)" }} />
+                {error && <div style={{ fontSize: 12, color: COLORS.redText, marginTop: 4 }}>{error}</div>}
               </div>
             </div>
             <div>
@@ -179,18 +183,19 @@ function SyncsSection({ initialStickers = null, api, onError }) {
                   <button
                     key={color.id}
                     onClick={() => setColorId(color.id)}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + (colorId === color.id ? color.accent : color.border), background: color.surface, cursor: "pointer", fontFamily: "Inter" }}
+                    title={color.label}
+                    aria-label={color.label}
+                    style={{ width: 28, height: 28, borderRadius: "50%", background: color.accent, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: colorId === color.id ? `0 0 0 2px #fff, 0 0 0 4px ${color.accent}` : "none" }}
                   >
-                    <span style={{ width: 14, height: 14, borderRadius: "50%", background: color.accent, boxShadow: "inset 0 0 0 2px rgba(255,255,255,.5)" }}></span>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: color.accent }}>{color.label}</span>
+                    {colorId === color.id && <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </button>
                 ))}
               </div>
             </div>
           </div>
-          <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
-            <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
-            <button onClick={handleSubmit} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>Создать стикер</button>
+          <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + COLORS.hairline }}>
+            <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.12)", color: COLORS.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>Отмена</button>
+            <button onClick={handleSubmit} style={{ ...pillButtonStyle("primary"), padding: "8px 22px", fontSize: 13 }}>Создать стикер</button>
           </div>
         </div>
       </div>
@@ -290,13 +295,13 @@ function SyncsSection({ initialStickers = null, api, onError }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", margin: isMobile ? "-16px" : "-28px", background: "#f0f6ff" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", margin: isMobile ? "-16px" : "-28px", background: "transparent" }}>
       {showCreate && <CreateStickerModal onClose={() => setShowCreate(false)} onCreate={addSticker} />}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "flex-end", padding: isMobile ? "16px 16px 12px" : "22px 28px 14px", flexShrink: 0 }}>
           <button
             onClick={() => setShowCreate(true)}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 2px 8px rgba(37,99,235,.25)" }}
+            style={{ ...pillButtonStyle("primary"), gap: 8, fontSize: 13 }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
             Создать заметку
@@ -309,12 +314,12 @@ function SyncsSection({ initialStickers = null, api, onError }) {
             minHeight: 0,
             borderRadius: 0,
             overflow: "hidden",
-            background: "linear-gradient(180deg,#f8fbff 0%, #f1f7ff 100%)",
+            background: "#fbfdff",
             flex: 1,
           }}
         >
-          <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(rgba(147,197,253,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(147,197,253,.18) 1px, transparent 1px)", backgroundSize: "28px 28px", pointerEvents: "none" }}></div>
-          <div style={{ position: "absolute", top: 18, left: 18, fontSize: 11, fontWeight: 700, color: "#93a9ca", letterSpacing: .7, textTransform: "uppercase", pointerEvents: "none" }}>Workspace</div>
+          <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(rgba(15,23,42,.10) 1px, transparent 1px)", backgroundSize: "22px 22px", pointerEvents: "none" }}></div>
+          <div style={{ position: "absolute", top: 18, left: 18, fontSize: 11, fontWeight: 700, color: "#c7c7cc", letterSpacing: .7, textTransform: "uppercase", pointerEvents: "none" }}>Workspace</div>
           {stickers.map(sticker => {
             const color = STICKER_COLORS.find(item => item.id === sticker.colorId) || STICKER_COLORS[0];
             return (
@@ -326,10 +331,10 @@ function SyncsSection({ initialStickers = null, api, onError }) {
                   top: sticker.y,
                   width: sticker.width || 236,
                   height: sticker.height || 188,
-                  borderRadius: 18,
+                  borderRadius: 16,
                   background: color.surface,
-                  border: "1.5px solid " + color.border,
-                  boxShadow: "0 10px 24px rgba(37,99,235,.12), 0 2px 6px rgba(15,23,42,.05)",
+                  border: "1px solid " + color.border,
+                  boxShadow: "0 8px 24px " + color.accent + "1A, 0 1px 3px rgba(15,23,42,.05)",
                   display: "flex",
                   flexDirection: "column",
                   overflow: "hidden",
@@ -353,12 +358,12 @@ function SyncsSection({ initialStickers = null, api, onError }) {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                     <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: color.accent, letterSpacing: .8, textTransform: "uppercase", marginBottom: 5 }}>{sticker.speaker}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#1e3a6e", lineHeight: 1.35 }}>{sticker.topic}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: color.text || color.accent, letterSpacing: .8, textTransform: "uppercase", marginBottom: 5 }}>{sticker.speaker}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.ink, lineHeight: 1.35 }}>{sticker.topic}</div>
                     </div>
                     <button
                       onClick={() => deleteSticker(sticker.id)}
-                      style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.72)", color: "#94a3b8", cursor: "pointer", flexShrink: 0 }}
+                      style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.8)", color: COLORS.textFaint, cursor: "pointer", flexShrink: 0 }}
                     >
                       ×
                     </button>
@@ -369,7 +374,7 @@ function SyncsSection({ initialStickers = null, api, onError }) {
                     value={sticker.text}
                     onChange={e => updateSticker(sticker.id, { text: e.target.value })}
                     placeholder="Запишите основные тезисы..."
-                    style={{ flex: "1 1 auto", width: "100%", height: "100%", minHeight: 0, border: "none", background: "transparent", resize: "none", outline: "none", padding: "12px 14px 34px", fontFamily: "Inter", fontSize: 13, lineHeight: 1.55, color: "#475569", boxSizing: "border-box", overflowY: "auto", display: "block" }}
+                    style={{ flex: "1 1 auto", width: "100%", height: "100%", minHeight: 0, border: "none", background: "transparent", resize: "none", outline: "none", padding: "12px 14px 34px", fontFamily: FONT_STACK, fontSize: 13, lineHeight: 1.55, color: COLORS.textMid, boxSizing: "border-box", overflowY: "auto", display: "block" }}
                   />
                 </div>
                 <div
@@ -412,11 +417,11 @@ function SyncsSection({ initialStickers = null, api, onError }) {
           {stickers.length === 0 && (
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24 }}>
               <div>
-                <div style={{ width: 56, height: 56, borderRadius: 18, background: "#eff6ff", color: "#60a5fa", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                <div style={{ width: 56, height: 56, borderRadius: 18, background: COLORS.accentSoft, color: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#1e3a6e", marginBottom: 6 }}>Доска пока пустая</div>
-                <div style={{ fontSize: 13, color: "#94a3b8" }}>Добавь первую заметку и распредели темы по полю.</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.ink, marginBottom: 6 }}>Доска пока пустая</div>
+                <div style={{ fontSize: 13, color: COLORS.textMuted }}>Добавь первую заметку и распредели темы по полю.</div>
               </div>
             </div>
           )}
