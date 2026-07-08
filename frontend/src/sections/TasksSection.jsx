@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
 import AssigneePicker from '../components/common/AssigneePicker.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
-import { useViewportFlags, formatShortDate, parseTaskDueDate, isTaskOverdue, findTeamMember } from '../utils.js';
+import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useViewportFlags, formatShortDate, isTaskOverdue, findTeamMember } from '../utils.js';
+import { COLORS, FONT_STACK, PRIORITY_COLOR, COLUMN_TEXT, COLUMN_DOT, COLUMN_SURFACE, SHADOWS, RADII, segmentedWrapStyle, segmentedItemStyle, pillButtonStyle, chipStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
+
+// мобильная ветка, удалить при рестайле мобильной
+const LEGACY_PRI_COLOR = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
+const LEGACY_COL_COLOR = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
 
 function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
@@ -48,8 +53,8 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   const [memberIds, setMemberIds] = useState(task.memberIds || []);
   const [error, setError] = useState("");
 
-  const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
-  const colColor = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
+  const priColor = isMobile ? LEGACY_PRI_COLOR : PRIORITY_COLOR;
+  const colColor = isMobile ? LEGACY_COL_COLOR : COLUMN_TEXT;
 
   function handleSave() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
@@ -147,30 +152,37 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
     }
   }
 
-  const labelStyle = { fontSize: isMobile ? 11 : 12, fontWeight: 700, color: "#64748b", marginBottom: isMobile ? 5 : 6, display: "block", letterSpacing: .3 };
-  const inputStyle = { width: "100%", padding: isMobile ? "10px 12px" : "10px 14px", borderRadius: isMobile ? 12 : 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc", transition: "border-color .15s" };
+  const labelStyle = isMobile
+    ? { fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 5, display: "block", letterSpacing: .3 }
+    : themeLabelStyle;
+  const inputStyle = isMobile
+    ? { width: "100%", padding: "10px 12px", borderRadius: 12, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc", transition: "border-color .15s" }
+    : { ...themeInputStyle, transition: "border-color .15s" };
   const owner = findTeamMember(team, ownerId);
   const assignee = findTeamMember(team, assigneeId);
   const coExecutors = team.filter(member => (memberIds || []).includes(member.id) && member.id !== ownerId && member.id !== assigneeId);
   const canChangeOwner = currentUser?.id === task.creatorId || (task.creatorId == null && currentUser?.id === task.ownerId);
-  const segmentButtonStyle = (active, color) => ({
-    flex: 1,
-    minHeight: isMobile ? 32 : 40,
-    padding: isMobile ? "5px 3px" : "9px 4px",
-    borderRadius: isMobile ? 11 : 9,
-    border: "1.5px solid " + (active ? color : "#e2edf8"),
-    background: active ? color + "18" : "#f8fafc",
-    color: active ? color : "#64748b",
-    fontSize: isMobile ? 11 : 12,
-    fontWeight: active ? 750 : 500,
-    cursor: "pointer",
-    fontFamily: "Inter",
-    transition: "all .15s",
-    lineHeight: 1.1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  });
+  const segmentButtonStyle = (active, color) => (isMobile
+    ? {
+        flex: 1,
+        minHeight: 32,
+        padding: "5px 3px",
+        borderRadius: 11,
+        border: "1.5px solid " + (active ? color : "#e2edf8"),
+        background: active ? color + "18" : "#f8fafc",
+        color: active ? color : "#64748b",
+        fontSize: 11,
+        fontWeight: active ? 750 : 500,
+        cursor: "pointer",
+        fontFamily: "Inter",
+        transition: "all .15s",
+        lineHeight: 1.1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }
+    : { ...segmentedItemStyle(active, color), flex: 1, minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1.1 });
+  const segmentGroupStyle = isMobile ? { display: "flex", gap: 6 } : { ...segmentedWrapStyle, display: "flex", width: "100%" };
   function priorityIcon(value) {
     if (value === "Высокий") {
       return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><circle cx="8" cy="12.2" r="1.2" fill="currentColor"/></svg>;
@@ -194,36 +206,50 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
   }
 
   return (
-    <div onTouchStart={handleModalTouchStart} onTouchMove={handleModalTouchMove} style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: isMobile ? "calc(var(--safe-top) + 14px) 14px calc(var(--mobile-tabbar-height) + var(--safe-bottom) + 14px)" : 0, overscrollBehavior: "none", touchAction: isMobile ? "none" : "auto" }}>
-      <div style={{ background: "#fff", borderRadius: isMobile ? 22 : 20, width: isMobile ? "100%" : "min(92vw, 560px)", height: isMobile ? "min(66dvh, 610px)" : undefined, maxHeight: isMobile ? "min(66dvh, 610px)" : "92vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(37,99,235,.22)", animation: "modalIn .2s ease", overflow: "hidden", touchAction: "auto" }}>
+    <div onTouchStart={handleModalTouchStart} onTouchMove={handleModalTouchMove} style={{
+      ...(isMobile
+        ? { position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: "calc(var(--safe-top) + 14px) 14px calc(var(--mobile-tabbar-height) + var(--safe-bottom) + 14px)" }
+        : { ...modalOverlayStyle(Z.taskModal), padding: 0 }),
+      overscrollBehavior: "none", touchAction: isMobile ? "none" : "auto" }}>
+      <div style={{
+        ...(isMobile
+          ? { background: "#fff", borderRadius: 22, width: "100%", height: "min(66dvh, 610px)", maxHeight: "min(66dvh, 610px)", boxShadow: "0 24px 64px rgba(37,99,235,.22)" }
+          : { ...modalCardStyle(560) }),
+        display: "flex", flexDirection: "column", animation: "modalIn .2s ease", overflow: "hidden", touchAction: "auto" }}>
 
         {/* Header */}
-        <div style={{ padding: isMobile ? "14px 18px 10px" : "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexShrink: 0 }}>
+        <div style={{ padding: isMobile ? "14px 18px 10px" : "22px 28px 18px", borderBottom: "1px solid " + (isMobile ? "#e8f1fd" : COLORS.hairline), display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ flex: 1, paddingRight: 16 }}>
-            <div style={{ fontSize: isMobile ? 17 : 16, fontWeight: 800, color: "#1e3a6e", lineHeight: 1.2 }}>Редактирование задачи</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: isMobile ? 6 : 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: priColor[priority], background: priColor[priority]+"18", padding: "3px 9px", borderRadius: 20 }}>{priority}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: colColor[column], background: colColor[column]+"18", padding: "3px 9px", borderRadius: 20 }}>{column}</span>
+            <div style={{ fontSize: isMobile ? 17 : 18, fontWeight: 800, color: isMobile ? "#1e3a6e" : COLORS.ink, letterSpacing: isMobile ? 0 : -.4, lineHeight: 1.2 }}>Редактирование задачи</div>
+            <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, marginTop: isMobile ? 6 : 8, flexWrap: "wrap" }}>
+              <span style={isMobile ? { fontSize: 11, fontWeight: 700, color: priColor[priority], background: priColor[priority]+"18", padding: "3px 9px", borderRadius: 20 } : { fontSize: 11.5, fontWeight: 700, color: priColor[priority] }}>{priority}</span>
+              <span style={isMobile ? { fontSize: 11, fontWeight: 700, color: colColor[column], background: colColor[column]+"18", padding: "3px 9px", borderRadius: 20 } : { fontSize: 11.5, fontWeight: 700, color: colColor[column] }}>{column}</span>
             </div>
           </div>
-          <button onClick={onClose} style={{ width: isMobile ? 36 : 32, height: isMobile ? 36 : 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", flexShrink: 0 }}>
+          <button onClick={onClose} style={isMobile ? { width: 36, height: 36, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", flexShrink: 0 } : modalCloseButtonStyle}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
           </button>
         </div>
 
         {/* Body */}
         <div ref={scrollRef} style={{ padding: isMobile ? "12px 18px" : "22px 28px", display: "flex", flexDirection: "column", gap: isMobile ? 10 : 18, overflowY: "auto", flex: 1, minHeight: 0, WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", touchAction: "pan-y" }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", background: "#f8fafc", border: "1px solid #e2edf8", borderRadius: 999, padding: "6px 10px" }}>
-              Автор: {owner ? owner.name : "Не указан"}
+          {isMobile ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", background: "#f8fafc", border: "1px solid #e2edf8", borderRadius: 999, padding: "6px 10px" }}>
+                Автор: {owner ? owner.name : "Не указан"}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1e3a6e", background: "#eff6ff", border: "1px solid #dbeafe", borderRadius: 999, padding: "6px 10px" }}>
+                Исполнитель: {assignee ? assignee.name : "Не назначен"}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 999, padding: "6px 10px" }}>
+                Соисполнители: {coExecutors.length}
+              </div>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#1e3a6e", background: "#eff6ff", border: "1px solid #dbeafe", borderRadius: 999, padding: "6px 10px" }}>
-              Исполнитель: {assignee ? assignee.name : "Не назначен"}
+          ) : (
+            <div style={{ fontSize: 11.5, color: COLORS.textMuted, fontWeight: 500 }}>
+              Автор: {owner ? owner.name : "Не указан"} · Исполнитель: {assignee ? assignee.name : "Не назначен"} · Соисполнители: {coExecutors.length}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 999, padding: "6px 10px" }}>
-              Соисполнители: {coExecutors.length}
-            </div>
-          </div>
+          )}
 
           {/* Title */}
           <div>
@@ -252,7 +278,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr) minmax(0, 1fr)" : "1fr 1fr", gap: isMobile ? 8 : 14 }}>
             <div style={{ minWidth: 0 }}>
               <label style={labelStyle}>Приоритет</label>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={segmentGroupStyle}>
                 {["Высокий","Средний","Низкий"].map(p => (
                   <button key={p} onClick={() => setPriority(p)} title={p} aria-label={p} style={segmentButtonStyle(priority===p, priColor[p])}>
                     {isMobile ? priorityIcon(p) : p}
@@ -262,7 +288,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
             </div>
             <div style={{ minWidth: 0 }}>
               <label style={labelStyle}>Колонка</label>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={segmentGroupStyle}>
                 {["Беклог","В работе","Готов"].map(c => (
                   <button key={c} onClick={() => setColumn(c)} title={c} aria-label={c} style={segmentButtonStyle(column===c, colColor[c])}>
                     {isMobile ? columnIcon(c) : c}
@@ -354,7 +380,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
                     type="button"
                     onClick={() => toggleMember(member.id)}
                     disabled={disabled}
-                    style={{
+                    style={isMobile ? {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 7,
@@ -368,9 +394,15 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
                       cursor: disabled ? "not-allowed" : "pointer",
                       fontFamily: "Inter",
                       opacity: disabled ? 0.65 : 1,
+                    } : {
+                      ...chipStyle(active),
+                      gap: 7,
+                      padding: "6px 11px",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: disabled ? 0.55 : 1,
                     }}
                   >
-                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? "#7c3aed" : disabled ? "#e2e8f0" : member.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? (isMobile ? "#7c3aed" : COLORS.accent) : disabled ? "#e2e8f0" : member.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>
                       {member.initials}
                     </span>
                     <span>{member.name}</span>
@@ -382,9 +414,13 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
         </div>
 
         {/* Footer */}
-        <div style={{ padding: isMobile ? "10px 18px 12px" : "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff", flexShrink: 0 }}>
-          <button onClick={onClose} style={{ flex: isMobile ? 1 : "unset", padding: isMobile ? "10px 14px" : "10px 20px", borderRadius: isMobile ? 12 : 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
-          <button onClick={handleSave} style={{ flex: isMobile ? 1.35 : "unset", padding: isMobile ? "10px 14px" : "10px 24px", borderRadius: isMobile ? 12 : 10, border: "none", background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>Сохранить</button>
+        <div style={{ padding: isMobile ? "10px 18px 12px" : "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + (isMobile ? "#f0f6ff" : COLORS.hairline), flexShrink: 0 }}>
+          <button onClick={onClose} style={isMobile
+            ? { flex: 1, padding: "10px 14px", borderRadius: 12, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }
+            : { padding: "8px 18px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.12)", color: COLORS.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={isMobile
+            ? { flex: 1.35, padding: "10px 14px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }
+            : { ...pillButtonStyle("primary"), padding: "8px 22px", fontSize: 13 }}>Сохранить</button>
         </div>
       </div>
     </div>
@@ -400,8 +436,8 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
   const [memberIds, setMemberIds] = useState([]);
   const [error, setError] = useState("");
 
-  const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
-  const colColor = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
+  const priColor = PRIORITY_COLOR;
+  const colColor = COLUMN_TEXT;
 
   function handleSubmit() {
     if (!title.trim()) { setError("Введите название задачи"); return; }
@@ -420,21 +456,21 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
-  const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc", transition: "border-color .15s" };
+  const labelStyle = themeLabelStyle;
+  const inputStyle = { ...themeInputStyle, transition: "border-color .15s" };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-      <div style={{ background: "#fff", borderRadius: 20, width: "min(92vw, 520px)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(37,99,235,.20)", animation: "modalIn .2s ease" }}>
+    <div style={modalOverlayStyle(Z.modal)}>
+      <div style={{ ...modalCardStyle(520), display: "block", overflowY: "auto" }}>
         <style>{`@keyframes modalIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }`}</style>
 
         {/* Header */}
-        <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+        <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid " + COLORS.hairline, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 1 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>Новая задача</div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Заполните поля и добавьте задачу на доску</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.ink, letterSpacing: -.4 }}>Новая задача</div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Заполните поля и добавьте задачу на доску</div>
           </div>
-          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
           </button>
         </div>
@@ -468,17 +504,17 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
           <div style={{ display: "flex", gap: 14 }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Приоритет</label>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ ...segmentedWrapStyle, display: "flex", width: "100%" }}>
                 {["Высокий","Средний","Низкий"].map(p => (
-                  <button key={p} onClick={() => setPriority(p)} style={{ flex: 1, padding: "8px 4px", borderRadius: 8, border: "1.5px solid " + (priority===p ? priColor[p] : "#e2edf8"), background: priority===p ? priColor[p]+"18" : "#f8fafc", color: priority===p ? priColor[p] : "#64748b", fontSize: 12, fontWeight: priority===p ? 600 : 400, cursor: "pointer", fontFamily: "Inter", transition: "all .15s" }}>{p}</button>
+                  <button key={p} onClick={() => setPriority(p)} style={{ ...segmentedItemStyle(priority===p, priColor[p]), flex: 1, padding: "8px 4px" }}>{p}</button>
                 ))}
               </div>
             </div>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Колонка</label>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ ...segmentedWrapStyle, display: "flex", width: "100%" }}>
                 {["Беклог","В работе","Готов"].map(c => (
-                  <button key={c} onClick={() => setColumn(c)} style={{ flex: 1, padding: "8px 4px", borderRadius: 8, border: "1.5px solid " + (column===c ? colColor[c] : "#e2edf8"), background: column===c ? colColor[c]+"18" : "#f8fafc", color: column===c ? colColor[c] : "#64748b", fontSize: 12, fontWeight: column===c ? 600 : 400, cursor: "pointer", fontFamily: "Inter", transition: "all .15s" }}>{c}</button>
+                  <button key={c} onClick={() => setColumn(c)} style={{ ...segmentedItemStyle(column===c, colColor[c]), flex: 1, padding: "8px 4px" }}>{c}</button>
                 ))}
               </div>
             </div>
@@ -517,22 +553,14 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
                     onClick={() => toggleMember(member.id)}
                     disabled={disabled}
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
+                      ...chipStyle(active),
                       gap: 7,
-                      padding: "7px 10px",
-                      borderRadius: 999,
-                      border: "1.5px solid " + (active ? "#7c3aed" : disabled ? "#e2e8f0" : "#e2edf8"),
-                      background: active ? "#f5f3ff" : disabled ? "#f8fafc" : "#fff",
-                      color: active ? "#7c3aed" : disabled ? "#94a3b8" : "#64748b",
-                      fontSize: 12,
-                      fontWeight: 700,
+                      padding: "6px 11px",
                       cursor: disabled ? "not-allowed" : "pointer",
-                      fontFamily: "Inter",
-                      opacity: disabled ? 0.65 : 1,
+                      opacity: disabled ? 0.55 : 1,
                     }}
                   >
-                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? "#7c3aed" : disabled ? "#e2e8f0" : member.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: active ? COLORS.accent : disabled ? "#e2e8f0" : member.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>
                       {member.initials}
                     </span>
                     <span>{member.name}</span>
@@ -544,9 +572,9 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
-          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
-          <button onClick={handleSubmit} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>Добавить задачу</button>
+        <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.12)", color: COLORS.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>Отмена</button>
+          <button onClick={handleSubmit} style={{ ...pillButtonStyle("primary"), padding: "8px 22px", fontSize: 13 }}>Добавить задачу</button>
         </div>
       </div>
     </div>
@@ -554,9 +582,9 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
 }
 
 // ---- KANBAN CARD ----
-function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, onDelete, onMove, onArchive, team = [], currentUser = null }) {
+function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, onDelete, onArchive, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
-  const priColor = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
+  const priColor = isMobile ? LEGACY_PRI_COLOR : PRIORITY_COLOR;
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const owner = findTeamMember(team, task.ownerId);
@@ -565,10 +593,13 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
   const canDelete = currentUser?.role === "admin" || currentUser?.id === task.ownerId;
   const canArchive = ["Готов", "Готово"].includes(task.column);
   const overdue = isTaskOverdue(task);
-  const cardBorderColor = overdue ? "#fca5a5" : "#e8f1fd";
-  const cardShadow = overdue
-    ? "0 1px 4px rgba(239,68,68,.10), 0 8px 24px rgba(239,68,68,.08)"
-    : (isMobile ? "0 1px 3px rgba(37,99,235,.06)" : "0 1px 4px rgba(37,99,235,.07), 0 2px 12px rgba(37,99,235,.05)");
+  const cardBorderColor = isMobile
+    ? (overdue ? "#fca5a5" : "#e8f1fd")
+    : (overdue ? "rgba(224,49,49,.35)" : COLORS.hairline);
+  const cardShadow = isMobile
+    ? (overdue ? "0 1px 4px rgba(239,68,68,.10), 0 8px 24px rgba(239,68,68,.08)" : "0 1px 3px rgba(37,99,235,.06)")
+    : (overdue ? "0 1px 2px rgba(224,49,49,.06)" : "0 1px 2px rgba(15,23,42,.03)");
+  const isDoneCard = ["Готов", "Готово"].includes(task.column);
 
   function handleDragStart(e) {
     setDragging(true);
@@ -586,17 +617,21 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
       draggable={!isMobile}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      onClick={e => { if (!dragging) onEdit && onEdit(task); }}
-      style={{ background: overdue ? "#fff7f7" : "#fff", borderRadius: isMobile ? 14 : 12, padding: isMobile ? "12px" : "14px 16px", boxShadow: dragging ? "0 8px 32px rgba(37,99,235,.18)" : cardShadow, border: "1px solid " + (dragging ? "#93c5fd" : cardBorderColor), cursor: dragging ? "grabbing" : "pointer", transition: "box-shadow .15s, opacity .15s, transform .15s, border-color .15s, background .15s", opacity: dragging ? 0.55 : 1, transform: dragging ? "rotate(1.5deg) scale(1.02)" : "none", userSelect: "none", touchAction: "manipulation" }}
-      onMouseEnter={e => { if (!dragging) { e.currentTarget.style.boxShadow = overdue ? "0 6px 24px rgba(239,68,68,.16)" : "0 4px 20px rgba(37,99,235,.13)"; e.currentTarget.style.borderColor = overdue ? "#ef4444" : "#bdd7f5"; } }}
+      onClick={() => { if (!dragging) onEdit && onEdit(task); }}
+      style={{ background: isMobile && overdue ? "#fff7f7" : "#fff", borderRadius: isMobile ? 14 : RADII.kanbanCard, padding: isMobile ? "12px" : "13px 15px", boxShadow: dragging ? "0 8px 32px rgba(37,99,235,.18)" : cardShadow, border: "1px solid " + (dragging ? "#93c5fd" : cardBorderColor), cursor: dragging ? "grabbing" : "pointer", transition: "box-shadow .15s, opacity .15s, transform .15s, border-color .15s, background .15s", opacity: dragging ? 0.55 : (!isMobile && isDoneCard ? 0.75 : 1), transform: dragging ? "rotate(1.5deg) scale(1.02)" : "none", userSelect: "none", touchAction: "manipulation" }}
+      onMouseEnter={e => { if (!dragging) { e.currentTarget.style.boxShadow = isMobile ? (overdue ? "0 6px 24px rgba(239,68,68,.16)" : "0 4px 20px rgba(37,99,235,.13)") : (overdue ? "0 4px 16px rgba(224,49,49,.12)" : "0 4px 16px rgba(15,23,42,.08)"); e.currentTarget.style.borderColor = isMobile ? (overdue ? "#ef4444" : "#bdd7f5") : (overdue ? COLORS.redText : COLORS.hairlineStrong); } }}
       onMouseLeave={e => { if (!dragging) { e.currentTarget.style.boxShadow = cardShadow; e.currentTarget.style.borderColor = cardBorderColor; } }}>
 
       {/* Header: dot + title + priority badge */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: isMobile ? 10 : 8 }}>
-        <div style={{ width: 8, height: 8, borderRadius: "50%", background: priColor[task.priority], flexShrink: 0, marginTop: 4 }}></div>
-        <div style={{ flex: 1, fontSize: isMobile ? 14 : 13, fontWeight: isMobile ? 750 : 600, color: "#1e3a6e", lineHeight: 1.35 }}>{task.title}</div>
-        <span style={{ fontSize: 10, fontWeight: 600, color: priColor[task.priority], background: priColor[task.priority]+"18", padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>{task.priority}</span>
-        {overdue && <span style={{ fontSize: 10, fontWeight: 750, color: "#b91c1c", background: "#fee2e2", padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>Просрочено</span>}
+        {isMobile && <div style={{ width: 8, height: 8, borderRadius: "50%", background: priColor[task.priority], flexShrink: 0, marginTop: 4 }}></div>}
+        <div style={{ flex: 1, fontSize: isMobile ? 14 : 12.5, fontWeight: isMobile ? 750 : 650, color: isMobile ? "#1e3a6e" : COLORS.ink, lineHeight: 1.35 }}>{task.title}</div>
+        <span style={isMobile
+          ? { fontSize: 10, fontWeight: 600, color: priColor[task.priority], background: priColor[task.priority]+"18", padding: "2px 7px", borderRadius: 20, flexShrink: 0 }
+          : { fontSize: 10, fontWeight: 700, color: priColor[task.priority], flexShrink: 0 }}>{task.priority}</span>
+        {overdue && <span style={isMobile
+          ? { fontSize: 10, fontWeight: 750, color: "#b91c1c", background: "#fee2e2", padding: "2px 7px", borderRadius: 20, flexShrink: 0 }
+          : { fontSize: 10, fontWeight: 700, color: COLORS.redText, flexShrink: 0 }}>Просрочено</span>}
         {canArchive && (
           <button
             onClick={e => { e.stopPropagation(); onArchive && onArchive(task.id); }}
@@ -620,11 +655,11 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
       {/* Description */}
       {!isMobile && task.description && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5, overflow: "hidden", maxHeight: expanded ? 200 : 38, transition: "max-height .2s ease" }}>
+          <div style={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 1.5, overflow: "hidden", maxHeight: expanded ? 200 : 38, transition: "max-height .2s ease" }}>
             {task.description}
           </div>
           {task.description.length > 70 && (
-            <button onClick={() => setExpanded(e => !e)} style={{ fontSize: 11, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: "2px 0", fontFamily: "Inter", fontWeight: 500 }}>
+            <button onClick={() => setExpanded(e => !e)} style={{ fontSize: 11, color: COLORS.accent, background: "none", border: "none", cursor: "pointer", padding: "2px 0", fontFamily: FONT_STACK, fontWeight: 500 }}>
               {expanded ? "Скрыть ▲" : "Подробнее ▼"}
             </button>
           )}
@@ -644,25 +679,32 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
         </div>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", background: "#f1f5f9", padding: "3px 8px", borderRadius: 999 }}>
-          Автор: {owner ? owner.name.split(" ")[0] : "Не указан"}
-        </span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: "#1e3a6e", background: "#eff6ff", padding: "3px 8px", borderRadius: 999 }}>
-          Исп.: {assignee ? assignee.name.split(" ")[0] : "Не назначен"}
-        </span>
-        {coExecutors.length > 0 && (
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", padding: "3px 8px", borderRadius: 999 }}>
-            Соисп.: {coExecutors.map(member => member.name.split(" ")[0]).join(", ")}
+      {isMobile ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", background: "#f1f5f9", padding: "3px 8px", borderRadius: 999 }}>
+            Автор: {owner ? owner.name.split(" ")[0] : "Не указан"}
           </span>
-        )}
-      </div>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#1e3a6e", background: "#eff6ff", padding: "3px 8px", borderRadius: 999 }}>
+            Исп.: {assignee ? assignee.name.split(" ")[0] : "Не назначен"}
+          </span>
+          {coExecutors.length > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", padding: "3px 8px", borderRadius: 999 }}>
+              Соисп.: {coExecutors.map(member => member.name.split(" ")[0]).join(", ")}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div style={{ fontSize: 10.5, color: COLORS.textMuted, marginBottom: 10, lineHeight: 1.4 }}>
+          Автор: {owner ? owner.name.split(" ")[0] : "Не указан"} · Исп.: {assignee ? assignee.name.split(" ")[0] : "Не назначен"}
+          {coExecutors.length > 0 && <> · Соисп.: {coExecutors.map(member => member.name.split(" ")[0]).join(", ")}</>}
+        </div>
+      )}
 
       {/* Footer: due */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1" y="2" width="9" height="8" rx="1.5" stroke={overdue ? "#ef4444" : "#94a3b8"} strokeWidth="1" fill="none"/><path d="M3.5 1v2M7.5 1v2" stroke={overdue ? "#ef4444" : "#94a3b8"} strokeWidth="1" strokeLinecap="round"/></svg>
-          <span style={{ fontSize: 11, color: overdue ? "#b91c1c" : "#94a3b8", fontWeight: overdue ? 750 : 400 }}>{overdue ? "просрочено: " : "до "}{formatShortDate(task.due)}</span>
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1" y="2" width="9" height="8" rx="1.5" stroke={overdue ? (isMobile ? "#ef4444" : COLORS.redText) : (isMobile ? "#94a3b8" : COLORS.textFaint)} strokeWidth="1" fill="none"/><path d="M3.5 1v2M7.5 1v2" stroke={overdue ? (isMobile ? "#ef4444" : COLORS.redText) : (isMobile ? "#94a3b8" : COLORS.textFaint)} strokeWidth="1" strokeLinecap="round"/></svg>
+          <span style={{ fontSize: 11, color: overdue ? (isMobile ? "#b91c1c" : COLORS.redText) : (isMobile ? "#94a3b8" : COLORS.textMuted), fontWeight: overdue ? (isMobile ? 750 : 600) : 400 }}>{overdue ? "просрочено: " : "до "}{formatShortDate(task.due)}</span>
         </div>
         {isMobile ? (
           <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 132 }}>{assignee ? assignee.name.split(" ")[0] : "Без исполнителя"}</span>
@@ -696,10 +738,11 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
   const currentUserId = currentUser?.id ?? null;
 
   const COLUMNS = ["Беклог", "В работе", "Готов"];
-  const colColor  = { "Беклог": "#64748b", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
-  const colBg     = { "Беклог": "#f1f5f9", "В работе": "#eff6ff", "Готов": "#f0fdf4", "Архив": "#f8fafc" };
-  const colBorder = { "Беклог": "#e2edf8", "В работе": "#bdd7f5", "Готов": "#bbf7d0", "Архив": "#cbd5e1" };
-  const colDropBg = { "Беклог": "#e8edf5", "В работе": "#dbeafe", "Готов": "#dcfce7", "Архив": "#e2e8f0" };
+  // Десктопная доска: цвета колонок из theme (мобильный рендер эти карты не использует)
+  const colColor  = COLUMN_TEXT;
+  const colDot    = COLUMN_DOT;
+  const colBg     = COLUMN_SURFACE;
+  const colDropBg = { "Беклог": "rgba(118,118,128,.1)", "В работе": "rgba(0,122,255,.09)", "Готов": "rgba(52,199,89,.1)", "Архив": "rgba(118,118,128,.1)" };
 
   useEffect(() => setTasks(initialTasks), [initialTasks]);
 
@@ -816,11 +859,13 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
     return normalizeTaskColumn(t.column) === mobileStatusFilter;
   });
 
-  const filterBtnStyle = (active) => ({
-    padding: "5px 12px", borderRadius: 20, border: "1.5px solid " + (active ? "#2563eb" : "#e2edf8"),
-    background: active ? "#eff6ff" : "#fff", color: active ? "#2563eb" : "#64748b",
-    fontSize: 12, fontWeight: active ? 600 : 400, cursor: "pointer", fontFamily: "Inter", transition: "all .15s", whiteSpace: "nowrap"
-  });
+  const filterBtnStyle = (active) => (isMobile
+    ? {
+        padding: "5px 12px", borderRadius: 20, border: "1.5px solid " + (active ? "#2563eb" : "#e2edf8"),
+        background: active ? "#eff6ff" : "#fff", color: active ? "#2563eb" : "#64748b",
+        fontSize: 12, fontWeight: active ? 600 : 400, cursor: "pointer", fontFamily: "Inter", transition: "all .15s", whiteSpace: "nowrap"
+      }
+    : { ...chipStyle(active), fontSize: 12, padding: "5px 12px", transition: "all .15s", whiteSpace: "nowrap" });
 
   const scopeControls = (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -976,26 +1021,26 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
       {/* Stats */}
       {scopeControls}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(5, minmax(0, 1fr))" : "repeat(5, minmax(140px, 1fr))", gap: isMobile ? 6 : 14, flexShrink: 0 }}>
-        <StatCard compact={isMobile} label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#1e3a6e"/>
-        <StatCard compact={isMobile} label="Беклог" value={scopeTasks.filter(t=>t.column==="Беклог").length} sub="ожидают" color="#64748b"/>
-        <StatCard compact={isMobile} label="В работе" value={scopeTasks.filter(t=>t.column==="В работе").length} sub="активных" color="#2563eb"/>
-        <StatCard compact={isMobile} label="Готово" value={scopeTasks.filter(t=>isDoneColumn(t.column)).length} sub="7 дней" color="#10b981"/>
-        <StatCard compact={isMobile} label="Без исполнителя" value={scopeTasks.filter(t=>!t.assigneeId && !isArchiveColumn(t.column)).length} sub="назначить" color="#f59e0b"/>
+        <StatCard compact={isMobile} pastel="blue" label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#1e3a6e"/>
+        <StatCard compact={isMobile} pastel="gray" label="Беклог" value={scopeTasks.filter(t=>t.column==="Беклог").length} sub="ожидают" color="#64748b"/>
+        <StatCard compact={isMobile} pastel="indigo" label="В работе" value={scopeTasks.filter(t=>t.column==="В работе").length} sub="активных" color="#2563eb"/>
+        <StatCard compact={isMobile} pastel="green" label="Готово" value={scopeTasks.filter(t=>isDoneColumn(t.column)).length} sub="7 дней" color="#10b981"/>
+        <StatCard compact={isMobile} pastel="amber" label="Без исполнителя" value={scopeTasks.filter(t=>!t.assigneeId && !isArchiveColumn(t.column)).length} sub="назначить" color="#f59e0b"/>
       </div>
 
       {/* Board container */}
-      <div style={{ background: "#fff", borderRadius: 16, padding: "18px 20px 20px", boxShadow: "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "#fff", borderRadius: RADII.card, padding: "18px 20px 20px", boxShadow: SHADOWS.card, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
 
         {/* Toolbar: title + filters + add button */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap", flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a6e", marginRight: 4 }}>Доска задач</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.ink, letterSpacing: -.2, marginRight: 4 }}>Доска задач</div>
 
           {/* Separator */}
-          <div style={{ width: 1, height: 20, background: "#e2edf8", flexShrink: 0 }}></div>
+          <div style={{ width: 1, height: 20, background: COLORS.hairlineStrong, flexShrink: 0 }}></div>
 
           {/* Filter: Assignee */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: .4, textTransform: "uppercase" }}>Исполнитель:</span>
+            <span style={{ fontSize: 10, color: COLORS.textFaint, fontWeight: 700, letterSpacing: .5, textTransform: "uppercase" }}>Исполнитель:</span>
             <div style={{ display: "flex", gap: 4 }}>
               <button style={filterBtnStyle(filterAssignee==="all")} onClick={() => setFilterAssignee("all")}>Все</button>
               {team.map(m => (
@@ -1009,14 +1054,14 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
             </div>
           </div>
 
-          <div style={{ width: 1, height: 20, background: "#e2edf8", flexShrink: 0 }}></div>
+          <div style={{ width: 1, height: 20, background: COLORS.hairlineStrong, flexShrink: 0 }}></div>
 
           {/* Filter: Priority */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: .4, textTransform: "uppercase" }}>Приоритет:</span>
-            <div style={{ display: "flex", gap: 4 }}>
+            <span style={{ fontSize: 10, color: COLORS.textFaint, fontWeight: 700, letterSpacing: .5, textTransform: "uppercase" }}>Приоритет:</span>
+            <div style={segmentedWrapStyle}>
               {["all","Высокий","Средний","Низкий"].map(p => (
-                <button key={p} style={filterBtnStyle(filterPriority===p)} onClick={() => setFilterPriority(p)}>
+                <button key={p} style={segmentedItemStyle(filterPriority===p, p === "all" ? COLORS.ink : PRIORITY_COLOR[p])} onClick={() => setFilterPriority(p)}>
                   {p === "all" ? "Все" : p}
                 </button>
               ))}
@@ -1025,7 +1070,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
 
           <div style={{ marginLeft: "auto" }}>
             <button onClick={() => setShowModal(true)}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 2px 8px rgba(37,99,235,.25)", transition: "opacity .15s" }}
+              style={{ ...pillButtonStyle("primary"), gap: 8, fontSize: 13, transition: "opacity .15s" }}
               onMouseEnter={e => e.currentTarget.style.opacity = ".88"}
               onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1036,9 +1081,9 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
 
         {/* Filtered count hint */}
         {(filterAssignee !== "all" || filterPriority !== "all") && (
-          <div style={{ fontSize: 12, color: "#2563eb", marginBottom: 10, flexShrink: 0 }}>
+          <div style={{ fontSize: 12, color: COLORS.accent, marginBottom: 10, flexShrink: 0 }}>
             Показано {filtered.length} из {activeScopeTasks.length} задач
-            <button onClick={() => { setFilterAssignee("all"); setFilterPriority("all"); }} style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontFamily: "Inter", textDecoration: "underline" }}>Сбросить</button>
+            <button onClick={() => { setFilterAssignee("all"); setFilterPriority("all"); }} style={{ marginLeft: 8, fontSize: 11, color: COLORS.textFaint, background: "none", border: "none", cursor: "pointer", fontFamily: FONT_STACK, textDecoration: "underline" }}>Сбросить</button>
           </div>
         )}
 
@@ -1052,18 +1097,18 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
                 onDragOver={e => handleDragOver(e, col)}
                 onDrop={e => handleDrop(e, col)}
                 onDragLeave={handleDragLeave}
-                style={{ background: isOver ? colDropBg[col] : colBg[col], borderRadius: 12, border: "1.5px solid " + (isOver ? colColor[col] : colBorder[col]), display: "flex", flexDirection: "column", overflow: "hidden", transition: "background .15s, border-color .15s", minHeight: isMobile ? "auto" : 0 }}>
+                style={{ background: isOver ? colDropBg[col] : colBg[col], borderRadius: RADII.column, border: isOver ? "1.5px dashed " + colDot[col] : "1.5px solid transparent", display: "flex", flexDirection: "column", overflow: "hidden", transition: "background .15s, border-color .15s", minHeight: isMobile ? "auto" : 0 }}>
 
                 {/* Column header */}
-                <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + colBorder[col], flexShrink: 0 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: colColor[col] }}></div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: colColor[col] }}>{col}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: "#fff", background: colColor[col], borderRadius: 20, padding: "1px 8px", minWidth: 22, textAlign: "center" }}>{colTasks.length}</span>
+                <div style={{ padding: "11px 15px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + COLORS.hairline, flexShrink: 0 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: colDot[col] }}></div>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.ink }}>{col}</span>
+                  <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: colColor[col] }}>{colTasks.length}</span>
                 </div>
 
                 {/* Drop hint */}
                 {isOver && draggingId && (
-                  <div style={{ margin: "8px 12px 0", padding: "10px", borderRadius: 10, border: "2px dashed " + colColor[col], background: "transparent", color: colColor[col], fontSize: 12, textAlign: "center", fontWeight: 500 }}>
+                  <div style={{ margin: "8px 12px 0", padding: "10px", borderRadius: 10, border: "2px dashed " + colDot[col], background: "transparent", color: colColor[col], fontSize: 12, textAlign: "center", fontWeight: 500 }}>
                     Отпустите здесь
                   </div>
                 )}
@@ -1071,7 +1116,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
                 {/* Cards */}
                 <div style={{ flex: 1, overflow: isMobile ? "visible" : "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
                   {colTasks.length === 0 && !isOver && (
-                    <div style={{ textAlign: "center", color: "#b0c4de", fontSize: 12, marginTop: 20, padding: "0 8px" }}>
+                    <div style={{ textAlign: "center", color: COLORS.textFaint, fontSize: 12, marginTop: 20, padding: "0 8px" }}>
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ margin: "0 auto 6px", display: "block", opacity: .4 }}>
                         <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
                         <path d="M8 10h8M8 14h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
