@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { dashboardRequest, buildApi } from './api.js';
 import { SECTIONS, MOBILE_SECTION_LABELS } from './constants.jsx';
 import { useViewportFlags, isStandalonePwa, urlBase64ToUint8Array, normalizeDashboardData, initialsFromName, formatDashboardDate } from './utils.js';
+import { COLORS, FONT_STACK, GLASS, AVATAR_GRADIENT } from './theme.js';
 import AuthScreen from './screens/AuthScreen.jsx';
 import RegisterScreen from './screens/RegisterScreen.jsx';
 import TasksSection from './sections/TasksSection.jsx';
@@ -109,7 +110,7 @@ export default function App() {
       try {
         const result = await dashboardRequest("/auth/refresh", { method: "POST" });
         if (!cancelled) { setAccessToken(result.accessToken); setCurrentUser(result.user); }
-      } catch (_) {
+      } catch {
         if (!cancelled) { setAccessToken(""); setCurrentUser(null); }
       } finally {
         if (!cancelled) setAuthLoading(false);
@@ -193,7 +194,7 @@ export default function App() {
   }
 
   async function handleLogout() {
-    try { await dashboardRequest("/auth/logout", { method: "POST" }); } catch (_) {}
+    try { await dashboardRequest("/auth/logout", { method: "POST" }); } catch { /* сессия могла уже истечь */ }
     setAccessToken(""); setCurrentUser(null); setDashboardData(null);
   }
 
@@ -207,7 +208,7 @@ export default function App() {
 
   // ── Auth screens ──
   if (authLoading) {
-    return <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f0f6ff", color: "#64748b", fontSize: 14 }}>Проверяем сессию...</div>;
+    return <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: isMobile ? "#f0f6ff" : "#fbfdff", color: isMobile ? "#64748b" : COLORS.textMuted, fontSize: 14 }}>Проверяем сессию...</div>;
   }
   if (inviteToken && (!currentUser || !accessToken)) {
     return <RegisterScreen inviteToken={inviteToken} onLogin={handleLogin} />;
@@ -220,52 +221,51 @@ export default function App() {
 
   // ── 10c: Sidebar + Topbar ──
   return (
-    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100dvh", width: "100%", overflow: "hidden", background: "#f0f6ff", paddingTop: isMobile ? "var(--safe-top)" : 0 }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100dvh", width: "100%", overflow: "hidden", background: isMobile ? "#f0f6ff" : COLORS.bgGradient, paddingTop: isMobile ? "var(--safe-top)" : 0 }}>
 
       {/* SIDEBAR */}
       {!isMobile && (
-        <div style={{ width: sidebarCollapsed ? 64 : "20%", minWidth: sidebarCollapsed ? 64 : 220, maxWidth: sidebarCollapsed ? 64 : 300, background: "#1e3a6e", display: "flex", flexDirection: "column", transition: "width .3s ease, min-width .3s ease", overflow: "hidden", flexShrink: 0 }}>
-          <div style={{ padding: sidebarCollapsed ? "20px 0" : "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,.08)", flexShrink: 0, display: "flex", alignItems: "center", gap: 12, justifyContent: sidebarCollapsed ? "center" : "flex-start" }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#3b82f6,#60a5fa)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ width: sidebarCollapsed ? 64 : "20%", minWidth: sidebarCollapsed ? 64 : 220, maxWidth: sidebarCollapsed ? 64 : 300, ...GLASS.sidebar, borderRight: "1px solid " + COLORS.hairline, display: "flex", flexDirection: "column", transition: "width .3s ease, min-width .3s ease", overflow: "hidden", flexShrink: 0 }}>
+          <div style={{ padding: sidebarCollapsed ? "20px 0" : "24px 20px 20px", borderBottom: "1px solid " + COLORS.hairline, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, justifyContent: sidebarCollapsed ? "center" : "flex-start" }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: AVATAR_GRADIENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="9" width="4" height="7" rx="1" fill="white"/><rect x="7" y="5" width="4" height="11" rx="1" fill="white" opacity=".8"/><rect x="12" y="2" width="4" height="14" rx="1" fill="white" opacity=".6"/></svg>
             </div>
-            {!sidebarCollapsed && <div><div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: -.2 }}>Дашборд</div><div style={{ fontSize: 11, color: "#7fb3f5", marginTop: 1 }}>Руководитель</div></div>}
+            {!sidebarCollapsed && <div><div style={{ fontSize: 14, fontWeight: 700, color: COLORS.ink, letterSpacing: -.2 }}>Дашборд</div><div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 1 }}>Руководитель</div></div>}
           </div>
 
-          {!sidebarCollapsed && <div style={{ padding: "16px 20px 8px", fontSize: 10, fontWeight: 600, color: "#4a7dbe", letterSpacing: 1.2, textTransform: "uppercase" }}>Навигация</div>}
+          {!sidebarCollapsed && <div style={{ padding: "16px 20px 8px", fontSize: 10, fontWeight: 600, color: COLORS.textFaint, letterSpacing: 1.2, textTransform: "uppercase" }}>Навигация</div>}
 
           <nav style={{ flex: 1, overflow: "auto", padding: sidebarCollapsed ? "8px 0" : "8px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
             {visibleSections.map(s => {
               const isActive = s.id === active;
               return (
                 <button key={s.id} onClick={() => setActive(s.id)} title={sidebarCollapsed ? s.label : undefined}
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: sidebarCollapsed ? "12px 0" : "11px 14px", justifyContent: sidebarCollapsed ? "center" : "flex-start", borderRadius: sidebarCollapsed ? 0 : 10, border: "none", background: isActive ? "rgba(255,255,255,.13)" : "transparent", color: isActive ? "#fff" : "#7fb3f5", cursor: "pointer", fontFamily: "Inter", transition: "background .15s, color .15s", position: "relative", outline: "none", width: "100%" }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,.06)"; }}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: sidebarCollapsed ? "12px 0" : "11px 14px", justifyContent: sidebarCollapsed ? "center" : "flex-start", borderRadius: sidebarCollapsed ? 0 : 10, border: "none", background: isActive ? COLORS.accentSoft : "transparent", color: isActive ? COLORS.accent : COLORS.textMid, cursor: "pointer", fontFamily: FONT_STACK, transition: "background .15s, color .15s", position: "relative", outline: "none", width: "100%" }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(118,118,128,.08)"; }}
                   onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
-                  {isActive && !sidebarCollapsed && <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 20, background: "#60a5fa", borderRadius: "0 2px 2px 0" }}></div>}
-                  <span style={{ color: isActive ? "#fff" : "#7fb3f5", flexShrink: 0 }}>{s.icon}</span>
+                  <span style={{ color: isActive ? COLORS.accent : COLORS.textFaint, flexShrink: 0 }}>{s.icon}</span>
                   {!sidebarCollapsed && <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</span>}
                 </button>
               );
             })}
           </nav>
 
-          <div style={{ borderTop: "1px solid rgba(255,255,255,.08)", padding: sidebarCollapsed ? "16px 0" : "16px 10px", display: "flex", flexDirection: "column", gap: 12, flexShrink: 0 }}>
+          <div style={{ borderTop: "1px solid " + COLORS.hairline, padding: sidebarCollapsed ? "16px 0" : "16px 10px", display: "flex", flexDirection: "column", gap: 12, flexShrink: 0 }}>
             {!isCompact && (
               <button onClick={() => setCollapsed(!collapsed)}
-                style={{ display: "flex", alignItems: "center", justifyContent: sidebarCollapsed ? "center" : "flex-start", gap: 8, background: "transparent", border: "none", color: "#4a7dbe", cursor: "pointer", padding: "4px 8px", borderRadius: 8, fontFamily: "Inter", fontSize: 12, outline: "none" }}>
+                style={{ display: "flex", alignItems: "center", justifyContent: sidebarCollapsed ? "center" : "flex-start", gap: 8, background: "transparent", border: "none", color: COLORS.textFaint, cursor: "pointer", padding: "4px 8px", borderRadius: 8, fontFamily: FONT_STACK, fontSize: 12, outline: "none" }}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transform: sidebarCollapsed ? "rotate(180deg)" : "none", transition: "transform .3s" }}><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 {!sidebarCollapsed && <span>Свернуть</span>}
               </button>
             )}
             {!sidebarCollapsed && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, background: "rgba(255,255,255,.06)", borderRadius: 12 }}>
-                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#60a5fa)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{userInitials}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, background: "rgba(118,118,128,.08)", borderRadius: 12 }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", background: AVATAR_GRADIENT, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{userInitials}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.displayName}</div>
-                  <div style={{ fontSize: 11, color: "#7fb3f5" }}>{currentUser.role === "admin" ? "Администратор" : "Участник"}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.displayName}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted }}>{currentUser.role === "admin" ? "Администратор" : "Участник"}</div>
                 </div>
-                <button onClick={handleLogout} title="Выйти" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "rgba(255,255,255,.08)", color: "#7fb3f5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <button onClick={handleLogout} title="Выйти" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "rgba(118,118,128,.1)", color: COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M8 5V4a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M12 10H3m0 0 3-3m-3 3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
               </div>
@@ -278,14 +278,16 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
         {/* TOPBAR */}
-        <div style={{ minHeight: isMobile ? 58 : 64, background: "#fff", borderBottom: "1px solid #e2edf8", display: "flex", alignItems: "center", padding: isMobile ? "10px 14px" : "0 32px", gap: isMobile ? 10 : 16, flexShrink: 0 }}>
+        <div style={{ minHeight: isMobile ? 58 : 72, ...(isMobile ? { background: "#fff", borderBottom: "1px solid #e2edf8" } : { ...GLASS.topbar, borderBottom: "1px solid " + COLORS.hairline }), display: "flex", alignItems: "center", padding: isMobile ? "10px 14px" : "0 32px", gap: isMobile ? 10 : 16, flexShrink: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: isMobile ? 17 : 18, fontWeight: 750, color: "#1e3a6e", letterSpacing: -.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{section.label}</div>
-            {!isMobile && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 1 }}>{section.description}</div>}
+            <div style={{ fontSize: isMobile ? 17 : 26, fontWeight: isMobile ? 750 : 800, color: isMobile ? "#1e3a6e" : COLORS.ink, letterSpacing: isMobile ? -.3 : -.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{section.label}</div>
+            {!isMobile && <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 1 }}>{section.description}</div>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 20, flexShrink: 0 }}>
-            <div title={isOnline ? "Сеть доступна" : "Нет сети"} style={{ display: "flex", alignItems: "center", gap: 7, padding: isMobile ? 8 : "7px 10px", borderRadius: 999, border: "1px solid " + (isOnline ? "#bbf7d0" : "#fecaca"), background: isOnline ? "#f0fdf4" : "#fef2f2", color: isOnline ? "#15803d" : "#b91c1c", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "currentColor" }}></span>
+            <div title={isOnline ? "Сеть доступна" : "Нет сети"} style={isMobile
+              ? { display: "flex", alignItems: "center", gap: 7, padding: 8, borderRadius: 999, border: "1px solid " + (isOnline ? "#bbf7d0" : "#fecaca"), background: isOnline ? "#f0fdf4" : "#fef2f2", color: isOnline ? "#15803d" : "#b91c1c", fontSize: 12, fontWeight: 700, flexShrink: 0 }
+              : { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 600, color: isOnline ? COLORS.greenText : COLORS.redText, flexShrink: 0 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: isMobile ? "currentColor" : (isOnline ? COLORS.green : COLORS.red) }}></span>
               {!isMobile && (isOnline ? "Online" : "Offline")}
             </div>
             {installPrompt && !standalone && (
@@ -294,15 +296,17 @@ export default function App() {
                 {!isMobile && "Установить"}
               </button>
             )}
-            {!isMobile && <div style={{ fontSize: 13, color: "#64748b" }}>{topbarDate}</div>}
-            {!isMobile && <div style={{ width: 1, height: 24, background: "#e2edf8" }}></div>}
+            {!isMobile && <div style={{ fontSize: 13, color: COLORS.textMuted }}>{topbarDate}</div>}
+            {!isMobile && <div style={{ width: 1, height: 24, background: COLORS.hairlineStrong }}></div>}
             <button onClick={() => enablePush()} title="Push-уведомления"
-              style={{ width: isMobile ? 40 : "auto", minWidth: isMobile ? 40 : 36, height: isMobile ? 40 : 36, padding: isMobile ? 0 : "0 10px", gap: 7, borderRadius: 999, border: "1px solid " + (pushStatus === "enabled" ? "#bbf7d0" : pushStatus === "error" || pushStatus === "denied" ? "#fecaca" : "#dbeafe"), background: pushStatus === "enabled" ? "#f0fdf4" : pushStatus === "error" || pushStatus === "denied" ? "#fef2f2" : "#fff", color: pushStatus === "enabled" ? "#10b981" : pushStatus === "error" || pushStatus === "denied" ? "#ef4444" : "#64748b", cursor: pushStatus === "loading" ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "Inter", fontSize: 12, fontWeight: 700 }}
+              style={isMobile
+                ? { width: 40, minWidth: 40, height: 40, padding: 0, gap: 7, borderRadius: 999, border: "1px solid " + (pushStatus === "enabled" ? "#bbf7d0" : pushStatus === "error" || pushStatus === "denied" ? "#fecaca" : "#dbeafe"), background: pushStatus === "enabled" ? "#f0fdf4" : pushStatus === "error" || pushStatus === "denied" ? "#fef2f2" : "#fff", color: pushStatus === "enabled" ? "#10b981" : pushStatus === "error" || pushStatus === "denied" ? "#ef4444" : "#64748b", cursor: pushStatus === "loading" ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "Inter", fontSize: 12, fontWeight: 700 }
+                : { minWidth: 36, height: 34, padding: "0 14px", gap: 7, borderRadius: 999, border: "none", background: "rgba(118,118,128,.08)", color: pushStatus === "enabled" ? COLORS.greenText : pushStatus === "error" || pushStatus === "denied" ? COLORS.redText : COLORS.textMid, cursor: pushStatus === "loading" ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: FONT_STACK, fontSize: 12, fontWeight: 600 }}
               disabled={pushStatus === "loading"}>
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 0 0-6 6v3l-1.5 2.5h15L16 11V8a6 6 0 0 0-6-6z" stroke="currentColor" strokeWidth="1.5" fill="none"/><path d="M8.5 16a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.5" fill="none"/></svg>
               {!isMobile && (pushStatus === "enabled" ? "Вкл" : pushStatus === "loading" ? "..." : "Push")}
             </button>
-            <button onClick={handleLogout} title="Выйти" style={{ width: isMobile ? 40 : 36, height: isMobile ? 40 : 36, borderRadius: "50%", border: "none", background: "linear-gradient(135deg,#2563eb,#60a5fa)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", flexShrink: 0 }}>{userInitials}</button>
+            <button onClick={handleLogout} title="Выйти" style={{ width: isMobile ? 40 : 36, height: isMobile ? 40 : 36, borderRadius: "50%", border: "none", background: isMobile ? "linear-gradient(135deg,#2563eb,#60a5fa)" : AVATAR_GRADIENT, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: isMobile ? "Inter" : FONT_STACK, flexShrink: 0 }}>{userInitials}</button>
           </div>
         </div>
 
@@ -317,7 +321,7 @@ export default function App() {
             </div>
           )}
           {loading || !dashboardData ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: 14 }}>Загрузка данных...</div>
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: isMobile ? "#64748b" : COLORS.textMuted, fontSize: 14 }}>Загрузка данных...</div>
           ) : (
             SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser })
           )}

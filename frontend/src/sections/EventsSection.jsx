@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import Avatar from '../components/common/Avatar.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
-import { useViewportFlags, formatDashboardDate, getRoadmapToday, formatShortDate, isStandalonePwa, ROADMAP_YEAR } from '../utils.js';
+import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useViewportFlags, getRoadmapToday, formatShortDate, isStandalonePwa, ROADMAP_YEAR } from '../utils.js';
+import { COLORS, FONT_STACK, EVENT_TYPE_COLOR, SHADOWS, RADII, pillButtonStyle, chipStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
+
+// мобильная ветка, удалить при рестайле мобильной
+const LEGACY_TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b","УПЦ":"#0f766e","План развития":"#7c3aed" };
 
 function EventsSection({ initialEvents = null, initialEventTasks = null, team = [], api, onError, currentUser = null }) {
   const { isCompact, isMobile } = useViewportFlags();
@@ -14,7 +17,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const TODAY_DAY = today.day;
 
   const TYPE_OPTIONS = ["Совещание","Мероприятие","Релиз","Дедлайн","Планирование","УПЦ","План развития"];
-  const TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b","УПЦ":"#0f766e","План развития":"#7c3aed" };
+  const TYPE_COLOR = isMobile ? LEGACY_TYPE_COLOR : EVENT_TYPE_COLOR;
 
   const [events, setEvents] = useState(() => Array.isArray(initialEvents) ? initialEvents : []);
   const [eventTasks, setEventTasks] = useState(() => initialEventTasks || {});
@@ -287,15 +290,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     overflowWrap: "anywhere",
     fontSize: 10,
     lineHeight: 1.25,
-    fontWeight: 700,
-    color: event.done ? "#94a3b8" : TYPE_COLOR[event.type],
-    background: selected ? TYPE_COLOR[event.type] + "22" : "#fff",
+    fontWeight: selected ? 650 : 600,
+    color: event.done ? COLORS.textFaint : (selected ? COLORS.accent : COLORS.ink),
+    background: selected ? COLORS.accentSoft : "#fff",
     padding: "4px 8px",
     borderRadius: 8,
     textAlign: "center",
-    border: selected ? "1.5px solid " + TYPE_COLOR[event.type] : "1.5px solid #e8f1fd",
+    border: selected ? "1px solid " + COLORS.accent : "1px solid " + COLORS.hairlineStrong,
     transition: "all .15s",
-    boxShadow: selected ? "0 2px 8px rgba(37,99,235,.12)" : "none",
+    boxShadow: selected ? "0 2px 8px rgba(0,122,255,.12)" : "0 1px 3px rgba(15,23,42,.05)",
   });
 
   // Anti-collision: assign each event a side (top/bottom) and a level within that side
@@ -311,7 +314,6 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
     function computeLevels(group) {
       // Pre-seed level 0 with the "Сегодня" label so events near it get bumped
-      const TODAY_LABEL_W = 0.08; // "Сегодня" badge is ~70px wide
       const levels = [[{ pct: todayPct }]]; // level 0 reserved around today
       return group.map(ev => {
         const pct = getEventPct(ev);
@@ -366,18 +368,18 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       onClose();
     }
 
-    const lbl = { fontSize:12, fontWeight:600, color:"#64748b", marginBottom:6, display:"block", letterSpacing:.3 };
-    const inp = { width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #e2edf8", fontSize:14, color:"#1e3a6e", fontFamily:"Inter", outline:"none", background:"#f8fafc" };
+    const lbl = themeLabelStyle;
+    const inp = themeInputStyle;
 
     return (
-      <div style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
-        <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 520px)", maxHeight:"90vh", overflowY:"auto", boxShadow:"0 24px 64px rgba(37,99,235,.22)", animation:"modalIn .2s ease" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+      <div style={modalOverlayStyle(Z.modal)}>
+        <div style={{ ...modalCardStyle(520), display:"block", overflowY:"auto" }}>
+          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
-              <div style={{ fontSize:16, fontWeight:700, color:"#1e3a6e" }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
-              <div style={{ fontSize:12, color:"#94a3b8", marginTop:2 }}>{isEdit ? "Измените поля события" : "Добавьте событие на дорожную карту"}</div>
+              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
+              <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>{isEdit ? "Измените поля события" : "Добавьте событие на дорожную карту"}</div>
             </div>
-            <button onClick={onClose} style={{ width:32, height:32, borderRadius:"50%", border:"none", background:"#f0f6ff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <button onClick={onClose} style={modalCloseButtonStyle}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
             </button>
           </div>
@@ -389,13 +391,16 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
                 onFocus={e => e.target.style.borderColor = "#93c5fd"}
                 onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
-              {error && <div style={{ fontSize:12, color:"#ef4444", marginTop:4 }}>{error}</div>}
+              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
             </div>
             <div>
               <label style={lbl}>Тип события</label>
               <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 {TYPE_OPTIONS.map(t => (
-                  <button key={t} onClick={() => setType(t)} style={{ padding:"7px 12px", borderRadius:8, border:"1.5px solid "+(type===t?TYPE_COLOR[t]:"#e2edf8"), background:type===t?TYPE_COLOR[t]+"18":"#f8fafc", color:type===t?TYPE_COLOR[t]:"#64748b", fontSize:12, fontWeight:type===t?600:400, cursor:"pointer", fontFamily:"Inter", transition:"all .15s" }}>{t}</button>
+                  <button key={t} onClick={() => setType(t)} style={{ ...chipStyle(type===t, TYPE_COLOR[t]), gap:5, fontSize:12, transition:"all .15s" }}>
+                    <span style={{ width:7, height:7, borderRadius:"50%", background:TYPE_COLOR[t], flexShrink:0 }}></span>
+                    {t}
+                  </button>
                 ))}
               </div>
             </div>
@@ -428,10 +433,10 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                       key={member.id}
                       type="button"
                       onClick={() => toggleMember(member.id)}
-                      style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:999, border:"1.5px solid " + (active ? member.color : "#e2edf8"), background:active ? member.color + "18" : "#f8fafc", color:active ? member.color : "#64748b", cursor:"pointer", fontFamily:"Inter" }}
+                      style={{ ...chipStyle(active), gap:8, padding:"6px 12px" }}
                     >
                       <span style={{ width:22, height:22, borderRadius:"50%", background:member.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{member.initials}</span>
-                      <span style={{ fontSize:12, fontWeight:600 }}>{member.name}</span>
+                      <span style={{ fontSize:12, fontWeight:active ? 600 : 400 }}>{member.name}</span>
                     </button>
                   );
                 })}
@@ -442,9 +447,9 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               Событие завершено
             </label>
           </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid #f0f6ff" }}>
-            <button onClick={onClose} style={{ padding:"10px 20px", borderRadius:10, border:"1.5px solid #e2edf8", background:"#f8fafc", color:"#64748b", fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"Inter" }}>Отмена</button>
-            <button onClick={handleSave} style={{ padding:"10px 24px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 4px 12px rgba(37,99,235,.3)" }}>{isEdit ? "Сохранить" : "Добавить событие"}</button>
+          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>{isEdit ? "Сохранить" : "Добавить событие"}</button>
           </div>
         </div>
       </div>
@@ -472,19 +477,19 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       onClose();
     }
 
-    const lbl = { fontSize:12, fontWeight:600, color:"#64748b", marginBottom:6, display:"block", letterSpacing:.3 };
-    const inp = { width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #e2edf8", fontSize:14, color:"#1e3a6e", fontFamily:"Inter", outline:"none", background:"#f8fafc" };
+    const lbl = themeLabelStyle;
+    const inp = themeInputStyle;
     const assignee = team.find(m => m.id === assigneeId) || null;
 
     return (
-      <div style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
-        <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 460px)", boxShadow:"0 24px 64px rgba(37,99,235,.22)", animation:"modalIn .2s ease" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+      <div style={modalOverlayStyle(Z.modal)}>
+        <div style={{ ...modalCardStyle(460), display:"block" }}>
+          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
               <div style={{ fontSize:12, color:"#94a3b8", marginBottom:2 }}>К событию: <span style={{ color: ev ? TYPE_COLOR[ev.type] : "#1e3a6e", fontWeight:600 }}>{ev?.title}</span></div>
-              <div style={{ fontSize:16, fontWeight:700, color:"#1e3a6e" }}>Новая задача</div>
+              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Новая задача</div>
             </div>
-            <button onClick={onClose} style={{ width:32, height:32, borderRadius:"50%", border:"none", background:"#f0f6ff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <button onClick={onClose} style={modalCloseButtonStyle}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
             </button>
           </div>
@@ -496,7 +501,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
                 onFocus={e => e.target.style.borderColor = "#93c5fd"}
                 onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
-              {error && <div style={{ fontSize:12, color:"#ef4444", marginTop:4 }}>{error}</div>}
+              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
             </div>
             <div style={{ display:"flex", gap:14 }}>
               <div style={{ flex:1 }}>
@@ -524,9 +529,9 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст задачи, ожидания или результат" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
             </div>
           </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid #f0f6ff" }}>
-            <button onClick={onClose} style={{ padding:"10px 20px", borderRadius:10, border:"1.5px solid #e2edf8", background:"#f8fafc", color:"#64748b", fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"Inter" }}>Отмена</button>
-            <button onClick={handleSave} style={{ padding:"10px 24px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 4px 12px rgba(37,99,235,.3)" }}>Добавить задачу</button>
+          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Добавить задачу</button>
           </div>
         </div>
       </div>
@@ -541,8 +546,8 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     const [done, setDone] = useState(Boolean(task.done));
     const [error, setError] = useState("");
     const assignee = team.find(m => m.id === assigneeId) || null;
-    const lbl = { fontSize:12, fontWeight:600, color:"#64748b", marginBottom:6, display:"block", letterSpacing:.3 };
-    const inp = { width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #e2edf8", fontSize:14, color:"#1e3a6e", fontFamily:"Inter", outline:"none", background:"#f8fafc" };
+    const lbl = themeLabelStyle;
+    const inp = themeInputStyle;
 
     useEffect(() => {
       const fn = e => { if (e.key === "Escape") onClose(); };
@@ -556,14 +561,14 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     }
 
     return (
-      <div style={{ position:"fixed", inset:0, background:"rgba(15,30,70,.38)", zIndex:320, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
-        <div style={{ background:"#fff", borderRadius:20, width:"min(92vw, 560px)", maxHeight:"92vh", overflowY:"auto", boxShadow:"0 24px 64px rgba(37,99,235,.22)" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid #e8f1fd", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+      <div style={modalOverlayStyle(Z.modalNested)}>
+        <div style={{ ...modalCardStyle(560), display:"block", overflowY:"auto" }}>
+          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
-              <div style={{ fontSize:16, fontWeight:700, color:"#1e3a6e" }}>Задача события</div>
-              <div style={{ fontSize:12, color:"#94a3b8", marginTop:2 }}>Описание, исполнитель и срок</div>
+              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Задача события</div>
+              <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>Описание, исполнитель и срок</div>
             </div>
-            <button onClick={onClose} style={{ width:32, height:32, borderRadius:"50%", border:"none", background:"#f0f6ff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <button onClick={onClose} style={modalCloseButtonStyle}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
             </button>
           </div>
@@ -571,7 +576,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
             <div>
               <label style={lbl}>Название задачи *</label>
               <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }} style={{ ...inp, borderColor:error ? "#ef4444" : "#e2edf8" }} />
-              {error && <div style={{ fontSize:12, color:"#ef4444", marginTop:4 }}>{error}</div>}
+              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
             </div>
             <div>
               <label style={lbl}>Описание</label>
@@ -598,9 +603,9 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               Задача выполнена
             </label>
           </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid #f0f6ff" }}>
-            <button onClick={onClose} style={{ padding:"10px 20px", borderRadius:10, border:"1.5px solid #e2edf8", background:"#f8fafc", color:"#64748b", fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"Inter" }}>Отмена</button>
-            <button onClick={handleSave} style={{ padding:"10px 24px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 4px 12px rgba(37,99,235,.3)" }}>Сохранить</button>
+          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Сохранить</button>
           </div>
         </div>
       </div>
@@ -617,16 +622,16 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap:isMobile ? 6 : 14 }}>
-        <StatCard compact={isMobile} label="Событий в году" value={displayEvents.length} sub={hideClosedEventsInPwa ? "активных" : "запланировано"} color="#1e3a6e" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("all") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "all"}/>
-        <StatCard compact={isMobile} label="Завершено" value={hideClosedEventsInPwa ? 0 : events.filter(e=>e.done).length} sub={hideClosedEventsInPwa ? "скрыто в PWA" : "пройдено"} color="#10b981" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("done") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "done"}/>
-        <StatCard compact={isMobile} label="Предстоит" value={pwaStatusOptions.find(option => option.id === "upcoming")?.count ?? displayEvents.filter(e=>!e.done).length} sub="впереди" color="#2563eb" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("upcoming") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "upcoming"}/>
-        <StatCard compact={isMobile} label={hideClosedEventsInPwa ? "Просрочено" : "До конца года"} value={hideClosedEventsInPwa ? (pwaStatusOptions.find(option => option.id === "overdue")?.count ?? 0) : daysToYearEnd} sub={hideClosedEventsInPwa ? "требуют внимания" : "дней"} color="#f59e0b" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("overdue") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "overdue"}/>
+        <StatCard compact={isMobile} pastel={isMobile ? null : "blue"} label="Событий в году" value={displayEvents.length} sub={hideClosedEventsInPwa ? "активных" : "запланировано"} color="#1e3a6e" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("all") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "all"}/>
+        <StatCard compact={isMobile} pastel={isMobile ? null : "green"} label="Завершено" value={hideClosedEventsInPwa ? 0 : events.filter(e=>e.done).length} sub={hideClosedEventsInPwa ? "скрыто в PWA" : "пройдено"} color="#10b981" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("done") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "done"}/>
+        <StatCard compact={isMobile} pastel={isMobile ? null : "indigo"} label="Предстоит" value={pwaStatusOptions.find(option => option.id === "upcoming")?.count ?? displayEvents.filter(e=>!e.done).length} sub="впереди" color="#2563eb" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("upcoming") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "upcoming"}/>
+        <StatCard compact={isMobile} pastel={isMobile ? null : "amber"} label={hideClosedEventsInPwa ? "Просрочено" : "До конца года"} value={hideClosedEventsInPwa ? (pwaStatusOptions.find(option => option.id === "overdue")?.count ?? 0) : daysToYearEnd} sub={hideClosedEventsInPwa ? "требуют внимания" : "дней"} color="#f59e0b" onClick={hideClosedEventsInPwa ? () => setPwaEventStatusFilter("overdue") : null} active={hideClosedEventsInPwa && pwaEventStatusFilter === "overdue"}/>
       </div>
 
       {/* Roadmap */}
-      <div style={{ background:"#fff", borderRadius:isMobile ? 18 : 16, padding:isMobile ? 14 : "24px 28px", boxShadow:"0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" }}>
+      <div style={{ background:"#fff", borderRadius:isMobile ? 18 : RADII.card, padding:isMobile ? 14 : "24px 28px", boxShadow:isMobile ? "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" : SHADOWS.card }}>
         <div style={{ display:"flex", alignItems:isCompact ? "flex-start" : "center", justifyContent:"space-between", marginBottom:20, gap:14, flexWrap:"wrap" }}>
-          <div style={{ fontSize:isMobile ? 18 : 14, fontWeight:isMobile ? 850 : 600, color:"#1e3a6e" }}>Дорожная карта 2026</div>
+          <div style={{ fontSize:isMobile ? 18 : 14, fontWeight:isMobile ? 850 : 700, color:isMobile ? "#1e3a6e" : COLORS.ink, letterSpacing:isMobile ? 0 : -.2 }}>Дорожная карта 2026</div>
           <div style={{ display:"flex", alignItems:isCompact ? "flex-start" : "center", gap:14, flexWrap:"wrap" }}>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
               {Object.entries(TYPE_COLOR).map(([t,c]) => {
@@ -637,7 +642,9 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                     type="button"
                     onClick={() => setRoadmapTypeFilter(current => current === t ? "all" : t)}
                     title={active ? "Показать все типы" : `Показать только: ${t}`}
-                    style={{ display:"flex", alignItems:"center", gap:5, minHeight:26, padding:"4px 8px", borderRadius:999, border:"1.5px solid " + (active ? c : "#e2edf8"), background: active ? c + "14" : "#fff", color: active ? c : "#94a3b8", fontSize:11, fontWeight: active ? 800 : 650, fontFamily:"Inter", cursor:"pointer" }}>
+                    style={isMobile
+                      ? { display:"flex", alignItems:"center", gap:5, minHeight:26, padding:"4px 8px", borderRadius:999, border:"1.5px solid " + (active ? c : "#e2edf8"), background: active ? c + "14" : "#fff", color: active ? c : "#94a3b8", fontSize:11, fontWeight: active ? 800 : 650, fontFamily:"Inter", cursor:"pointer" }
+                      : { ...chipStyle(active, c), gap:5, minHeight:26, fontSize:10.5, fontWeight: active ? 650 : 400, color: active ? c : COLORS.textSecondary }}>
                     <span style={{ width:8, height:8, borderRadius:"50%", background:c, flexShrink:0 }}></span>
                     {t}
                   </button>
@@ -647,11 +654,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
             <button
               type="button"
               onClick={() => setShowClosedPastMonths(value => !value)}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 10px", borderRadius:10, border:"1.5px solid " + (showClosedPastMonths ? "#93c5fd" : "#e2edf8"), background:showClosedPastMonths ? "#eff6ff" : "#fff", color:showClosedPastMonths ? "#2563eb" : "#64748b", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }}>
+              style={isMobile
+                ? { display:"flex", alignItems:"center", gap:6, padding:"7px 10px", borderRadius:10, border:"1.5px solid " + (showClosedPastMonths ? "#93c5fd" : "#e2edf8"), background:showClosedPastMonths ? "#eff6ff" : "#fff", color:showClosedPastMonths ? "#2563eb" : "#64748b", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }
+                : { ...pillButtonStyle("neutral"), fontSize:11.5, whiteSpace:"nowrap", ...(showClosedPastMonths ? { background: COLORS.accentSoft, color: COLORS.accent } : {}) }}>
               {showClosedPastMonths ? "Скрыть прошлое" : "Показать прошлое"}
             </button>
             <button onClick={() => setShowAddEvent(true)}
-              style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.25)", whiteSpace:"nowrap" }}>
+              style={isMobile
+                ? { display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.25)", whiteSpace:"nowrap" }
+                : { ...pillButtonStyle("primary"), gap:7, whiteSpace:"nowrap" }}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
               Добавить событие
             </button>
@@ -696,7 +707,6 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               const pct = getEventPct(ev);
               const isSel = selectedId === ev.id;
               // level 0 = closest to track (bottom of zone), higher levels = further up
-              const maxLevel = topEvents.length ? Math.max(...topEvents.map(e=>e.level)) : 0;
               const bottomOffset = ev.level * 48;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
@@ -712,17 +722,17 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
           {/* Track */}
           <div style={{ position:"relative", height:32 }}>
-            <div style={{ position:"absolute", top:"50%", left:0, right:0, height:4, background:"#e8f1fd", borderRadius:4, transform:"translateY(-50%)" }}></div>
-            <div style={{ position:"absolute", top:"50%", left:0, width:`${todayPct*100}%`, height:4, background:"linear-gradient(90deg,#2563eb,#60a5fa)", borderRadius:4, transform:"translateY(-50%)" }}></div>
+            <div style={{ position:"absolute", top:"50%", left:0, right:0, height:4, background:COLORS.hairlineStrong, borderRadius:4, transform:"translateY(-50%)" }}></div>
+            <div style={{ position:"absolute", top:"50%", left:0, width:`${todayPct*100}%`, height:4, background:"linear-gradient(90deg,#38bdf8,#007aff)", borderRadius:4, transform:"translateY(-50%)" }}></div>
             {MONTHS.map((_, i) => hiddenPastMonths.has(i) ? null : (
               <div key={i} style={{ position:"absolute", left:`${getMonthPct(i)*100}%`, top:"50%", transform:"translateX(-50%) translateY(-50%)" }}>
-                <div style={{ width:2, height:10, background:"#d1d5db", borderRadius:1 }}></div>
+                <div style={{ width:2, height:10, background:"rgba(15,23,42,.12)", borderRadius:1 }}></div>
               </div>
             ))}
             {/* Today */}
             <div style={{ position:"absolute", left:`${todayPct*100}%`, top:"50%", transform:"translateX(-50%) translateY(-50%)", zIndex:10 }}>
-              <div style={{ width:14, height:14, borderRadius:"50%", background:"#fff", border:"3px solid #2563eb", boxShadow:"0 0 0 4px rgba(37,99,235,.15)" }}></div>
-              <div style={{ position:"absolute", top:-24, left:"50%", transform:"translateX(-50%)", fontSize:10, fontWeight:700, color:"#2563eb", whiteSpace:"nowrap", background:"#eff6ff", padding:"1px 6px", borderRadius:6 }}>Сегодня</div>
+              <div style={{ width:14, height:14, borderRadius:"50%", background:"#fff", border:"3px solid " + COLORS.accent, boxShadow:"0 0 0 4px rgba(0,122,255,.15)" }}></div>
+              <div style={{ position:"absolute", top:-24, left:"50%", transform:"translateX(-50%)", fontSize:10, fontWeight:700, color:COLORS.accent, whiteSpace:"nowrap", background:COLORS.accentSoft, padding:"1px 6px", borderRadius:6 }}>Сегодня</div>
             </div>
             {/* Event dots */}
             {[...topEvents, ...bottomEvents].map(ev => {
@@ -746,7 +756,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 transform:i===timelineStartMonth?"translateX(0)":"translateX(-50%)",
                 textAlign:i===timelineStartMonth?"left":"center",
                 fontSize:11,
-                color:i===TODAY_MONTH?"#2563eb":"#94a3b8",
+                color:i===TODAY_MONTH?COLORS.accent:COLORS.textFaint,
                 fontWeight:i===TODAY_MONTH?700:400,
                 whiteSpace:"nowrap"
               }}>{m}</div>
@@ -777,8 +787,8 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
       {/* Event detail + tasks */}
       {selectedEvent && (
-        <div style={{ background:"#fff", borderRadius:isMobile ? 18 : 16, padding:isMobile ? 14 : 24, boxShadow:"0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" }}>
-          <div style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:14, marginBottom:20, paddingBottom:16, borderBottom:"1px solid #e8f1fd", flexWrap:"wrap" }}>
+        <div style={{ background:"#fff", borderRadius:isMobile ? 18 : RADII.card, padding:isMobile ? 14 : 24, boxShadow:isMobile ? "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)" : SHADOWS.card }}>
+          <div style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:14, marginBottom:20, paddingBottom:16, borderBottom:"1px solid " + (isMobile ? "#e8f1fd" : COLORS.hairline), flexWrap:"wrap" }}>
             <button
               onClick={() => selectedEventGenerated ? toggleGeneratedEventDone(selectedEvent) : toggleCreatedEventDone(selectedEvent)}
               title={selectedEvent.done ? "Вернуть в работу" : "Отметить выполненным"}
@@ -787,21 +797,29 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               {selectedEvent.done ? <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg> : <div style={{ width:16, height:16, borderRadius:5, border:"2px solid currentColor" }}></div>}
             </button>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:16, fontWeight:700, color:"#1e3a6e" }}>{selectedEvent.title}</div>
-              <div style={{ display:"flex", gap:10, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
-                <span style={{ fontSize:12, color:"#64748b" }}>{MONTHS[selectedEvent.month]} 2026 · {selectedEvent.day} число</span>
-                <span style={{ fontSize:11, fontWeight:600, color:TYPE_COLOR[selectedEvent.type], background:TYPE_COLOR[selectedEvent.type]+"18", padding:"2px 8px", borderRadius:20 }}>{selectedEvent.type}</span>
-                {selectedEventGenerated && <span style={{ fontSize:11, fontWeight:600, color:"#64748b", background:"#f1f5f9", padding:"2px 8px", borderRadius:20 }}>Автоматически</span>}
-                {selectedEvent.done && <span style={{ fontSize:11, fontWeight:600, color:"#10b981", background:"#10b98118", padding:"2px 8px", borderRadius:20 }}>Завершено</span>}
+              <div style={{ fontSize:16, fontWeight:isMobile ? 700 : 750, color:isMobile ? "#1e3a6e" : COLORS.ink, letterSpacing:isMobile ? 0 : -.3 }}>{selectedEvent.title}</div>
+              <div style={{ display:"flex", gap:isMobile ? 10 : 12, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
+                <span style={{ fontSize:12, color:isMobile ? "#64748b" : COLORS.textMuted }}>{MONTHS[selectedEvent.month]} 2026 · {selectedEvent.day} число</span>
+                <span style={isMobile
+                  ? { fontSize:11, fontWeight:600, color:TYPE_COLOR[selectedEvent.type], background:TYPE_COLOR[selectedEvent.type]+"18", padding:"2px 8px", borderRadius:20 }
+                  : { fontSize:11.5, fontWeight:700, color:TYPE_COLOR[selectedEvent.type] }}>{selectedEvent.type}</span>
+                {selectedEventGenerated && <span style={isMobile
+                  ? { fontSize:11, fontWeight:600, color:"#64748b", background:"#f1f5f9", padding:"2px 8px", borderRadius:20 }
+                  : { fontSize:11.5, fontWeight:600, color:COLORS.textMuted }}>Автоматически</span>}
+                {selectedEvent.done && <span style={isMobile
+                  ? { fontSize:11, fontWeight:600, color:"#10b981", background:"#10b98118", padding:"2px 8px", borderRadius:20 }
+                  : { fontSize:11.5, fontWeight:700, color:COLORS.greenText }}>Завершено</span>}
               </div>
-              {selectedEvent.description && <div style={{ fontSize:13, color:"#64748b", marginTop:8, lineHeight:1.55 }}>{selectedEvent.description}</div>}
+              {selectedEvent.description && <div style={{ fontSize:13, color:isMobile ? "#64748b" : COLORS.textSecondary, marginTop:8, lineHeight:1.55 }}>{selectedEvent.description}</div>}
               {!selectedEventGenerated && (selectedEvent.memberIds || []).length > 0 && (
                 <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", marginTop:10 }}>
                   {(selectedEvent.memberIds || []).map(memberId => {
                     const member = team.find(item => item.id === memberId);
                     if (!member) return null;
                     return (
-                      <span key={member.id} title={member.name} style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 8px 4px 4px", borderRadius:999, background:member.color + "14", color:member.color, fontSize:11, fontWeight:700 }}>
+                      <span key={member.id} title={member.name} style={isMobile
+                        ? { display:"flex", alignItems:"center", gap:6, padding:"4px 8px 4px 4px", borderRadius:999, background:member.color + "14", color:member.color, fontSize:11, fontWeight:700 }
+                        : { display:"flex", alignItems:"center", gap:6, color:COLORS.textMid, fontSize:11.5, fontWeight:500 }}>
                         <span style={{ width:20, height:20, borderRadius:"50%", background:member.color, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800 }}>{member.initials}</span>
                         {member.name}
                       </span>
@@ -811,19 +829,25 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-              {!selectedEventGenerated && <span style={{ fontSize:13, color:"#94a3b8" }}>{tasks.filter(t=>t.done).length}/{tasks.length} задач</span>}
+              {!selectedEventGenerated && <span style={{ fontSize:13, color:isMobile ? "#94a3b8" : COLORS.textFaint }}>{tasks.filter(t=>t.done).length}/{tasks.length} задач</span>}
               {!selectedEventGenerated && <button onClick={() => setEditEvent(selectedEvent)}
-                style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 12px", borderRadius:10, border:"1px solid #dbeafe", background:"#fff", color:"#2563eb", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }}>
+                style={isMobile
+                  ? { display:"flex", alignItems:"center", gap:7, padding:"8px 12px", borderRadius:10, border:"1px solid #dbeafe", background:"#fff", color:"#2563eb", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }
+                  : { ...pillButtonStyle("neutral"), gap:7, fontSize:11.5, whiteSpace:"nowrap" }}>
                 <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5l2 2L5.2 10.8H3.2V8.8L8.5 3.5z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Редактировать
               </button>}
               {!selectedEventGenerated && <button onClick={() => deleteEvent(selectedEvent.id)}
-                style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 12px", borderRadius:10, border:"1px solid #fecaca", background:"#fff", color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }}>
+                style={isMobile
+                  ? { display:"flex", alignItems:"center", gap:7, padding:"8px 12px", borderRadius:10, border:"1px solid #fecaca", background:"#fff", color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", whiteSpace:"nowrap" }
+                  : { ...pillButtonStyle("danger"), gap:7, fontSize:11.5, whiteSpace:"nowrap" }}>
                 <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Удалить
               </button>}
               {!selectedEventGenerated && <button onClick={() => setShowAddTask(true)}
-                style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.2)", whiteSpace:"nowrap" }}>
+                style={isMobile
+                  ? { display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#2563eb,#3b82f6)", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter", boxShadow:"0 2px 8px rgba(37,99,235,.2)", whiteSpace:"nowrap" }
+                  : { ...pillButtonStyle("primary"), gap:7, fontSize:11.5, whiteSpace:"nowrap" }}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
                 Добавить задачу
               </button>}
@@ -845,17 +869,17 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                 const assignee = team.find(m => m.id === task.assigneeId) || null;
                 return (
                   <div key={task.id} onClick={() => setSelectedTask({ eventId: selectedId, task })}
-                    style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:12, padding:isMobile ? "12px" : "12px 16px", background:task.done?"#f0fdf4":"#f8fafc", borderRadius:12, border:"1px solid "+(task.done?"#bbf7d0":"#e2edf8"), cursor:"pointer", transition:"all .15s", flexWrap:isMobile ? "wrap" : "nowrap" }}
-                    onMouseEnter={e => e.currentTarget.style.background = task.done?"#e8fdf2":"#eff6ff"}
-                    onMouseLeave={e => e.currentTarget.style.background = task.done?"#f0fdf4":"#f8fafc"}>
-                    <button onClick={e => { e.stopPropagation(); toggleTask(selectedId, task.id); }} title="Отметить выполнение" style={{ width:20, height:20, borderRadius:6, border:task.done?"none":"2px solid #d1d5db", background:task.done?"#10b981":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", padding:0 }}>
+                    style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:12, padding:isMobile ? "12px" : "12px 16px", background:task.done?"rgba(52,199,89,.06)":"rgba(118,118,128,.04)", borderRadius:12, border:"1px solid "+(task.done?"rgba(52,199,89,.25)":COLORS.hairline), cursor:"pointer", transition:"all .15s", flexWrap:isMobile ? "wrap" : "nowrap" }}
+                    onMouseEnter={e => e.currentTarget.style.background = task.done?"rgba(52,199,89,.1)":COLORS.accentSoft}
+                    onMouseLeave={e => e.currentTarget.style.background = task.done?"rgba(52,199,89,.06)":"rgba(118,118,128,.04)"}>
+                    <button onClick={e => { e.stopPropagation(); toggleTask(selectedId, task.id); }} title="Отметить выполнение" style={{ width:20, height:20, borderRadius:6, border:task.done?"none":"2px solid rgba(15,23,42,.2)", background:task.done?COLORS.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", padding:0 }}>
                       {task.done && <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </button>
-                    <span style={{ flex:1, fontSize:14, color:task.done?"#64748b":"#1e3a6e", fontWeight:500, textDecoration:task.done?"line-through":"none" }}>
+                    <span style={{ flex:1, fontSize:14, color:task.done?COLORS.textMuted:COLORS.ink, fontWeight:500, textDecoration:task.done?"line-through":"none" }}>
                       {task.title}
-                      {task.description && <span style={{ display:"block", fontSize:12, color:"#94a3b8", marginTop:3, textDecoration:"none" }}>{task.description}</span>}
+                      {task.description && <span style={{ display:"block", fontSize:12, color:COLORS.textFaint, marginTop:3, textDecoration:"none" }}>{task.description}</span>}
                     </span>
-                    {task.due && <span style={{ fontSize:11, color:"#94a3b8", whiteSpace:"nowrap", marginLeft:isMobile ? 32 : 0 }}>{formatShortDate(task.due)}</span>}
+                    {task.due && <span style={{ fontSize:11, color:COLORS.textFaint, whiteSpace:"nowrap", marginLeft:isMobile ? 32 : 0 }}>{formatShortDate(task.due)}</span>}
                     {assignee ? (
                       <div style={{ display:"flex", alignItems:"center", gap:6, marginLeft:isMobile ? 32 : 0 }}>
                         <div style={{ width:24, height:24, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{assignee.initials}</div>
@@ -864,11 +888,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                     ) : (
                       <span style={{ fontSize:11, color:"#94a3b8", whiteSpace:"nowrap" }}>Не назначен</span>
                     )}
-                    <button onClick={e => { e.stopPropagation(); setSelectedTask({ eventId: selectedId, task }); }} title="Редактировать" style={{ width:28, height:28, borderRadius:8, border:"1px solid #dbeafe", background:"#fff", color:"#2563eb", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <button onClick={e => { e.stopPropagation(); setSelectedTask({ eventId: selectedId, task }); }} title="Редактировать" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.textMid, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
                       <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5l2 2L5.2 10.8H3.2V8.8L8.5 3.5z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </button>
                     {(currentUser?.role === "admin" || currentUser?.id === task.ownerId) && (
-                      <button onClick={e => { e.stopPropagation(); deleteEventTask(selectedId, task.id); }} title="Удалить" style={{ width:28, height:28, borderRadius:8, border:"1px solid #fecaca", background:"#fff", color:"#ef4444", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <button onClick={e => { e.stopPropagation(); deleteEventTask(selectedId, task.id); }} title="Удалить" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.redText, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
                         <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                       </button>
                     )}
@@ -877,11 +901,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               })}
               <div style={{ marginTop:8 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-                  <span style={{ fontSize:12, color:"#64748b" }}>Готовность к событию</span>
-                  <span style={{ fontSize:12, fontWeight:600, color:"#1e3a6e" }}>{tasks.length>0?Math.round(tasks.filter(t=>t.done).length/tasks.length*100):0}%</span>
+                  <span style={{ fontSize:12, color:COLORS.textSecondary }}>Готовность к событию</span>
+                  <span style={{ fontSize:12, fontWeight:600, color:COLORS.ink }}>{tasks.length>0?Math.round(tasks.filter(t=>t.done).length/tasks.length*100):0}%</span>
                 </div>
-                <div style={{ height:6, background:"#e8f1fd", borderRadius:4, overflow:"hidden" }}>
-                  <div style={{ height:"100%", width:`${tasks.length>0?tasks.filter(t=>t.done).length/tasks.length*100:0}%`, background:"linear-gradient(90deg,#10b981,#34d399)", borderRadius:4, transition:"width .5s ease" }}></div>
+                <div style={{ height:6, background:COLORS.hairlineStrong, borderRadius:4, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${tasks.length>0?tasks.filter(t=>t.done).length/tasks.length*100:0}%`, background:COLORS.green, borderRadius:4, transition:"width .5s ease" }}></div>
                 </div>
               </div>
             </div>
