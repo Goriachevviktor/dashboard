@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
 import { useViewportFlags } from '../utils.js';
 import { COLORS, FONT_STACK, STICKER_COLORS as THEME_STICKER_COLORS, pillButtonStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
 
