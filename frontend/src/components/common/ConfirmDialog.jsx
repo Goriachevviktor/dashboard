@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { COLORS, FONT_STACK, modalOverlayStyle, modalCardStyle, Z } from '../../theme.js';
 
 export function ConfirmDialog({ title, message, itemTitle, confirmText = "Удалить", cancelText = "Отмена", tone = "danger", onCancel, onConfirm }) {
   useEffect(() => {
@@ -10,36 +11,16 @@ export function ConfirmDialog({ title, message, itemTitle, confirmText = "Уда
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel, onConfirm]);
 
-  const accent = tone === "danger" ? "#ef4444" : "#2563eb";
-  const accentSoft = tone === "danger" ? "#fef2f2" : "#eff6ff";
+  const accent = tone === "danger" ? COLORS.redText : COLORS.accent;
+  const accentSoft = tone === "danger" ? "#ffebeb" : COLORS.accentSoft;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 700,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        background: "rgba(15, 30, 70, .42)",
-        backdropFilter: "blur(6px)",
-      }}
-    >
+    <div style={modalOverlayStyle(Z.confirm)}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
-        style={{
-          width: "min(92vw, 440px)",
-          background: "#fff",
-          borderRadius: 20,
-          boxShadow: "0 28px 80px rgba(15, 30, 70, .28)",
-          border: "1px solid rgba(226, 237, 248, .9)",
-          overflow: "hidden",
-          animation: "modalIn .18s ease",
-        }}
+        style={{ ...modalCardStyle(440), display: "block" }}
       >
         <style>{`@keyframes modalIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }`}</style>
         <div style={{ padding: "24px 26px 18px", display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -62,10 +43,10 @@ export function ConfirmDialog({ title, message, itemTitle, confirmText = "Уда
             </svg>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div id="confirm-title" style={{ fontSize: 18, fontWeight: 750, color: "#1e3a6e", lineHeight: 1.25 }}>
+            <div id="confirm-title" style={{ fontSize: 18, fontWeight: 800, color: COLORS.ink, letterSpacing: -.4, lineHeight: 1.25 }}>
               {title}
             </div>
-            <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.55, marginTop: 8 }}>
+            <div style={{ fontSize: 14, color: COLORS.textSecondary, lineHeight: 1.55, marginTop: 8 }}>
               {message}
             </div>
             {itemTitle && (
@@ -75,9 +56,9 @@ export function ConfirmDialog({ title, message, itemTitle, confirmText = "Уда
                   marginTop: 14,
                   padding: "10px 12px",
                   borderRadius: 12,
-                  background: "#f8fafc",
-                  border: "1px solid #e8f1fd",
-                  color: "#1e3a6e",
+                  background: "rgba(118,118,128,.08)",
+                  border: "1px solid " + COLORS.hairline,
+                  color: COLORS.ink,
                   fontSize: 13,
                   fontWeight: 600,
                   lineHeight: 1.35,
@@ -91,17 +72,17 @@ export function ConfirmDialog({ title, message, itemTitle, confirmText = "Уда
             )}
           </div>
         </div>
-        <div style={{ padding: "16px 26px 24px", display: "flex", justifyContent: "flex-end", gap: 10, borderTop: "1px solid #f0f6ff" }}>
+        <div style={{ padding: "16px 26px 24px", display: "flex", justifyContent: "flex-end", gap: 10, borderTop: "1px solid " + COLORS.hairline }}>
           <button
             onClick={onCancel}
-            style={{ padding: "10px 18px", borderRadius: 11, border: "1.5px solid #e2edf8", background: "#fff", color: "#64748b", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}
+            style={{ padding: "8px 18px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.12)", color: COLORS.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}
           >
             {cancelText}
           </button>
           <button
             autoFocus
             onClick={onConfirm}
-            style={{ padding: "10px 20px", borderRadius: 11, border: "none", background: `linear-gradient(135deg, ${accent}, #dc2626)`, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 8px 18px rgba(239,68,68,.24)" }}
+            style={{ padding: "8px 20px", borderRadius: 999, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 650, cursor: "pointer", fontFamily: FONT_STACK, boxShadow: tone === "danger" ? "0 2px 8px rgba(239,68,68,.28)" : "0 2px 8px rgba(0,122,255,.28)" }}
           >
             {confirmText}
           </button>
