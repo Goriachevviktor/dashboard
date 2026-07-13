@@ -25,9 +25,6 @@ const MAP_STATUS_OPTIONS = [
 const MINDMAP_BRANCH_COLORS = ["#3b6fe0", "#22b07d", "#6d5bd0", "#f3a236", "#2bb6c4", "#ec5b6b"];
 const MINDMAP_TAG_COLORS = ["#3b6fe0", "#22b07d", "#6d5bd0", "#f3a236", "#2bb6c4", "#ec5b6b", "#8a96ad"];
 const MINDMAP_ICON_NAMES = ["flag", "star", "bolt", "rocket", "check", "trend", "chart", "users", "search"];
-const MINDMAP_STORAGE_VERSION = 2;
-const MINDMAP_STORAGE_KEY = "dashboard.mindmap.maps.v2";
-const MINDMAP_LEGACY_STORAGE_KEY = "dashboard.mindmap.maps.v1";
 
 function countMindMapNodes(node) {
   return 1 + (node.children || []).reduce((total, child) => total + countMindMapNodes(child), 0);
@@ -88,28 +85,6 @@ function mindMapNodeFromWorkingNode(node) {
     ...(node.note ? { note: node.note } : {}),
     children: (node.children || []).map(mindMapNodeFromWorkingNode),
   };
-}
-
-function normalizeStoredMindMaps(value) {
-  const maps = Array.isArray(value) ? value : Array.isArray(value?.maps) ? value.maps : null;
-  if (!maps) return SAMPLE_MINDMAPS;
-  const normalized = maps
-    .filter(map => map && map.id && map.root)
-    .map(map => enrichMindMap({
-      ...map,
-      root: cloneMindMapNode(map.root),
-    }));
-  return normalized.length ? normalized : SAMPLE_MINDMAPS;
-}
-
-function loadStoredMindMaps() {
-  try {
-    const raw = window.localStorage.getItem(MINDMAP_STORAGE_KEY) || window.localStorage.getItem(MINDMAP_LEGACY_STORAGE_KEY);
-    if (!raw) return SAMPLE_MINDMAPS;
-    return normalizeStoredMindMaps(JSON.parse(raw));
-  } catch {
-    return SAMPLE_MINDMAPS;
-  }
 }
 
 const SAMPLE_MINDMAPS = [
