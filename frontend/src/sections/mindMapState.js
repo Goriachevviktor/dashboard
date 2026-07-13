@@ -5,6 +5,21 @@ export function cloneMindMapNode(node) {
   };
 }
 
+export function createSerialSaver(save) {
+  let queue = Promise.resolve();
+  return payload => {
+    const next = queue.then(() => save(payload));
+    queue = next.catch(() => undefined);
+    return next;
+  };
+}
+
+function formatUpdated(value) {
+  if (!value) return 'только что';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'только что' : date.toLocaleDateString('ru-RU');
+}
+
 function countNodes(node) {
   return 1 + (node.children || []).reduce((total, child) => total + countNodes(child), 0);
 }
@@ -26,6 +41,8 @@ export function enrichMindMap(map) {
     tag: map.tag || '',
     tagColor: map.tagColor || '#3b6fe0',
     status: map.status || 'draft',
+    ownerName: map.ownerName || 'Моя карта',
+    updated: map.updated || formatUpdated(map.updatedAt),
     root,
     nodeCount: Math.max(0, countNodes(root) - 1),
     branchCount: branches.length,

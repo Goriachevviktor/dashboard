@@ -76,6 +76,10 @@ class MindMapsUnitTest(unittest.TestCase):
             mindmaps.clean_mind_map_payload({"title": "Карта", "root": []})
         self.assertEqual(400, root_error.exception.status_code)
 
+        with self.assertRaises(HTTPException) as node_error:
+            mindmaps.clean_mind_map_payload({"title": "Карта", "root": {"id": "root", "children": []}})
+        self.assertEqual(400, node_error.exception.status_code)
+
 
 if __name__ == "__main__":
     unittest.main()

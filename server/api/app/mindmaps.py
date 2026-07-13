@@ -12,7 +12,7 @@ router = APIRouter()
 VALID_STATUSES = {"active", "draft", "archived"}
 
 
-def mind_map_json(row: dict[str, Any]) -> dict[str, Any]:
+def mind_map_json(row: dict[str, Any], owner_name: str = "") -> dict[str, Any]:
     return {
         "id": str(row["id"]),
         "title": row["title"],
@@ -21,9 +21,24 @@ def mind_map_json(row: dict[str, Any]) -> dict[str, Any]:
         "tagColor": row["tag_color"],
         "status": row["status"],
         "root": row["root"],
+        "ownerName": owner_name,
         "createdAt": iso(row.get("created_at")),
         "updatedAt": iso(row.get("updated_at")),
     }
+
+
+def validate_mind_map_node(node: Any) -> None:
+    if not isinstance(node, dict):
+        raise HTTPException(status_code=400, detail="Mind map node must be an object")
+    if not str(node.get("id") or "").strip():
+        raise HTTPException(status_code=400, detail="Mind map node id is required")
+    if not str(node.get("label") or node.get("text") or "").strip():
+        raise HTTPException(status_code=400, detail="Mind map node label is required")
+    children = node.get("children", [])
+    if not isinstance(children, list):
+        raise HTTPException(status_code=400, detail="Mind map node children must be an array")
+    for child in children:
+        validate_mind_map_node(child)
 
 
 def clean_mind_map_payload(payload: Any, *, partial: bool = False) -> dict[str, Any]:
@@ -57,6 +72,7 @@ def clean_mind_map_payload(payload: Any, *, partial: bool = False) -> dict[str, 
         root = payload.get("root")
         if not isinstance(root, dict):
             raise HTTPException(status_code=400, detail="Mind map root must be an object")
+        validate_mind_map_node(root)
         cleaned["root"] = root
     return cleaned
 
@@ -77,7 +93,7 @@ def list_mind_maps(user: dict[str, Any] = Depends(require_auth)) -> list[dict[st
             "SELECT * FROM mind_maps WHERE owner_id = %s ORDER BY updated_at DESC, id DESC",
             (user["id"],),
         ).fetchall()
-        return [mind_map_json(row) for row in rows]
+        return [mind_map_json(row, user.get("display_name", "")) for row in rows]
 
 
 @router.post("/mind-maps")
@@ -95,7 +111,7 @@ async def create_mind_map(request: Request, user: dict[str, Any] = Depends(requi
                 values["tag_color"], values["status"], Jsonb(values["root"]),
             ),
         ).fetchone()
-        return mind_map_json(row)
+        return mind_map_json(row, user.get("display_name", ""))
 
 
 @router.patch("/mind-maps/{map_id}")
@@ -115,7 +131,7 @@ async def update_mind_map(map_id: int, request: Request, user: dict[str, Any] = 
             f"UPDATE mind_maps SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING *",
             parameters,
         ).fetchone()
-        return mind_map_json(row)
+        return mind_map_json(row, user.get("display_name", ""))
 
 
 @router.delete("/mind-maps/{map_id}")

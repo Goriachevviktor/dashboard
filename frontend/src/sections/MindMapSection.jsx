@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
-import { normalizeMindMaps } from './mindMapState.js';
+import { createSerialSaver, normalizeMindMaps } from './mindMapState.js';
 
 const OWNERS = {
   viktor: { name: "Виктор",  initials: "ВИ", color: "#6d5bd0" },
@@ -523,8 +523,15 @@ function MiniIcon({ name, size = 16 }) {
   return <svg {...props}>{paths[name] || paths.mindmap}</svg>;
 }
 
-function OwnerAvatar({ owner, size = 28 }) {
-  const member = OWNERS[owner] || { name: "Не назначен", initials: "?", color: "#8a96ad" };
+function ownerMeta(owner, ownerName) {
+  if (OWNERS[owner]) return OWNERS[owner];
+  const name = ownerName || "Моя карта";
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "?";
+  return { name, initials, color: "#6d5bd0" };
+}
+
+function OwnerAvatar({ owner, ownerName, size = 28 }) {
+  const member = ownerMeta(owner, ownerName);
   return (
     <span
       title={member.name}
@@ -635,7 +642,7 @@ function MapCard({ map, onOpen, compact = false }) {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#455270", fontSize: 13, fontWeight: 700 }}><MiniIcon name="nodes" size={15} />{map.nodeCount} узлов</span>
           <span style={{ flex: 1 }} />
           <span style={{ color: "#94a3b8", fontSize: 12 }}>{map.updated}</span>
-          <OwnerAvatar owner={map.owner} size={28} />
+          <OwnerAvatar owner={map.owner} ownerName={map.ownerName} size={28} />
         </div>
       </div>
     </div>
@@ -1166,7 +1173,6 @@ function MindMapFormModal({ map, onClose, onSave, onDelete }) {
     tag: map?.tag || "Идеи",
     tagColor: map?.tagColor || "#3b6fe0",
     status: map?.status || "draft",
-    owner: map?.owner || "viktor",
   }));
   const title = form.title.trim();
 
@@ -1226,17 +1232,6 @@ function MindMapFormModal({ map, onClose, onSave, onDelete }) {
           ))}
         </div>
 
-        <label style={{ ...labelStyle, marginTop: 14 }}>Владелец</label>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {Object.keys(OWNERS).map(owner => (
-            <button key={owner} type="button" onClick={() => patch("owner", owner)}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, border: form.owner === owner ? "1.5px solid #2563eb" : "1px solid #dbeafe", background: form.owner === owner ? "#eff6ff" : "#fff", color: "#1e3a6e", borderRadius: 999, padding: "7px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 800, fontFamily: "Inter" }}>
-              <OwnerAvatar owner={owner} size={22} />
-              {OWNERS[owner].name}
-            </button>
-          ))}
-        </div>
-
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 22 }}>
           {!isNew ? (
             <button type="button" onClick={() => onDelete?.(map)} style={{ border: "1.5px solid #fecaca", background: "#fef2f2", color: "#ef4444", borderRadius: 11, padding: "10px 15px", fontSize: 13, fontWeight: 850, cursor: "pointer", fontFamily: "Inter" }}>Удалить карту</button>
@@ -1253,7 +1248,7 @@ function MindMapFormModal({ map, onClose, onSave, onDelete }) {
 
 function MindMapDetailShell({ map, onBack, onEditMap, selectedId, onDeleteSelected, onAddRoot, canUndo, canRedo, onUndo, onRedo, children }) {
   const status = MAP_STATUS_META[map.status] || MAP_STATUS_META.draft;
-  const owner = OWNERS[map.owner] || { name: "Не назначен", initials: "?", color: "#8a96ad" };
+  const owner = ownerMeta(map.owner, map.ownerName);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 16, background: "#fff", border: "1px solid #e2edf8", borderRadius: 16, padding: "16px 20px", boxShadow: "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)", flexWrap: "wrap" }}>
@@ -1297,7 +1292,7 @@ function MindMapDetailShell({ map, onBack, onEditMap, selectedId, onDeleteSelect
           <div style={{ display: "flex", gap: 24, alignItems: "center", borderLeft: "1px solid #edf3fb", paddingLeft: 22, flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: "#94a3b8" }}>Владелец</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, color: "#1e3a6e", fontWeight: 800 }}><OwnerAvatar owner={map.owner} size={24} />{owner.name}</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, color: "#1e3a6e", fontWeight: 800 }}><OwnerAvatar owner={map.owner} ownerName={map.ownerName} size={24} />{owner.name}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: "#94a3b8" }}>Узлов</span>
@@ -1356,6 +1351,19 @@ export default function MindMapSection({ api, onError }) {
   const [editingId, setEditingId] = useState(null);
   const [treeLoadedForMapId, setTreeLoadedForMapId] = useState(null);
   const [mapModal, setMapModal] = useState(null);
+  const treeRef = useRef(INIT_MAP);
+  const saveTreeRef = useRef(null);
+
+  useEffect(() => {
+    saveTreeRef.current = createSerialSaver(async ({ mapId, root }) => {
+      try {
+        const updated = enrichMindMap(await api.patchMindMap(mapId, { root }));
+        setMaps(current => current.map(map => map.id === mapId ? updated : map));
+      } catch (error) {
+        onError?.(error);
+      }
+    });
+  }, [api, onError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1377,41 +1385,36 @@ export default function MindMapSection({ api, onError }) {
     return () => { cancelled = true; };
   }, [api, onError]);
 
+  function persistTree(next) {
+    if (!openMapId) return;
+    const root = mindMapNodeFromWorkingNode(next);
+    setMaps(currentMaps => currentMaps.map(map => map.id === openMapId ? enrichMindMap({ ...map, root, updated: "только что" }) : map));
+    void saveTreeRef.current?.({ mapId: openMapId, root });
+  }
+
   function commitTree(updater) {
-    setTree(current => {
-      const next = typeof updater === "function" ? updater(current) : updater;
-      if (next === current) return current;
-      setHistoryPast(past => [...past.slice(-39), cloneMindMapNode(current)]);
-      setHistoryFuture([]);
-      return next;
-    });
+    const current = treeRef.current;
+    const next = typeof updater === "function" ? updater(current) : updater;
+    if (next === current) return;
+    treeRef.current = next;
+    setTree(next);
+    setHistoryPast(past => [...past.slice(-39), cloneMindMapNode(current)]);
+    setHistoryFuture([]);
+    persistTree(next);
   }
 
   useEffect(() => {
     if (!activeMap || treeLoadedForMapId === activeMap.id) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTree(legacyNodeFromMindMapNode(cloneMindMapNode(activeMap.root)));
+    const loadedTree = legacyNodeFromMindMapNode(cloneMindMapNode(activeMap.root));
+    treeRef.current = loadedTree;
+    setTree(loadedTree);
     setHistoryPast([]);
     setHistoryFuture([]);
     setSelectedId(null);
     setEditingId(null);
     setTreeLoadedForMapId(activeMap.id);
   }, [activeMap, treeLoadedForMapId]);
-
-  useEffect(() => {
-    if (!openMapId || !activeMap || treeLoadedForMapId !== openMapId) return;
-    const root = mindMapNodeFromWorkingNode(tree);
-    if (JSON.stringify(root) === JSON.stringify(activeMap.root)) return;
-    const timer = window.setTimeout(async () => {
-      try {
-        const updated = await api.patchMindMap(openMapId, { root });
-        setMaps(current => current.map(map => map.id === openMapId ? enrichMindMap(updated) : map));
-      } catch (error) {
-        onError?.(error);
-      }
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [activeMap, api, onError, openMapId, tree, treeLoadedForMapId]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -1549,27 +1552,29 @@ export default function MindMapSection({ api, onError }) {
   }
 
   function handleUndo() {
-    setHistoryPast(past => {
-      if (!past.length) return past;
-      const previous = past[past.length - 1];
-      setHistoryFuture(future => [cloneMindMapNode(tree), ...future.slice(0, 39)]);
-      setTree(previous);
-      setSelectedId(null);
-      setEditingId(null);
-      return past.slice(0, -1);
-    });
+    if (!historyPast.length) return;
+    const previous = historyPast[historyPast.length - 1];
+    const current = treeRef.current;
+    treeRef.current = previous;
+    setHistoryPast(historyPast.slice(0, -1));
+    setHistoryFuture(future => [cloneMindMapNode(current), ...future.slice(0, 39)]);
+    setTree(previous);
+    setSelectedId(null);
+    setEditingId(null);
+    persistTree(previous);
   }
 
   function handleRedo() {
-    setHistoryFuture(future => {
-      if (!future.length) return future;
-      const next = future[0];
-      setHistoryPast(past => [...past.slice(-39), cloneMindMapNode(tree)]);
-      setTree(next);
-      setSelectedId(null);
-      setEditingId(null);
-      return future.slice(1);
-    });
+    if (!historyFuture.length) return;
+    const next = historyFuture[0];
+    const current = treeRef.current;
+    treeRef.current = next;
+    setHistoryFuture(historyFuture.slice(1));
+    setHistoryPast(past => [...past.slice(-39), cloneMindMapNode(current)]);
+    setTree(next);
+    setSelectedId(null);
+    setEditingId(null);
+    persistTree(next);
   }
 
   if (mapsLoading) {
