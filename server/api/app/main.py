@@ -18,6 +18,7 @@ from .development import (
 from .events import event_json, event_member_map, event_task_json, router as events_router, visible_event_tasks, visible_events
 from .push import router as push_router
 from .stickers import router as stickers_router, sticker_json
+from .mindmaps import router as mindmaps_router
 from .tasks import router as tasks_router, task_json, task_member_map, visible_tasks
 from .ucp import router as ucp_router, ucp_task_json, visible_ucp_tasks
 from .utils import visible_owner_rows
@@ -45,6 +46,7 @@ app.include_router(ucp_router)
 app.include_router(development_router)
 app.include_router(ambp_router)
 app.include_router(stickers_router)
+app.include_router(mindmaps_router)
 
 
 @app.on_event("startup")
