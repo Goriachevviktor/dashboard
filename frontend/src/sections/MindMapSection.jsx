@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { normalizeMindMaps } from './mindMapState.js';
 
 const OWNERS = {
   viktor: { name: "Виктор",  initials: "ВИ", color: "#6d5bd0" },
@@ -1364,12 +1365,13 @@ function MindMapDetailShell({ map, onBack, onEditMap, selectedId, onDeleteSelect
   );
 }
 
-export default function MindMapSection() {
+export default function MindMapSection({ api, onError }) {
   const [confirmAction, confirmDialog] = useConfirmDialog();
-  const [maps, setMaps] = useState(() => loadStoredMindMaps());
+  const [maps, setMaps] = useState([]);
+  const [mapsLoading, setMapsLoading] = useState(true);
   const [openMapId, setOpenMapId] = useState(null);
   const activeMap = useMemo(
-    () => maps.find(map => map.id === openMapId) || maps[0] || TARGET_MINDMAP_MODEL,
+    () => maps.find(map => map.id === openMapId) || null,
     [maps, openMapId],
   );
   const [tree, setTree] = useState(INIT_MAP);
@@ -1379,6 +1381,26 @@ export default function MindMapSection() {
   const [editingId, setEditingId] = useState(null);
   const [treeLoadedForMapId, setTreeLoadedForMapId] = useState(null);
   const [mapModal, setMapModal] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMaps() {
+      setMapsLoading(true);
+      try {
+        const result = await api.listMindMaps();
+        if (!cancelled) setMaps(normalizeMindMaps(result));
+      } catch (error) {
+        if (!cancelled) {
+          setMaps([]);
+          onError?.(error);
+        }
+      } finally {
+        if (!cancelled) setMapsLoading(false);
+      }
+    }
+    loadMaps();
+    return () => { cancelled = true; };
+  }, [api, onError]);
 
   function commitTree(updater) {
     setTree(current => {
@@ -1391,7 +1413,7 @@ export default function MindMapSection() {
   }
 
   useEffect(() => {
-    if (treeLoadedForMapId === activeMap.id) return;
+    if (!activeMap || treeLoadedForMapId === activeMap.id) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTree(legacyNodeFromMindMapNode(cloneMindMapNode(activeMap.root)));
     setHistoryPast([]);
@@ -1402,22 +1424,19 @@ export default function MindMapSection() {
   }, [activeMap, treeLoadedForMapId]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(MINDMAP_STORAGE_KEY, JSON.stringify({ version: MINDMAP_STORAGE_VERSION, maps }));
-    } catch {
-      // localStorage may be unavailable in private mode; keep in-memory behavior.
-    }
-  }, [maps]);
-
-  useEffect(() => {
-    if (!openMapId || treeLoadedForMapId !== openMapId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMaps(current => current.map(map => (
-      map.id === openMapId
-        ? enrichMindMap({ ...map, root: mindMapNodeFromWorkingNode(tree), updated: "только что" })
-        : map
-    )));
-  }, [openMapId, tree, treeLoadedForMapId]);
+    if (!openMapId || !activeMap || treeLoadedForMapId !== openMapId) return;
+    const root = mindMapNodeFromWorkingNode(tree);
+    if (JSON.stringify(root) === JSON.stringify(activeMap.root)) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        const updated = await api.patchMindMap(openMapId, { root });
+        setMaps(current => current.map(map => map.id === openMapId ? enrichMindMap(updated) : map));
+      } catch (error) {
+        onError?.(error);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [activeMap, api, onError, openMapId, tree, treeLoadedForMapId]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -1507,24 +1526,31 @@ export default function MindMapSection() {
     setMapModal({ mode: "edit", map });
   }
 
-  function handleSaveMap(form) {
+  async function handleSaveMap(form) {
     if (mapModal?.mode === "create") {
-      const newMap = enrichMindMap({
+      const newMap = {
         ...createBlankMindMap(maps.length),
         ...form,
-        updated: "только что",
-      });
-      setMaps(current => [...current, newMap]);
-      setOpenMapId(newMap.id);
-      setMapModal(null);
+      };
+      try {
+        const created = enrichMindMap(await api.createMindMap({ ...newMap, root: newMap.root }));
+        setMaps(current => [...current, created]);
+        setOpenMapId(created.id);
+        setMapModal(null);
+      } catch (error) {
+        onError?.(error);
+      }
       return;
     }
     const targetId = mapModal?.map?.id;
     if (!targetId) return;
-    setMaps(current => current.map(map => (
-      map.id === targetId ? enrichMindMap({ ...map, ...form, updated: "только что" }) : map
-    )));
-    setMapModal(null);
+    try {
+      const updated = enrichMindMap(await api.patchMindMap(targetId, form));
+      setMaps(current => current.map(map => map.id === targetId ? updated : map));
+      setMapModal(null);
+    } catch (error) {
+      onError?.(error);
+    }
   }
 
   async function handleDeleteMap(map) {
@@ -1538,8 +1564,13 @@ export default function MindMapSection() {
       tone: "danger",
     });
     if (!approved) return;
-    setMaps(current => current.filter(item => item.id !== map.id));
-    if (openMapId === map.id) setOpenMapId(null);
+    try {
+      await api.deleteMindMap(map.id);
+      setMaps(current => current.filter(item => item.id !== map.id));
+      if (openMapId === map.id) setOpenMapId(null);
+    } catch (error) {
+      onError?.(error);
+    }
   }
 
   function handleUndo() {
@@ -1566,7 +1597,11 @@ export default function MindMapSection() {
     });
   }
 
-  if (!openMapId) {
+  if (mapsLoading) {
+    return <div style={{ minHeight: 320, display: "grid", placeItems: "center", color: "#64748b", fontSize: 14 }}>Загружаем Mind Map...</div>;
+  }
+
+  if (!openMapId || !activeMap) {
     return (
       <>
         <MindMapCatalog

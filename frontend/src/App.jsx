@@ -24,7 +24,7 @@ const SECTION_COMPONENTS = {
   archive: ({ data, api, onError, currentUser }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   events:  ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   roadmaps:({ data, api, currentUser }) => <RoadmapsSection team={data.team} api={api} currentUser={currentUser} />,
-  mindmap: () => <MindMapSection />,
+  mindmap: ({ api, onError }) => <MindMapSection api={api} onError={onError} />,
   diagrams:() => <BlockDiagramSection />,
   syncs:   ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
   ucp:     ({ data, api, onError, currentUser }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
