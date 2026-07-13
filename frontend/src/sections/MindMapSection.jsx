@@ -1405,15 +1405,17 @@ export default function MindMapSection({ api, onError }) {
 
   useEffect(() => {
     if (!activeMap || treeLoadedForMapId === activeMap.id) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    const loadedTree = legacyNodeFromMindMapNode(cloneMindMapNode(activeMap.root));
-    treeRef.current = loadedTree;
-    setTree(loadedTree);
-    setHistoryPast([]);
-    setHistoryFuture([]);
-    setSelectedId(null);
-    setEditingId(null);
-    setTreeLoadedForMapId(activeMap.id);
+    const timer = window.setTimeout(() => {
+      const loadedTree = legacyNodeFromMindMapNode(cloneMindMapNode(activeMap.root));
+      treeRef.current = loadedTree;
+      setTree(loadedTree);
+      setHistoryPast([]);
+      setHistoryFuture([]);
+      setSelectedId(null);
+      setEditingId(null);
+      setTreeLoadedForMapId(activeMap.id);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [activeMap, treeLoadedForMapId]);
 
   useEffect(() => {
