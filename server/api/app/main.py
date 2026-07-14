@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from .rate_limiter import limiter
 from .ambp import ambp_topic_json, router as ambp_router
 from .auth import require_auth, router as auth_router
-from .config import CORS_ORIGINS
+from .config import CORS_ORIGINS, ENVIRONMENT, VERSION
 from .db import db, migrate_auth_schema, init_pool, close_pool
 from .development import (
     development_task_json, generated_roadmap_events,
@@ -67,7 +67,7 @@ def shutdown() -> None:
 
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": VERSION, "environment": ENVIRONMENT}
 
 
 @app.get("/bootstrap")

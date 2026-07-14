@@ -2,6 +2,8 @@
 
 Self-hosted backend and web container for the Dashboard PWA.
 
+CI/CD setup, environment promotion, rollback, and database recovery are documented in [`docs/operations/ci-cd-environments.md`](../docs/operations/ci-cd-environments.md).
+
 ## Stack
 
 - `dashboard-db`: PostgreSQL 16 with seed data.

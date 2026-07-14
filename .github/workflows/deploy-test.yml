@@ -1,0 +1,73 @@
+name: Deploy test
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: test
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      RELEASE_ROOT: ${{ vars.RELEASE_ROOT }}
+      SHARED_CONFIG_DIR: ${{ vars.SHARED_CONFIG_DIR }}
+      PUBLIC_HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+      - name: Validate deployment variables
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          for value in "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_USER" "$RELEASE_ROOT" "$SHARED_CONFIG_DIR" "$PUBLIC_HEALTH_URL"; do
+            [[ -n "$value" && "$value" =~ ^[A-Za-z0-9_./:@-]+$ ]]
+          done
+      - name: Package exact release
+        run: |
+          git archive --format=tar.gz --output="/tmp/dashboard-$RELEASE_SHA.tar.gz" "$RELEASE_SHA"
+          tar -czf "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" ops/deploy-release.sh ops/lib/release_helpers.sh
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      - name: Trust deployment host for this run
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+      - name: Upload and deploy
+        run: |
+          scp -P "$DEPLOY_PORT" \
+            "/tmp/dashboard-$RELEASE_SHA.tar.gz" "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "rm -rf /tmp/dashboard-deploy-$RELEASE_SHA && mkdir /tmp/dashboard-deploy-$RELEASE_SHA && \
+             tar -xzf /tmp/dashboard-deploy-$RELEASE_SHA.tar.gz -C /tmp/dashboard-deploy-$RELEASE_SHA && \
+             RELEASE_ROOT='$RELEASE_ROOT' SHARED_CONFIG_DIR='$SHARED_CONFIG_DIR' \
+             PUBLIC_HEALTH_URL='$PUBLIC_HEALTH_URL' CREATE_DB_BACKUP=false \
+             bash /tmp/dashboard-deploy-$RELEASE_SHA/ops/deploy-release.sh test '$RELEASE_SHA' \
+             /tmp/dashboard-$RELEASE_SHA.tar.gz"
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### Test deployment"
+            echo "- SHA: \`$RELEASE_SHA\`"
+            echo "- Health: $PUBLIC_HEALTH_URL/api/health"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
