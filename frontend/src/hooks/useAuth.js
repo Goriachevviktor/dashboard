@@ -16,7 +16,7 @@ export default function useAuth() {
           setAccessToken(result.accessToken);
           setCurrentUser(result.user);
         }
-      } catch (_) {
+      } catch {
         if (!cancelled) {
           setAccessToken("");
           setCurrentUser(null);
@@ -35,7 +35,11 @@ export default function useAuth() {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    try { await dashboardRequest("/auth/logout", { method: "POST" }); } catch (_) {}
+    try {
+      await dashboardRequest("/auth/logout", { method: "POST" });
+    } catch {
+      // Local auth state must still be cleared when the server session is gone.
+    }
     setAccessToken("");
     setCurrentUser(null);
   }, []);

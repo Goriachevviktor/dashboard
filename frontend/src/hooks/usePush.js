@@ -2,12 +2,17 @@ import { useState, useEffect } from "react";
 import { urlBase64ToUint8Array } from "../utils.js";
 
 export default function usePush(api, accessToken, onError) {
-  const [pushStatus, setPushStatus] = useState("idle");
+  const [pushStatus, setPushStatus] = useState(() => (
+    typeof window !== "undefined"
+      && "Notification" in window
+      && Notification.permission === "denied"
+      ? "denied"
+      : "idle"
+  ));
 
   useEffect(() => {
     if (!accessToken || !("Notification" in window)) return;
     if (Notification.permission === "granted") enablePush({ silent: true });
-    else if (Notification.permission === "denied") setPushStatus("denied");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 

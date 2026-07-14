@@ -50,7 +50,7 @@ def test_payload_requires_id_title_and_object_collections(self):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `PYTHONPATH=server/api python3 -m unittest server/api/tests/test_roadmaps.py -v`  
+Run: `PYTHONPATH=server/api python3 -m unittest server/api/tests/test_roadmaps.py -v`
 Expected: FAIL because `app.roadmaps` does not exist.
 
 - [ ] **Step 3: Implement the schema and route module**
@@ -69,7 +69,7 @@ Use `Jsonb(values)` for the payload. Require a non-empty `id`, `title`, list `la
 
 - [ ] **Step 4: Run the focused server test**
 
-Run: `PYTHONPATH=server/api python3 -m unittest server/api/tests/test_roadmaps.py -v`  
+Run: `PYTHONPATH=server/api python3 -m unittest server/api/tests/test_roadmaps.py -v`
 Expected: PASS for list ownership, foreign access rejection, validation, and duplicate-safe import.
 
 - [ ] **Step 5: Commit the server persistence layer**
@@ -104,7 +104,7 @@ test('legacy migration excludes known sample ids', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `node --test frontend/src/sections/roadmapState.test.js`  
+Run: `node --test frontend/src/sections/roadmapState.test.js`
 Expected: FAIL because `roadmapState.js` does not exist.
 
 - [ ] **Step 3: Implement the narrow helper and API calls**
@@ -126,7 +126,7 @@ Add the five API methods under the existing Mind Map methods in `api.js`. Do not
 
 - [ ] **Step 4: Run the focused client test**
 
-Run: `node --test frontend/src/sections/roadmapState.test.js`  
+Run: `node --test frontend/src/sections/roadmapState.test.js`
 Expected: PASS and sample IDs are absent from the import list.
 
 - [ ] **Step 5: Commit the migration boundary**
@@ -159,7 +159,7 @@ test('normalizes API roadmaps without browser sample fallback', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `node --test frontend/src/sections/roadmapState.test.js`  
+Run: `node --test frontend/src/sections/roadmapState.test.js`
 Expected: FAIL because `normalizeRoadmaps` is not exported.
 
 - [ ] **Step 3: Implement API-first React state**
@@ -177,7 +177,7 @@ Remove `mergeRoadmapsWithSamples`, `seedAutoAddedRoadmaps`, `loadRoadmaps`, and 
 
 - [ ] **Step 4: Run client tests, lint, and build**
 
-Run: `node --test frontend/src/sections/mindMapState.test.js frontend/src/sections/roadmapState.test.js && cd frontend && npm run lint && npm run build`  
+Run: `node --test frontend/src/sections/mindMapState.test.js frontend/src/sections/roadmapState.test.js && cd frontend && npm run lint && npm run build`
 Expected: all tests pass, ESLint exits 0, and Vite produces `frontend/dist`.
 
 - [ ] **Step 5: Commit the API-first UI**
@@ -206,7 +206,7 @@ Copy the reviewed source changes while preserving unrelated server work, rebuild
 
 - [ ] **Step 3: Verify the server and API**
 
-Run: `curl -kfsS https://dashboard.138.16.178.245.sslip.io/api/health`  
+Run: `curl -kfsS https://dashboard.138.16.178.245.sslip.io/api/health`
 Expected: `{"status":"ok"}`.
 
 Run focused API tests in the API container or server environment. Open Roadmaps in the browser containing the current user's legacy data, confirm it migrates, then open the same account in a second browser and confirm the same cards appear. Delete one test card and refresh both browsers to confirm it remains deleted.
