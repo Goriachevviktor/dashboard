@@ -11,6 +11,7 @@ import {
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
+import { legacyRoadmapRaw, legacyUserRoadmaps, normalizeRoadmaps } from './roadmapState.js';
 import { COLORS, FONT_STACK, ROADMAP_BAR_COL, ROADMAP_MILESTONE_COLORS, ROADMAP_STATUS_COLOR, segmentedWrapStyle, segmentedItemStyle } from '../theme.js';
 
 const OWNERS = {
@@ -2356,7 +2357,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
     });
   }
 
-  function handleLinkTaskSelect(bar) {
+  async function handleLinkTaskSelect(bar) {
     if (!bar?.id) return;
     if (!linkMode) return;
     if (!linkSourceId) {
@@ -2368,7 +2369,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
       setLinkMessage("Нельзя связать задачу саму с собой");
       return;
     }
-    const result = onLinkTasks ? onLinkTasks(linkSourceId, bar.id) : { ok: false };
+    const result = onLinkTasks ? await onLinkTasks(linkSourceId, bar.id) : { ok: false };
     if (result?.ok) {
       setLinkMode(false);
       setLinkSourceId("");
@@ -2575,48 +2576,8 @@ function recalc(rm) {
   };
 }
 
-const LS_KEY = "dashboard_roadmaps_v1";
-const LS_SEEDED_KEY = "dashboard_roadmaps_seeded_samples_v1";
-const AUTO_ADD_SAMPLE_IDS = ["rm-ai-initiatives-2026"];
-
-function mergeRoadmapsWithSamples(storedRoadmaps) {
-  const sampleById = new Map(SAMPLE_ROADMAPS.map(roadmap => [roadmap.id, roadmap]));
-  const normalizedStored = (Array.isArray(storedRoadmaps) ? storedRoadmaps : []).map(roadmap => recalc(roadmap));
-  return normalizedStored.map(roadmap => recalc(sampleById.get(roadmap.id) ? { ...sampleById.get(roadmap.id), ...roadmap } : roadmap));
-}
-
-function seedAutoAddedRoadmaps(roadmaps) {
-  const normalized = Array.isArray(roadmaps) ? roadmaps.map(recalc) : [];
-  try {
-    if (window.localStorage.getItem(LS_SEEDED_KEY) === "1") return normalized;
-  } catch {
-    return normalized;
-  }
-
-  const byId = new Set(normalized.map(roadmap => roadmap.id));
-  const additions = SAMPLE_ROADMAPS
-    .filter(roadmap => AUTO_ADD_SAMPLE_IDS.includes(roadmap.id) && !byId.has(roadmap.id))
-    .map(recalc);
-  const seeded = additions.length ? [...normalized, ...additions] : normalized;
-
-  try {
-    window.localStorage.setItem(LS_SEEDED_KEY, "1");
-    window.localStorage.setItem(LS_KEY, JSON.stringify(seeded));
-  } catch {
-    // Ignore localStorage restrictions.
-  }
-  return seeded;
-}
-
-function loadRoadmaps() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return seedAutoAddedRoadmaps(mergeRoadmapsWithSamples(JSON.parse(raw)));
-  } catch {
-    // Ignore corrupted local roadmap state and fall back to samples.
-  }
-  return seedAutoAddedRoadmaps(SAMPLE_ROADMAPS.map(recalc));
-}
+const LEGACY_ROADMAPS_KEY = "dashboard_roadmaps_v1";
+const SAMPLE_ROADMAP_IDS = new Set(SAMPLE_ROADMAPS.map(roadmap => roadmap.id));
 
 function buildSafeRoadmapFilename(title) {
   return String(title || "roadmap")
@@ -3114,48 +3075,28 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     : buildRoadmapVisualPrintHtml(node, title);
 }
 
-export default function RoadmapsSection({ team = [], api, currentUser = null }) {
+export default function RoadmapsSection({ team = [], api, currentUser = null, onError }) {
   const [confirmAction, confirmDialog] = useConfirmDialog();
-  const [roadmaps, setRoadmaps] = useState(loadRoadmaps);
+  const [roadmaps, setRoadmaps] = useState([]);
   const [openId, setOpenId]     = useState(null);
   const [rmModal, setRmModal]   = useState(null); // null | "new" | roadmap obj
   const [userDirectory, setUserDirectory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const members = useMemo(() => buildMemberRegistry(userDirectory.length ? userDirectory : team, currentUser), [userDirectory, team, currentUser]);
   const defaultOwnerId = memberKey(currentUser?.id || members[0]?.id || "viktor");
 
   useEffect(() => {
     let cancelled = false;
-    function migrateAssignments(memberSource) {
-      const resolvedMembers = buildMemberRegistry(memberSource, currentUser);
-      if (!resolvedMembers.length) return;
-      const lookup = buildLegacyOwnerLookup(resolvedMembers);
-      setRoadmaps(currentRoadmaps => {
-        let changed = false;
-        const nextRoadmaps = currentRoadmaps.map(roadmap => {
-          const migrated = migrateRoadmapAssignments(roadmap, lookup);
-          if (migrated !== roadmap) changed = true;
-          return migrated === roadmap ? roadmap : recalc(migrated);
-        });
-        return changed ? nextRoadmaps : currentRoadmaps;
-      });
-    }
-
     async function loadUserDirectory() {
-      if (!api?.listUsers) {
-        if (!cancelled) migrateAssignments(team);
-        return;
-      }
+      if (!api?.listUsers) return;
       try {
         const users = await api.listUsers();
         if (!cancelled && Array.isArray(users) && users.length) {
           setUserDirectory(users);
-          migrateAssignments(users);
         }
       } catch {
-        if (!cancelled) {
-          setUserDirectory([]);
-          migrateAssignments(team);
-        }
+        if (!cancelled) setUserDirectory([]);
       }
     }
     loadUserDirectory();
@@ -3163,18 +3104,65 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
   }, [api, team, currentUser]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(roadmaps));
-    } catch {
-      // Local storage may be unavailable in private mode or restricted contexts.
+    let cancelled = false;
+    async function loadRoadmapsFromApi() {
+      if (!api?.listRoadmaps) {
+        if (!cancelled) {
+          setLoading(false);
+          setLoadError("Сервис дорожных карт недоступен");
+        }
+        return;
+      }
+      setLoading(true);
+      setLoadError("");
+      try {
+        const stored = legacyRoadmapRaw(() => window.localStorage.getItem(LEGACY_ROADMAPS_KEY));
+        const lookup = buildLegacyOwnerLookup(buildMemberRegistry(team, currentUser));
+        const legacy = legacyUserRoadmaps(stored, SAMPLE_ROADMAP_IDS, roadmap => recalc(migrateRoadmapAssignments(roadmap, lookup)));
+        const serverRoadmaps = await api.listRoadmaps();
+        if (legacy.length && api.importRoadmaps) await api.importRoadmaps(legacy);
+        const resolvedRoadmaps = legacy.length ? await api.listRoadmaps() : serverRoadmaps;
+        if (!cancelled) setRoadmaps(normalizeRoadmaps(resolvedRoadmaps, recalc));
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error?.message || "Не удалось загрузить дорожные карты");
+          onError?.(error);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  }, [roadmaps]);
+    loadRoadmapsFromApi();
+    return () => { cancelled = true; };
+  }, [api, currentUser, onError, team]);
 
   const rm = openId ? roadmaps.find(r => r.id === openId) : null;
 
-  function handleSaveRoadmap(data) {
+  function replaceRoadmap(savedRoadmap) {
+    setRoadmaps(current => current.map(roadmap => roadmap.id === savedRoadmap.id ? savedRoadmap : roadmap));
+  }
+
+  async function persistRoadmap(roadmap) {
+    try {
+      const saved = recalc(await api.patchRoadmap(roadmap.id, roadmap));
+      replaceRoadmap(saved);
+      return saved;
+    } catch (error) {
+      onError?.(error);
+      return null;
+    }
+  }
+
+  async function updateOpenRoadmap(buildNext) {
+    const current = roadmaps.find(roadmap => roadmap.id === openId);
+    if (!current) return null;
+    return persistRoadmap(recalc(buildNext(current)));
+  }
+
+  async function handleSaveRoadmap(data) {
     if (data.id) {
-      setRoadmaps(rs => rs.map(r => r.id === data.id ? recalc({ ...r, ...data }) : r));
+      const current = roadmaps.find(roadmap => roadmap.id === data.id);
+      if (current) await persistRoadmap(recalc({ ...current, ...data }));
     } else {
       const newRm = recalc({
         ...data,
@@ -3184,7 +3172,12 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
         bars: data.bars || [],
         nnl: data.nnl || { now: [], next: [], later: [] },
       });
-      setRoadmaps(rs => [...rs, newRm]);
+      try {
+        const created = recalc(await api.createRoadmap(newRm));
+        setRoadmaps(current => [...current, created]);
+      } catch (error) {
+        onError?.(error);
+      }
     }
   }
 
@@ -3200,54 +3193,49 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
       tone: "danger",
     });
     if (!approved) return;
-    setRoadmaps(rs => rs.filter(r => r.id !== roadmap.id));
-    if (openId === roadmap.id) setOpenId(null);
+    try {
+      await api.deleteRoadmap(roadmap.id);
+      setRoadmaps(current => current.filter(item => item.id !== roadmap.id));
+      if (openId === roadmap.id) setOpenId(null);
+    } catch (error) {
+      onError?.(error);
+    }
   }
 
-  function handleSaveBar(idx, data) {
-    setRoadmaps(rs => rs.map(r => {
-      if (r.id !== openId) return r;
+  async function handleSaveBar(idx, data) {
+    await updateOpenRoadmap(roadmap => {
       const bars = idx === null
-        ? [...r.bars, { ...data, id: data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, data.id) }]
-        : r.bars.map((b, i) => i === idx ? { ...b, ...data, id: b.id || data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, b.id || data.id) } : b);
-      return recalc({ ...r, bars });
-    }));
+        ? [...roadmap.bars, { ...data, id: data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, data.id) }]
+        : roadmap.bars.map((barItem, index) => index === idx ? { ...barItem, ...data, id: barItem.id || data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, barItem.id || data.id) } : barItem);
+      return { ...roadmap, bars };
+    });
   }
 
-  function handleDeleteBar(idx) {
-    setRoadmaps(rs => rs.map(r => {
-      if (r.id !== openId) return r;
-      const deletedTaskId = r.bars[idx]?.id;
-      const remainingBars = r.bars.filter((_, i) => i !== idx);
-      return recalc({ ...r, bars: removeTaskDependencies(remainingBars, deletedTaskId) });
-    }));
+  async function handleDeleteBar(idx) {
+    await updateOpenRoadmap(roadmap => {
+      const deletedTaskId = roadmap.bars[idx]?.id;
+      return { ...roadmap, bars: removeTaskDependencies(roadmap.bars.filter((_, index) => index !== idx), deletedTaskId) };
+    });
   }
 
-  function handleSaveMilestone(idx, data) {
-    setRoadmaps(rs => rs.map(r => {
-      if (r.id !== openId) return r;
-      return recalc({
-        ...r,
+  async function handleSaveMilestone(idx, data) {
+    await updateOpenRoadmap(roadmap => ({
+        ...roadmap,
         milestones: idx === null
-          ? [...r.milestones, data]
-          : r.milestones.map((m, i) => i === idx ? { ...m, ...data } : m),
-      });
-    }));
+          ? [...roadmap.milestones, data]
+          : roadmap.milestones.map((milestone, index) => index === idx ? { ...milestone, ...data } : milestone),
+      }));
   }
 
-  function handleDeleteMilestone(idx) {
-    setRoadmaps(rs => rs.map(r =>
-      r.id !== openId ? r : recalc({ ...r, milestones: r.milestones.filter((_, i) => i !== idx) })
-    ));
+  async function handleDeleteMilestone(idx) {
+    await updateOpenRoadmap(roadmap => ({ ...roadmap, milestones: roadmap.milestones.filter((_, index) => index !== idx) }));
   }
 
-  function handleSaveLane(data) {
-    setRoadmaps(rs => rs.map(r =>
-      r.id !== openId ? r : { ...r, lanes: [...r.lanes, data] }
-    ));
+  async function handleSaveLane(data) {
+    await updateOpenRoadmap(roadmap => ({ ...roadmap, lanes: [...roadmap.lanes, data] }));
   }
 
-  function handleLinkTasks(sourceId, targetId) {
+  async function handleLinkTasks(sourceId, targetId) {
     const currentRoadmap = roadmaps.find(item => item.id === openId);
     if (!currentRoadmap) return { ok: false, message: "Карта не найдена" };
     if (sourceId === targetId) return { ok: false, message: "Нельзя связать задачу саму с собой" };
@@ -3260,17 +3248,19 @@ export default function RoadmapsSection({ team = [], api, currentUser = null }) 
     if (nextPredecessors.length === (targetTask.predecessors || []).length) {
       return { ok: false, message: "Такая связь уже существует" };
     }
-    setRoadmaps(rs => rs.map(r => {
-      if (r.id !== openId) return r;
-      const bars = r.bars.map(barItem => (
+    const saved = await updateOpenRoadmap(roadmap => {
+      const bars = roadmap.bars.map(barItem => (
         barItem.id === targetId
           ? { ...barItem, predecessors: nextPredecessors }
           : barItem
       ));
-      return recalc({ ...r, bars });
-    }));
-    return { ok: true };
+      return { ...roadmap, bars };
+    });
+    return saved ? { ok: true } : { ok: false, message: "Не удалось сохранить связь" };
   }
+
+  if (loading) return <div style={{ padding: 32, textAlign: "center", color: "#64748b", fontFamily: FONT_STACK }}>Загружаем дорожные карты...</div>;
+  if (loadError) return <div style={{ padding: 32, textAlign: "center", color: "#b42318", fontFamily: FONT_STACK }}>{loadError}</div>;
 
   if (rm) {
     return (
