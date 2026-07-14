@@ -3,6 +3,8 @@ import os
 import tempfile
 
 DATABASE_URL = os.getenv("DASHBOARD_DATABASE_URL", "postgresql://dashboard:dashboard@localhost:5432/dashboard")
+VERSION = os.getenv("DASHBOARD_VERSION", "dev")
+ENVIRONMENT = os.getenv("DASHBOARD_ENVIRONMENT", "local")
 API_TOKEN = os.getenv("DASHBOARD_API_TOKEN", "")
 JWT_SECRET = os.getenv("DASHBOARD_JWT_SECRET", "")
 ACCESS_TOKEN_TTL_MINUTES = int(os.getenv("DASHBOARD_ACCESS_TOKEN_TTL_MINUTES", "15"))
