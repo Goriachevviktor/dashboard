@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -225,11 +226,12 @@ def migrate_auth_schema() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS roadmaps (
-              id text PRIMARY KEY,
               owner_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              id text NOT NULL,
               payload jsonb NOT NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
-              updated_at timestamptz NOT NULL DEFAULT now()
+              updated_at timestamptz NOT NULL DEFAULT now(),
+              PRIMARY KEY (owner_id, id)
             )
             """
         )
@@ -360,6 +362,24 @@ def migrate_auth_schema() -> None:
             conn.execute("DELETE FROM development_task_members WHERE member_id IS NOT NULL AND member_id NOT IN (SELECT id FROM users)")
             mark_applied("009_delete_orphan_dev_task_members")
         conn.execute("ALTER TABLE IF EXISTS development_task_members ADD CONSTRAINT development_task_members_member_id_fkey FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE")
+        if not applied("010_owner_scope_roadmap_primary_key"):
+            primary_key = conn.execute(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = current_schema()
+                  AND table_name = 'roadmaps'
+                  AND constraint_type = 'PRIMARY KEY'
+                """
+            ).fetchone()
+            if primary_key:
+                conn.execute(
+                    sql.SQL("ALTER TABLE roadmaps DROP CONSTRAINT {}").format(
+                        sql.Identifier(primary_key["constraint_name"])
+                    )
+                )
+            conn.execute("ALTER TABLE roadmaps ADD PRIMARY KEY (owner_id, id)")
+            mark_applied("010_owner_scope_roadmap_primary_key")
         if not conn.execute("SELECT id FROM development_tasks LIMIT 1").fetchone():
             conn.execute(
                 """

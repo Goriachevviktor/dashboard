@@ -51,6 +51,7 @@ class MigrationRegistryCompatibilityTest(unittest.TestCase):
                 }
                 self.assertIn("001_backfill_creator_id", internal_versions)
                 self.assertIn("008_delete_orphan_ucp_task_members", internal_versions)
+                self.assertIn("010_owner_scope_roadmap_primary_key", internal_versions)
         finally:
             with psycopg.connect(os.environ["DASHBOARD_DATABASE_URL"]) as conn:
                 conn.execute(

@@ -13,7 +13,7 @@ import {
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
-import { legacyRoadmapRaw, legacyUserRoadmaps, normalizeRoadmaps } from './roadmapState.js';
+import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
 import { COLORS, FONT_STACK, ROADMAP_BAR_COL, ROADMAP_MILESTONE_COLORS, ROADMAP_STATUS_COLOR, segmentedWrapStyle, segmentedItemStyle } from '../theme.js';
 
 const OWNERS = {
@@ -3440,12 +3440,14 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
       setLoading(true);
       setLoadError("");
       try {
-        const stored = legacyRoadmapRaw(() => window.localStorage.getItem(LEGACY_ROADMAPS_KEY));
         const lookup = buildLegacyOwnerLookup(buildMemberRegistry(team, currentUser));
-        const legacy = legacyUserRoadmaps(stored, SAMPLE_ROADMAP_IDS, roadmap => recalc(migrateRoadmapAssignments(roadmap, lookup)));
-        const serverRoadmaps = await api.listRoadmaps();
-        if (legacy.length && api.importRoadmaps) await api.importRoadmaps(legacy);
-        const resolvedRoadmaps = legacy.length ? await api.listRoadmaps() : serverRoadmaps;
+        const resolvedRoadmaps = await migrateLegacyRoadmaps({
+          readLegacy: () => legacyRoadmapRaw(() => window.localStorage.getItem(LEGACY_ROADMAPS_KEY)),
+          parseLegacy: stored => legacyUserRoadmaps(stored, SAMPLE_ROADMAP_IDS, roadmap => recalc(migrateRoadmapAssignments(roadmap, lookup))),
+          importRoadmaps: legacy => api.importRoadmaps(legacy),
+          listRoadmaps: () => api.listRoadmaps(),
+          clearLegacy: () => window.localStorage.removeItem(LEGACY_ROADMAPS_KEY),
+        });
         if (!cancelled) setRoadmaps(normalizeRoadmaps(resolvedRoadmaps, recalc));
       } catch (error) {
         if (!cancelled) {

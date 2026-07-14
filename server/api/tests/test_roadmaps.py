@@ -82,7 +82,7 @@ class RoadmapsUnitTest(unittest.TestCase):
             ])
 
         query, params = connection.calls[0]
-        self.assertIn("ON CONFLICT (id) DO NOTHING", query)
+        self.assertIn("ON CONFLICT (owner_id, id) DO NOTHING", query)
         self.assertEqual("rm-personal", params[0])
         self.assertEqual(42, params[1])
 

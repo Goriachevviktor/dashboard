@@ -20,3 +20,14 @@ export function legacyUserRoadmaps(raw, sampleIds, normalize) {
     return [];
   }
 }
+
+export async function migrateLegacyRoadmaps({ readLegacy, parseLegacy, importRoadmaps, listRoadmaps, clearLegacy }) {
+  const legacy = parseLegacy(readLegacy());
+  const serverRoadmaps = await listRoadmaps();
+  if (!legacy.length) return serverRoadmaps;
+
+  await importRoadmaps(legacy);
+  const migratedRoadmaps = await listRoadmaps();
+  clearLegacy();
+  return migratedRoadmaps;
+}

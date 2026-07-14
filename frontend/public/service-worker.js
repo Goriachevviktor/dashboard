@@ -26,7 +26,12 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const requestedUrl = new URL(event.notification.data?.url || '/dashboard.html', self.location.origin);
+  let requestedUrl;
+  try {
+    requestedUrl = new URL(event.notification.data?.url || '/dashboard.html', self.location.origin);
+  } catch {
+    requestedUrl = new URL('/dashboard.html', self.location.origin);
+  }
   const targetUrl = requestedUrl.origin === self.location.origin ? requestedUrl.href : `${self.location.origin}/dashboard.html`;
 
   event.waitUntil((async () => {
