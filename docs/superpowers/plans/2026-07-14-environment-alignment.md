@@ -35,9 +35,9 @@
 
 - [ ] **Step 1: Confirm isolation and ancestry**
 
-Run: `git status --short && git merge-base --is-ancestor 9022db5 HEAD && git rev-list --left-right --count 9022db5...HEAD`
+Run: `git merge-base --is-ancestor 9022db5 integration-source-personal-data && git rev-list --left-right --count 9022db5...integration-source-personal-data`
 
-Expected: clean status, successful ancestry check, and `0 13`.
+Expected: successful ancestry check and `0 13`; execution-plan and test-harness commits after the immutable integration-source reference do not change this baseline count.
 
 - [ ] **Step 2: Install locked frontend dependencies**
 
