@@ -21,4 +21,7 @@ grep -q 'authorized_keys' "$INSTALLER"
 grep -q 'command=.*production-backup-command.sh' "$INSTALLER"
 grep -q 'command=.*test-restore-command.sh' "$INSTALLER"
 grep -q 'mkdir -p.*daily.*weekly.*monthly.*state.*locks' "$INSTALLER"
+grep -q 'RESTORE_USER' "$INSTALLER"
+grep -q 'install -d -m 0700 -o.*RESTORE_USER' "$INSTALLER"
+grep -q 'chmod 0644 /etc/dashboard-restore.conf' "$INSTALLER"
 printf 'backup installation contracts passed\n'

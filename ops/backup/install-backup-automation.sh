@@ -44,9 +44,11 @@ if [[ $MODE == production ]]; then
   fi
 else
   : "${RESTORE_STAGING_DIR:?RESTORE_STAGING_DIR is required}"
+  : "${RESTORE_USER:?RESTORE_USER is required}"
   : "${COMPOSE_FILE:?COMPOSE_FILE is required}"
   : "${COMPOSE_ENV_FILE:?COMPOSE_ENV_FILE is required}"
-  mkdir -p "$RESTORE_STAGING_DIR"
+  restore_group=$(id -gn "$RESTORE_USER")
+  install -d -m 0700 -o "$RESTORE_USER" -g "$restore_group" "$RESTORE_STAGING_DIR"
   {
     write_shell_value RESTORE_STAGING_DIR "$RESTORE_STAGING_DIR"
     write_shell_value RESTORE_VALIDATOR "$INSTALL_ROOT/validate-postgres-restore.sh"
@@ -54,7 +56,7 @@ else
     write_shell_value COMPOSE_ENV_FILE "$COMPOSE_ENV_FILE"
     write_shell_value COMPOSE_OVERRIDE_FILE "${COMPOSE_OVERRIDE_FILE:-}"
   } > /etc/dashboard-restore.conf
-  chmod 0600 /etc/dashboard-restore.conf
+  chmod 0644 /etc/dashboard-restore.conf
   if [[ -n ${RESTORE_PUBLIC_KEY:-} ]]; then
     printf 'Add this restricted authorized_keys entry:\n'
     printf 'restrict,command="%s/test-restore-command.sh" %s\n' "$INSTALL_ROOT" "$RESTORE_PUBLIC_KEY"
