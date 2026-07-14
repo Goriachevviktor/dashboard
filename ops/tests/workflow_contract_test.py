@@ -132,6 +132,7 @@ def test_backup_monitoring_and_restore_drill() -> None:
         "restore ${{ github.run_id }}",
         "max_age_hours = 36",
         "sha256sum -c",
+        "set -o pipefail",
         "RUNNER_TEMP",
         "if: always()",
         "GITHUB_STEP_SUMMARY",

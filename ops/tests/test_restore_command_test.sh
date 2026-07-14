@@ -9,12 +9,17 @@ trap 'rm -rf "$sandbox"' EXIT
 mkdir -p "$sandbox/staging"
 cat >"$sandbox/validator" <<'FAKE'
 #!/usr/bin/env bash
+: "${RESTORE_STAGING_DIR:?}"
+: "${COMPOSE_FILE:?}"
+: "${COMPOSE_ENV_FILE:?}"
 printf '{"validatedRun":"%s"}\n' "$1"
 FAKE
 chmod +x "$sandbox/validator"
 cat >"$sandbox/config" <<EOF
 RESTORE_STAGING_DIR=$sandbox/staging
 RESTORE_VALIDATOR=$sandbox/validator
+COMPOSE_FILE=$sandbox/compose.yml
+COMPOSE_ENV_FILE=$sandbox/compose.env
 EOF
 export CONFIG_FILE="$sandbox/config"
 

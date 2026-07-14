@@ -6,7 +6,9 @@ umask 077
 CONFIG_FILE=${CONFIG_FILE:-/etc/dashboard-restore.conf}
 [[ -r $CONFIG_FILE ]] || { printf 'restore configuration is unavailable\n' >&2; exit 1; }
 # shellcheck source=/dev/null
+set -a
 source "$CONFIG_FILE"
+set +a
 : "${RESTORE_STAGING_DIR:?RESTORE_STAGING_DIR is required}"
 : "${RESTORE_VALIDATOR:?RESTORE_VALIDATOR is required}"
 mkdir -p "$RESTORE_STAGING_DIR"
