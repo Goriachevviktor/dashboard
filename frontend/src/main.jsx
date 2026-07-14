@@ -11,25 +11,7 @@ createRoot(document.getElementById('root')).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.getRegistrations()
-      .then((registrations) => {
-        registrations.forEach((registration) => {
-          Promise.resolve(registration.unregister()).catch(() => {});
-        });
-      })
-      .catch(() => {});
-  });
-}
-
-if ('caches' in window) {
-  window.addEventListener('load', () => {
-    caches.keys()
-      .then((keys) => {
-        keys.forEach((key) => {
-          Promise.resolve(caches.delete(key)).catch(() => {});
-        });
-      })
-      .catch(() => {});
+    navigator.serviceWorker.register('/service-worker.js').catch(() => {});
   });
 }
 

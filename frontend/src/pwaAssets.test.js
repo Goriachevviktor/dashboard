@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const publicRoot = resolve(frontendRoot, 'public');
 
-test('PWA assets and same-origin service worker lifecycle stay complete', () => {
+test('PWA assets and retained same-origin service worker registration stay complete', () => {
   const manifestPath = resolve(publicRoot, 'manifest.webmanifest');
   const serviceWorkerPath = resolve(publicRoot, 'service-worker.js');
 
@@ -27,7 +27,14 @@ test('PWA assets and same-origin service worker lifecycle stay complete', () => 
   }
 
   const mainSource = readFileSync(resolve(frontendRoot, 'src/main.jsx'), 'utf8');
-  assert.match(mainSource, /navigator\.serviceWorker\.getRegistrations\(\)/, 'main.jsx must include the service worker registration lifecycle hook');
+  assert.match(mainSource, /navigator\.serviceWorker\.register\(['"]\/(?!\/)[^'"]+['"]\)/, 'main.jsx must register a same-origin service worker');
+  assert.doesNotMatch(mainSource, /\.unregister\(/, 'main.jsx must retain the registered service worker');
+  assert.doesNotMatch(mainSource, /caches\.delete\(/, 'main.jsx must not clear application caches on load');
+
+  const serviceWorkerSource = readFileSync(serviceWorkerPath, 'utf8');
+  assert.doesNotMatch(serviceWorkerSource, /\.unregister\(/, 'service worker must remain registered after activation');
+  assert.match(serviceWorkerSource, /addEventListener\(['"]push['"]/, 'service worker must handle push events');
+  assert.match(serviceWorkerSource, /addEventListener\(['"]notificationclick['"]/, 'service worker must handle notification clicks');
 
   const htmlSource = readFileSync(resolve(frontendRoot, 'index.html'), 'utf8');
   assert.match(htmlSource, /<link\s+rel=["']manifest["']\s+href=["']\/(?!\/)[^"']+["']\s*\/>/, 'index.html must reference a same-origin manifest');

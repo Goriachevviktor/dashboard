@@ -1,7 +1,7 @@
 :80 {
   root * /srv/frontend-dist
 
-  @app_shell path / /index.html
+  @app_shell path / /index.html /dashboard.html
   header @app_shell Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
   header @app_shell Clear-Site-Data "\"cache\""
 

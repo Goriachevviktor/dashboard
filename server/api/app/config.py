@@ -17,6 +17,11 @@ CORS_ORIGINS = [
     for origin in os.getenv("DASHBOARD_CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",")
     if origin.strip()
 ]
+TRUSTED_PROXY_CIDRS = [
+    cidr.strip()
+    for cidr in os.getenv("DASHBOARD_TRUSTED_PROXY_CIDRS", "").split(",")
+    if cidr.strip()
+]
 VAPID_PUBLIC_KEY = os.getenv("DASHBOARD_VAPID_PUBLIC_KEY", "")
 VAPID_CLAIMS_SUB = os.getenv("DASHBOARD_VAPID_CLAIMS_SUB", "")
 
