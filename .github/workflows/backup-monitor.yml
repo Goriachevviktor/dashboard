@@ -102,6 +102,7 @@ jobs:
           ssh-keyscan -p "$TEST_PORT" -H "$TEST_HOST" >> ~/.ssh/known_hosts
       - name: Transfer and verify latest backup
         run: |
+          set -o pipefail
           umask 077
           status_file="$RUNNER_TEMP/backup-status.json"
           dump_file="$RUNNER_TEMP/production-${{ github.run_id }}.dump"
