@@ -27,7 +27,7 @@ fi
 
 RELEASE_RETENTION=${RELEASE_RETENTION:-5}
 CREATE_DB_BACKUP=${CREATE_DB_BACKUP:-false}
-LOCAL_HEALTH_URL=${LOCAL_HEALTH_URL:-http://127.0.0.1:8080/api/health}
+LOCAL_HEALTH_URL=${LOCAL_HEALTH_URL:-http://127.0.0.1:8000/health}
 RELEASES_DIR="$RELEASE_ROOT/releases"
 RELEASE_DIR="$RELEASES_DIR/$SHA"
 CURRENT_LINK="$RELEASE_ROOT/current"
@@ -75,6 +75,15 @@ check_health() {
   health_matches "$payload" "$expected_sha" "$expected_environment"
 }
 
+check_local_health() {
+  local release=$1 expected_sha=$2 expected_environment=$3 payload
+  compose_files "$release"
+  payload=$(docker compose "${COMPOSE_ARGS[@]}" exec -T dashboard-api \
+    python -c 'import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=10).read().decode())' \
+    "$LOCAL_HEALTH_URL")
+  health_matches "$payload" "$expected_sha" "$expected_environment"
+}
+
 rollback() {
   local exit_code=$?
   trap - ERR
@@ -83,7 +92,7 @@ rollback() {
     previous_sha=$(basename "$previous_release")
     printf 'candidate failed; rolling back to %s\n' "$previous_sha" >&2
     start_release "$previous_release" "$previous_sha" "$ENVIRONMENT"
-    check_health "$LOCAL_HEALTH_URL" "$previous_sha" "$ENVIRONMENT"
+    check_local_health "$previous_release" "$previous_sha" "$ENVIRONMENT"
     check_health "$PUBLIC_HEALTH_ENDPOINT" "$previous_sha" "$ENVIRONMENT"
     ln -sfn "$previous_release" "$CURRENT_LINK"
     printf 'rollback completed: %s\n' "$previous_sha" >&2
@@ -126,7 +135,7 @@ fi
 
 activation_started=true
 start_release "$RELEASE_DIR" "$SHA" "$ENVIRONMENT"
-check_health "$LOCAL_HEALTH_URL" "$SHA" "$ENVIRONMENT"
+check_local_health "$RELEASE_DIR" "$SHA" "$ENVIRONMENT"
 check_health "$PUBLIC_HEALTH_ENDPOINT" "$SHA" "$ENVIRONMENT"
 ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 deployment_succeeded=true
