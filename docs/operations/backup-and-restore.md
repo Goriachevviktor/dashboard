@@ -2,7 +2,7 @@
 
 ## Policy
 
-Production keeps local PostgreSQL custom-format backups with **7 daily**, **4 weekly**, and **3 monthly** restore points. Every managed dump must be non-empty, pass `pg_restore --list`, and have a matching `sha256sum`. Existing unmanaged/manual backups are never pruned.
+Production keeps local PostgreSQL custom-format backups created with `pg_dump -Fc`, with **7 daily**, **4 weekly**, and **3 monthly** restore points. Every managed dump must be non-empty, pass `pg_restore --list`, and have a matching `sha256sum`. Existing unmanaged/manual backups are never pruned.
 
 The production systemd timer creates backups independently of GitHub. GitHub Environment `backup-automation` monitors freshness and performs an isolated weekly restore on test. No backup is uploaded as a GitHub artifact.
 
