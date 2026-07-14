@@ -49,6 +49,7 @@ fi
 previous_release=''
 activation_started=false
 deployment_succeeded=false
+rollback_in_progress=false
 if [[ -L $CURRENT_LINK ]]; then
   previous_release=$(readlink -f "$CURRENT_LINK")
 fi
@@ -75,7 +76,7 @@ check_health() {
   health_matches "$payload" "$expected_sha" "$expected_environment"
 }
 
-check_local_health() {
+local_health_matches() {
   local release=$1 expected_sha=$2 expected_environment=$3 payload
   compose_files "$release"
   payload=$(docker compose "${COMPOSE_ARGS[@]}" exec -T dashboard-api \
@@ -84,9 +85,17 @@ check_local_health() {
   health_matches "$payload" "$expected_sha" "$expected_environment"
 }
 
+check_local_health() {
+  retry_until 12 5 local_health_matches "$@"
+}
+
 rollback() {
   local exit_code=$?
   trap - ERR
+  if [[ $rollback_in_progress == true ]]; then
+    exit "$exit_code"
+  fi
+  rollback_in_progress=true
   if [[ $deployment_succeeded == false ]] && should_rollback "$previous_release" "$activation_started"; then
     local previous_sha
     previous_sha=$(basename "$previous_release")
