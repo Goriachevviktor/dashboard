@@ -9,7 +9,7 @@ MODE=${MODE:?MODE must be production or test}
 SOURCE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INSTALL_ROOT=${INSTALL_ROOT:-/usr/local/lib/dashboard-backup}
 SYSTEMD_DIR=${SYSTEMD_DIR:-/etc/systemd/system}
-mkdir -p "$INSTALL_ROOT"
+install -d -m 0755 "$INSTALL_ROOT"
 install -m 0755 "$SOURCE_DIR/backup_metadata.py" "$INSTALL_ROOT/backup_metadata.py"
 install -m 0755 "$SOURCE_DIR/create-postgres-backup.sh" "$INSTALL_ROOT/create-postgres-backup.sh"
 install -m 0755 "$SOURCE_DIR/production-backup-command.sh" "$INSTALL_ROOT/production-backup-command.sh"
