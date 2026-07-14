@@ -1,0 +1,15 @@
+[Unit]
+Description=Create and verify Dashboard PostgreSQL backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/dashboard-backup.conf
+ExecStart=/usr/local/lib/dashboard-backup/create-postgres-backup.sh
+UMask=0077
+TimeoutStartSec=2h
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

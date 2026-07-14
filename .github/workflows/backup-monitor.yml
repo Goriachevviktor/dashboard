@@ -1,0 +1,133 @@
+name: Backup monitor
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+    - cron: '0 6 * * 0'
+  workflow_dispatch:
+    inputs:
+      run_restore:
+        description: Run the isolated weekly restore drill
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-automation
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    environment: backup-automation
+    env:
+      PROD_HOST: ${{ vars.PROD_BACKUP_HOST }}
+      PROD_PORT: ${{ vars.PROD_BACKUP_PORT }}
+      PROD_USER: ${{ vars.PROD_BACKUP_USER }}
+      MIN_BACKUP_BYTES: ${{ vars.MIN_BACKUP_BYTES }}
+      MIN_FREE_BYTES: ${{ vars.MIN_FREE_BYTES }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_BACKUP_SSH_PRIVATE_KEY }}
+      - name: Trust production backup host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PROD_PORT" -H "$PROD_HOST" >> ~/.ssh/known_hosts
+      - name: Check backup state and integrity
+        run: |
+          umask 077
+          ssh -p "$PROD_PORT" "$PROD_USER@$PROD_HOST" status > "$RUNNER_TEMP/backup-status.json"
+          ssh -p "$PROD_PORT" "$PROD_USER@$PROD_HOST" verify > /dev/null
+          python3 - "$RUNNER_TEMP/backup-status.json" "${MIN_BACKUP_BYTES:-1024}" "${MIN_FREE_BYTES:-1073741824}" <<'PY'
+          import datetime as dt
+          import json
+          import pathlib
+          import sys
+
+          state = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          completed = dt.datetime.fromisoformat(state["completedAt"].replace("Z", "+00:00"))
+          max_age_hours = 36
+          age = (dt.datetime.now(dt.timezone.utc) - completed).total_seconds() / 3600
+          assert age <= max_age_hours, f"backup is {age:.1f} hours old"
+          assert state["sizeBytes"] >= int(sys.argv[2]), "backup is below minimum size"
+          assert state["freeBytes"] >= int(sys.argv[3]), "backup filesystem is below free-space threshold"
+          assert len(state["sha256"]) == 64, "invalid checksum metadata"
+          print(json.dumps({"ageHours": round(age, 2), **state}, sort_keys=True))
+          PY
+      - name: Monitoring summary
+        if: always()
+        run: |
+          {
+            echo "### Production backup monitor"
+            if [[ -s "$RUNNER_TEMP/backup-status.json" ]]; then
+              python3 - "$RUNNER_TEMP/backup-status.json" <<'PY'
+          import json, pathlib, sys
+          state = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          print(f'- Backup: `{state["filename"]}`')
+          print(f'- Completed: {state["completedAt"]}')
+          print(f'- Size: {state["sizeBytes"]} bytes')
+          PY
+            fi
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  weekly-restore:
+    needs: monitor
+    if: github.event.schedule == '0 6 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.run_restore)
+    runs-on: ubuntu-latest
+    environment: backup-automation
+    env:
+      PROD_HOST: ${{ vars.PROD_BACKUP_HOST }}
+      PROD_PORT: ${{ vars.PROD_BACKUP_PORT }}
+      PROD_USER: ${{ vars.PROD_BACKUP_USER }}
+      TEST_HOST: ${{ vars.TEST_RESTORE_HOST }}
+      TEST_PORT: ${{ vars.TEST_RESTORE_PORT }}
+      TEST_USER: ${{ vars.TEST_RESTORE_USER }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.PROD_BACKUP_SSH_PRIVATE_KEY }}
+            ${{ secrets.TEST_RESTORE_SSH_PRIVATE_KEY }}
+      - name: Trust backup and restore hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PROD_PORT" -H "$PROD_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$TEST_PORT" -H "$TEST_HOST" >> ~/.ssh/known_hosts
+      - name: Transfer and verify latest backup
+        run: |
+          umask 077
+          status_file="$RUNNER_TEMP/backup-status.json"
+          dump_file="$RUNNER_TEMP/production-${{ github.run_id }}.dump"
+          ssh -p "$PROD_PORT" "$PROD_USER@$PROD_HOST" status > "$status_file"
+          ssh -p "$PROD_PORT" "$PROD_USER@$PROD_HOST" stream-latest > "$dump_file"
+          expected_sha=$(python3 - "$status_file" <<'PY'
+          import json, pathlib, sys
+          state = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          print(state["sha256"])
+          PY
+          )
+          printf '%s  %s\n' "$expected_sha" "$dump_file" > "$dump_file.sha256"
+          sha256sum -c "$dump_file.sha256"
+          ssh -p "$TEST_PORT" "$TEST_USER@$TEST_HOST" "upload ${{ github.run_id }}" < "$dump_file"
+          ssh -p "$TEST_PORT" "$TEST_USER@$TEST_HOST" "restore ${{ github.run_id }}" | tee "$RUNNER_TEMP/restore-result.json"
+      - name: Restore summary
+        if: always()
+        run: |
+          {
+            echo "### Weekly isolated restore"
+            echo "- Run ID: ${{ github.run_id }}"
+            echo "- Result: ${{ job.status }}"
+            if [[ -s "$RUNNER_TEMP/restore-result.json" ]]; then
+              echo '- Temporary restore validation returned structured results.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove runner backup files
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP"/production-${{ github.run_id }}.dump "$RUNNER_TEMP"/production-${{ github.run_id }}.dump.sha256 "$RUNNER_TEMP"/backup-status.json

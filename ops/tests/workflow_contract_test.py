@@ -113,6 +113,32 @@ def test_frontend_security_and_workbook_gates() -> None:
     require(content, "npm audit --audit-level=moderate", "npm run verify:xlsx")
 
 
+def test_backup_monitoring_and_restore_drill() -> None:
+    content = workflow("backup-monitor.yml")
+    require(
+        content,
+        "cron: '0 5 * * *'",
+        "cron: '0 6 * * 0'",
+        "workflow_dispatch:",
+        "environment: backup-automation",
+        "group: backup-automation",
+        "contents: read",
+        "actions/checkout@v6",
+        "webfactory/ssh-agent@v0.10.0",
+        "PROD_BACKUP_SSH_PRIVATE_KEY",
+        "TEST_RESTORE_SSH_PRIVATE_KEY",
+        "stream-latest",
+        "upload ${{ github.run_id }}",
+        "restore ${{ github.run_id }}",
+        "max_age_hours = 36",
+        "sha256sum -c",
+        "RUNNER_TEMP",
+        "if: always()",
+        "GITHUB_STEP_SUMMARY",
+    )
+    assert "upload-artifact" not in content
+
+
 if __name__ == "__main__":
     test_ci()
     test_test_deployment()
@@ -120,4 +146,5 @@ if __name__ == "__main__":
     test_no_embedded_credentials()
     test_actions_use_node_24_runtimes()
     test_frontend_security_and_workbook_gates()
+    test_backup_monitoring_and_restore_drill()
     print("all workflow contract assertions passed")
