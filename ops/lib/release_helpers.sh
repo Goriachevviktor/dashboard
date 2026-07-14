@@ -32,3 +32,20 @@ should_rollback() {
   local activation_started=${2:-false}
   [[ -n $previous_release && $activation_started == true ]]
 }
+
+retry_until() {
+  local max_attempts=${1:?max attempts are required}
+  local delay_seconds=${2:?delay seconds are required}
+  shift 2
+
+  local attempt
+  for ((attempt = 1; attempt <= max_attempts; attempt += 1)); do
+    if "$@"; then
+      return 0
+    fi
+    if (( attempt < max_attempts )); then
+      sleep "$delay_seconds"
+    fi
+  done
+  return 1
+}

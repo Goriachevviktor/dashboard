@@ -41,6 +41,19 @@ check 'rolls back after activation when a previous release exists' should_rollba
 check_not 'does not roll back without a previous release' should_rollback '' true
 check_not 'does not roll back before activation' should_rollback /srv/releases/previous false
 
+attempts=0
+becomes_healthy_on_third_attempt() {
+  attempts=$((attempts + 1))
+  (( attempts >= 3 ))
+}
+check 'retries a readiness check until it succeeds' retry_until 3 0 becomes_healthy_on_third_attempt
+if (( attempts != 3 )); then
+  printf 'not ok - readiness check ran %d times instead of 3\n' "$attempts" >&2
+  failures=$((failures + 1))
+else
+  printf 'ok - readiness check used all required attempts\n'
+fi
+
 if (( failures > 0 )); then
   printf '%d release helper assertion(s) failed\n' "$failures" >&2
   exit 1
