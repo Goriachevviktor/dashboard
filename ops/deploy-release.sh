@@ -33,6 +33,7 @@ RELEASE_DIR="$RELEASES_DIR/$SHA"
 CURRENT_LINK="$RELEASE_ROOT/current"
 BACKUPS_DIR="$RELEASE_ROOT/backups"
 LOCK_FILE="$RELEASE_ROOT/deploy.lock"
+PUBLIC_HEALTH_ENDPOINT="${PUBLIC_HEALTH_URL%/}/api/health"
 ENV_FILE="$SHARED_CONFIG_DIR/.env"
 OVERRIDE_FILE="$SHARED_CONFIG_DIR/docker-compose.override.yml"
 
@@ -83,7 +84,7 @@ rollback() {
     printf 'candidate failed; rolling back to %s\n' "$previous_sha" >&2
     start_release "$previous_release" "$previous_sha" "$ENVIRONMENT"
     check_health "$LOCAL_HEALTH_URL" "$previous_sha" "$ENVIRONMENT"
-    check_health "$PUBLIC_HEALTH_URL" "$previous_sha" "$ENVIRONMENT"
+    check_health "$PUBLIC_HEALTH_ENDPOINT" "$previous_sha" "$ENVIRONMENT"
     ln -sfn "$previous_release" "$CURRENT_LINK"
     printf 'rollback completed: %s\n' "$previous_sha" >&2
   fi
@@ -126,7 +127,7 @@ fi
 activation_started=true
 start_release "$RELEASE_DIR" "$SHA" "$ENVIRONMENT"
 check_health "$LOCAL_HEALTH_URL" "$SHA" "$ENVIRONMENT"
-check_health "$PUBLIC_HEALTH_URL" "$SHA" "$ENVIRONMENT"
+check_health "$PUBLIC_HEALTH_ENDPOINT" "$SHA" "$ENVIRONMENT"
 ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 deployment_succeeded=true
 trap - ERR
