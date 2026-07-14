@@ -16,6 +16,8 @@ import UsersSection from './sections/UsersSection.jsx';
 import RoadmapsSection from './sections/RoadmapsSection.jsx';
 import MindMapSection from './sections/MindMapSection.jsx';
 import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
+import DashboardSkeleton from './components/common/Skeleton.jsx';
+import ErrorBoundary from './components/common/ErrorBoundary.jsx';
 
 const ACTIVE_SECTION_KEY = "dashboard_active_section_v1";
 
@@ -321,9 +323,11 @@ export default function App() {
             </div>
           )}
           {loading || !dashboardData ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: isMobile ? "#64748b" : COLORS.textMuted, fontSize: 14 }}>Загрузка данных...</div>
+            <DashboardSkeleton />
           ) : (
-            SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser })
+            <ErrorBoundary key={section.id}>
+              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser })}
+            </ErrorBoundary>
           )}
         </div>
 

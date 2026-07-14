@@ -93,8 +93,11 @@ def bootstrap(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
             (development_task_ids or [0],),
         ).fetchall()
         ambp_topics = visible_owner_rows(conn, "ambp_topics", user)
-        ucp_members = conn.execute("SELECT task_id, member_id FROM ucp_task_members ORDER BY task_id, member_id").fetchall()
-        ucp_task_ids = [t["id"] for t in ucp_tasks]
+        ucp_task_ids = [item["id"] for item in ucp_tasks]
+        ucp_members = conn.execute(
+            "SELECT task_id, member_id FROM ucp_task_members WHERE task_id = ANY(%s) ORDER BY task_id, member_id",
+            (ucp_task_ids or [0],),
+        ).fetchall()
         ucp_checkpoints = conn.execute(
             "SELECT * FROM ucp_checkpoints WHERE task_id = ANY(%s) ORDER BY task_id, id",
             (ucp_task_ids or [0],),

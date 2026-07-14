@@ -7,6 +7,8 @@ import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import {
   applyDependencySchedule,
   buildDependencyState,
+  buildDependencyDebugEdges,
+  computeDependencyLineLayout,
   ensureRoadmapTaskIds,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
@@ -588,34 +590,329 @@ const SAMPLE_ROADMAPS = (() => {
     },
     {
       id: "rm-ai-initiatives-2026",
-      title: "AI initiatives 2026",
-      desc: "Пилоты, инфраструктура и внедрение AI-инструментов в основные процессы",
+      title: "Внедрение AI-инициатив",
+      desc: "Сводная дорожная карта AI-ассистентов и аналитических инициатив по направлениям поддержки, АЗС, ДЦО, CRM и смежным системам",
       owner: "viktor",
       tag: "AI",
-      tagColor: "#30b0c7",
+      tagColor: "#6d5bd0",
       status: "active",
-      period: "Q2 – Q4 2026",
+      period: "Q1 – Q4 2026",
       milestones: [
-        { name: "AI governance", month: 4.0 },
-        { name: "Pilot release", month: 7.0 },
-        { name: "Scale-up", month: 10.0 },
+        { name: "MVP 1С / АСИБ УХ", month: 5.5 },
+        { name: "MVP СУ МК", month: 7.3 },
+        { name: "MVP Связной", month: 7.3 },
+        { name: "MVP Аналитик КЕ", month: 6.3 },
+        { name: "MVP ЕЦПК", month: 6.3 },
+        { name: "MVP ЕСФМ", month: 7.3 },
+        { name: "MVP Siebel CRM", month: 5.5 },
+        { name: "MVP TIBVOAGGREGATE", month: 5.5 },
       ],
       lanes: [
-        { id: "ai1", name: "Платформа", color: "#007aff" },
-        { id: "ai2", name: "Продуктовые пилоты", color: "#5856d6" },
-        { id: "ai3", name: "Операционные сценарии", color: "#34c759" },
+        { id: "ai-1c", name: "1С / АСИБ УХ", color: "#3b6fe0" },
+        { id: "ai-sumk", name: "АЗС / СУ МК", color: "#22b07d" },
+        { id: "ai-cashier", name: "АЗС / Ассистент кассира", color: "#f3a236" },
+        { id: "ai-svyaznoy", name: "АЗС / Ассистент Связной", color: "#6d5bd0" },
+        { id: "ai-ke", name: "АЗС / Аналитик КЕ", color: "#2bb6c4" },
+        { id: "ai-ecpk", name: "ДЦО / Аналитик обращений ЕЦПК", color: "#8a96ad" },
+        { id: "ai-stell", name: "ДЦО / Аналитик СТЕЛЛ АЗС", color: "#3b6fe0" },
+        { id: "ai-esfm", name: "ЕСФМ / Аналитик СФМ", color: "#22b07d" },
+        { id: "ai-crm", name: "CRM / Siebel CRM", color: "#f3a236" },
+        { id: "ai-tibvo", name: "TIBVOAGGREGATE", color: "#2bb6c4" },
       ],
       bars: [
-        bar("ai1", "Единый AI-стек и доступы", 3.0, 5.5, "progress", 55, "dmitry"),
-        bar("ai1", "Контур безопасности и аудит", 4.0, 7.0, "planned", 0, "elena"),
-        bar("ai2", "AI-ассистент поддержки", 4.5, 8.0, "progress", 40, "anna"),
-        bar("ai2", "Copilot для внутренних команд", 6.0, 10.0, "planned", 0, "viktor"),
-        bar("ai3", "Поиск по знаниям и документам", 5.0, 9.0, "progress", 35, "pavel"),
+        bar("ai-1c", "Улучшение качества ответов по АСИБ УХ", 3.0, 4.9, "progress", 70, "dmitry"),
+        bar("ai-1c", "Согласование с ИБ: LLM, формат, порядок предоставления API", 3.0, 5.9, "progress", 60, "elena"),
+        bar("ai-1c", "Проработка требований к интерфейсу взаимодействия из 1С", 4.0, 5.9, "progress", 45, "anna"),
+        bar("ai-1c", "Разработка интерфейса взаимодействия с сервисом поддержки ИТ решений из АСИБ УХ", 6.0, 11.9, "planned", 0, "pavel"),
+
+        bar("ai-sumk", "Подготовка инструкций и вопрос-ответных пар", 3.0, 3.9, "progress", 90, "anna"),
+        bar("ai-sumk", "Загрузка в RAG", 4.0, 5.9, "done", 100, "dmitry"),
+        bar("ai-sumk", "Тестирование ответов LLM, Fine Tuning", 6.0, 6.9, "progress", 65, "elena"),
+        bar("ai-sumk", "Вход в прод GPN AI", 7.0, 8.9, "planned", 0, "viktor"),
+
+        bar("ai-cashier", "Подготовка инструкций и вопрос-ответных пар", 3.0, 3.9, "progress", 90, "anna"),
+        bar("ai-cashier", "Загрузка в RAG", 4.0, 5.9, "done", 100, "dmitry"),
+        bar("ai-cashier", "Тестирование ответов LLM, Fine Tuning", 6.0, 6.9, "progress", 55, "elena"),
+        bar("ai-cashier", "Интеграция агента в СУ МК", 5.0, 11.9, "planned", 0, "pavel"),
+
+        bar("ai-svyaznoy", "Получение доступа к среде разработки и LLM", 3.0, 3.9, "done", 100, "viktor"),
+        bar("ai-svyaznoy", "Разработка модели", 3.0, 5.9, "progress", 70, "dmitry"),
+        bar("ai-svyaznoy", "Тестирование работы модели", 5.0, 6.9, "progress", 55, "elena"),
+        bar("ai-svyaznoy", "Проработка переноса MVP в продуктив", 5.0, 8.9, "planned", 0, "pavel"),
+
+        bar("ai-ke", "Подготовка платформы, получение доступов", 1.0, 1.9, "done", 100, "viktor"),
+        bar("ai-ke", "Разработка модели", 2.0, 4.9, "progress", 78, "dmitry"),
+        bar("ai-ke", "Тестирование, проверка предиктивного анализа, Fine Tuning", 4.0, 5.9, "progress", 60, "elena"),
+        bar("ai-ke", "Проработка переноса MVP в продуктив", 5.0, 7.9, "planned", 0, "pavel"),
+
+        bar("ai-ecpk", "Локальная разработка", 3.0, 4.9, "progress", 70, "dmitry"),
+        bar("ai-ecpk", "Выкатка в Мечту", 3.0, 5.9, "planned", 0, "viktor"),
+        bar("ai-ecpk", "Эксплуатация сервиса в Мечте", 6.0, 11.9, "planned", 0, "anna"),
+        bar("ai-ecpk", "Анализ возможности использования КСПД", 9.0, 11.9, "done", 100, "pavel"),
+
+        bar("ai-stell", "Разработка решения локально", 3.0, 6.9, "progress", 72, "dmitry"),
+        bar("ai-stell", "Разработка в Мечте или N1", 6.0, 11.9, "progress", 40, "anna"),
+        bar("ai-stell", "Использование сервиса в Мечте или локально", 9.0, 11.9, "planned", 0, "viktor"),
+
+        bar("ai-esfm", "Выбор и оценка пилотного кейса", 3.0, 3.9, "progress", 100, "viktor"),
+        bar("ai-esfm", "Выбор модели для реализации (catboost)", 3.0, 4.9, "progress", 85, "dmitry"),
+        bar("ai-esfm", "Детализация алгоритма, данные, разметка, прототипирование модели", 4.0, 6.9, "done", 100, "elena"),
+        bar("ai-esfm", "Разворачивание на MAPM и обучение модели", 8.0, 11.9, "planned", 0, "pavel"),
+
+        bar("ai-crm", "Подготовка инструкций и вопрос-ответных пар", 4.0, 4.9, "progress", 80, "anna"),
+        bar("ai-crm", "Тестирование ответов LLM, Fine Tuning (gpn ai fileAssist)", 4.0, 4.9, "progress", 70, "elena"),
+        bar("ai-crm", "Загрузка в RAG", 4.0, 4.9, "done", 100, "dmitry"),
+        bar("ai-crm", "Интеграция с сервером web3 Siebel CRM", 5.0, 7.9, "planned", 0, "pavel"),
+
+        bar("ai-tibvo", "Подготовка данных", 3.0, 4.9, "done", 100, "anna"),
+        bar("ai-tibvo", "Тестирование в GPN AI", 4.0, 4.9, "progress", 70, "dmitry"),
+        bar("ai-tibvo", "Исследование технической возможности", 4.0, 5.9, "done", 100, "pavel"),
       ],
       nnl: {
-        now:   [{ t: "Единый AI-стек и доступы", o: "dmitry" }, { t: "AI-ассистент поддержки", o: "anna" }],
-        next:  [{ t: "Контур безопасности и аудит", o: "elena" }, { t: "Поиск по знаниям и документам", o: "pavel" }],
-        later: [{ t: "Copilot для внутренних команд", o: "viktor" }],
+        now: [
+          { t: "Согласование с ИБ: LLM, формат, порядок предоставления API", o: "elena" },
+          { t: "Разработка модели", o: "dmitry" },
+          { t: "Тестирование в GPN AI", o: "dmitry" },
+        ],
+        next: [
+          { t: "MVP Siebel CRM", o: "anna" },
+          { t: "MVP TIBVOAGGREGATE", o: "pavel" },
+          { t: "Интеграция агента в СУ МК", o: "pavel" },
+        ],
+        later: [
+          { t: "Эксплуатация сервиса в Мечте", o: "anna" },
+          { t: "Разворачивание на MAPM и обучение модели", o: "pavel" },
+          { t: "Разработка интерфейса взаимодействия с сервисом поддержки ИТ решений из АСИБ УХ", o: "pavel" },
+        ],
+      },
+    },
+    {
+      id: "rm-qr-fueling-2026",
+      title: "Интеграция (реализация заправки по QR)",
+      desc: "Дорожная карта по интеграции сервиса \"Моя заправка\": организационный трек, архитектура, разработка СУ МК, ESB и тиражирование.",
+      owner: "viktor",
+      tag: "QR",
+      tagColor: "#0a84ff",
+      status: "active",
+      period: "Июль - Сентябрь 2026",
+      milestones: [
+        { name: "Старт проекта", date: "2026-07-01" },
+        { name: "Релиз ESB", date: "2026-08-02" },
+        { name: "Релиз СУ МК", date: "2026-08-19" },
+        { name: "Тираж на АЗС МСК", date: "2026-09-07" },
+      ],
+      lanes: [
+        { id: "qr-1", name: "Трек 1. Организационный", color: "#3b6fe0" },
+        { id: "qr-2", name: "Трек 2. Архитектура", color: "#22b07d" },
+        { id: "qr-3", name: "Трек 3. Разработка СУ \"Мобильная карта\"", color: "#f3a236" },
+        { id: "qr-4", name: "Трек 4. Разработка ESB", color: "#6d5bd0" },
+        { id: "qr-5", name: "Трек 4. Тираж", color: "#2bb6c4" },
+      ],
+      bars: [
+        {
+          lane: "qr-1",
+          title: "Подписание СОК с ДИТ Москвы (Курицын А.А.)",
+          startDate: "2026-07-10",
+          endDate: "2026-08-10",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-1",
+          title: "Подключения к сервису \"Моя заправка\" (заявка, анкеты) (Курицын А.А.)",
+          startDate: "2026-07-10",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-1",
+          title: "Определение лица/организации уполномоченного представителя для подписания юридических докуменитов с ДИТ (Курицын А.А.)",
+          startDate: "2026-07-10",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-1",
+          title: "Сценарные условия поведения клиентов на АЗС (клиентский путь) (ДИТ)",
+          startDate: "2026-07-10",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-1",
+          title: "АнтиФРОД (Семенов А.А.)",
+          startDate: "2026-07-10",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-2",
+          title: "Архитектруная схема взаимодействия (инфопотоки) (Иванов В.В.)",
+          startDate: "2026-07-09",
+          endDate: "2026-07-10",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-2",
+          title: "Сетевая схема взаимодействия (сети, МСЭ, протоколы) (Соколов М.А)",
+          startDate: "2026-07-10",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-2",
+          title: "Подготовка, согласование и реализация АЗ и ЗНИ (Соколов М.А)",
+          startDate: "2026-07-23",
+          endDate: "2026-08-13",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-2",
+          title: "Организация доступа к тестовому и продуктивному контуру ДИТа (Пристромов Д.Ю.)",
+          startDate: "2026-07-20",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-3",
+          title: "Получение и анализ документации (api) (Асатрян Г.Г.)",
+          startDate: "2026-07-09",
+          endDate: "2026-07-19",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-3",
+          title: "Разработка интеграции (Асатрян Г.Г.)",
+          startDate: "2026-07-19",
+          endDate: "2026-08-09",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-3",
+          title: "Актуализация документации, выход на АК, получение протокола (Асатрян Г.Г.)",
+          startDate: "2026-07-19",
+          endDate: "2026-07-29",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-3",
+          title: "Выпуск релиза СУ МК (Асатрян Г.Г.)",
+          startDate: "2026-08-09",
+          endDate: "2026-08-19",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-4",
+          title: "Получение и анализ документации (api) (Гриненко И.А.)",
+          startDate: "2026-07-09",
+          endDate: "2026-07-10",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-4",
+          title: "Разработка интеграции (Гриненко И.А.)",
+          startDate: "2026-07-10",
+          endDate: "2026-07-20",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-4",
+          title: "Актуализация документации, выход на АК, получение протокола (Гриненко И.А.)",
+          startDate: "2026-07-23",
+          endDate: "2026-08-13",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-4",
+          title: "Выпуск релиза (Гриненко И.А.)",
+          startDate: "2026-07-23",
+          endDate: "2026-08-02",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-5",
+          title: "Тестирование на продуктовом полигоне по сценарным условиям (строка 16) (Абаньшин А.С.)",
+          startDate: "2026-08-23",
+          endDate: "2026-08-28",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+        {
+          lane: "qr-5",
+          title: "Тиражирование СУ МК на АЗС МСК (Абаньшин А.С.)",
+          startDate: "2026-08-28",
+          endDate: "2026-09-07",
+          status: "planned",
+          progress: 0,
+          owner: "viktor",
+          memberIds: [],
+        },
+      ],
+      nnl: {
+        now: [
+          { t: "Подписание СОК с ДИТ Москвы", o: "viktor" },
+          { t: "Архитектруная схема взаимодействия (инфопотоки)", o: "viktor" },
+        ],
+        next: [
+          { t: "Разработка интеграции", o: "viktor" },
+          { t: "Подготовка, согласование и реализация АЗ и ЗНИ", o: "viktor" },
+        ],
+        later: [
+          { t: "Выпуск релиза СУ МК", o: "viktor" },
+          { t: "Тиражирование СУ МК на АЗС МСК", o: "viktor" },
+        ],
       },
     },
     {
@@ -1621,6 +1918,8 @@ function GanttBar({
   isDragging = false,
   linkMode = false,
   isLinked = false,
+  hasIncomingLink = false,
+  hasOutgoingLink = false,
   isHighlighted = false,
 }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
@@ -1641,7 +1940,7 @@ function GanttBar({
           position: "absolute", height: 30, borderRadius: 9,
           left: left + "%", width: width + "%",
           background: c.bar, display: "flex", alignItems: "center",
-          padding: "0 10px", gap: 8, overflow: "hidden", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
+          padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
           boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
           transform: isHov ? "translateY(-1px)" : "none",
           transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : 2,
@@ -1672,10 +1971,10 @@ function GanttBar({
         {b.status === "progress" && (
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: b.progress + "%", background: "rgba(255,255,255,.22)", zIndex: 0 }} />
         )}
-        {isLinked && (
+        {hasIncomingLink && (
           <span style={{
             position: "absolute",
-            left: 8,
+            left: -4,
             top: "50%",
             transform: "translateY(-50%)",
             width: 8,
@@ -1686,7 +1985,21 @@ function GanttBar({
             zIndex: 1,
           }} />
         )}
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1, paddingLeft: isLinked ? 12 : 0 }}>{b.title}</span>
+        {hasOutgoingLink && (
+          <span style={{
+            position: "absolute",
+            right: -8,
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "#fff",
+            boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
+            zIndex: 1,
+          }} />
+        )}
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1, paddingLeft: hasIncomingLink ? 8 : 0 }}>{b.title}</span>
         <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
           <Avatar member={ownerMember} size={20} />
           <AvatarStack members={coExecutors} size={18} max={2} />
@@ -1742,6 +2055,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     });
     return map;
   }, [positionedRows]);
+  const dependencyDebugEdges = useMemo(() => buildDependencyDebugEdges(rm.bars), [rm.bars]);
   const dependencyLines = useMemo(() => (
     positionedRows
       .filter(row => row.type === "bar")
@@ -1750,21 +2064,19 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         return predecessors.map(predecessorId => {
           const predecessorRow = rowByTaskId.get(predecessorId);
           if (!predecessorRow) return null;
-          const startX = (percentFromTimelineDate(predecessorRow.b.endDate, timeline, true) / 100) * chartWidth;
-          const rawEndX = (percentFromTimelineDate(row.b.startDate, timeline) / 100) * chartWidth;
-          const endX = Math.max(startX + 8, rawEndX - 6);
-          const startY = predecessorRow.top + TIMELINE_TASK_ROW_HEIGHT / 2;
-          const endY = row.top + TIMELINE_TASK_ROW_HEIGHT / 2;
-          const middleX = endX > startX + 24 ? startX + 12 : (startX + endX) / 2;
+          const geometry = computeDependencyLineLayout({
+            predecessorEndPct: percentFromTimelineDate(predecessorRow.b.endDate, timeline, true),
+            targetStartPct: percentFromTimelineDate(row.b.startDate, timeline),
+            chartWidth,
+            predecessorTop: predecessorRow.top,
+            targetTop: row.top,
+            rowHeight: TIMELINE_TASK_ROW_HEIGHT,
+          });
           return {
             id: `${predecessorId}->${row.b.id}`,
             predecessorId,
             taskId: row.b.id,
-            startX,
-            endX,
-            startY,
-            endY,
-            middleX,
+            ...geometry,
             active: highlightedTaskIds.has(predecessorId) || highlightedTaskIds.has(row.b.id),
           };
         }).filter(Boolean);
@@ -2005,16 +2317,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             {dependencyLines.length > 0 && (
               <svg
                 viewBox={`0 0 ${chartWidth} ${gridHeight}`}
+                preserveAspectRatio="none"
                 style={{ position: "absolute", inset: 0, width: "100%", height: gridHeight, pointerEvents: "none", zIndex: 2 }}
               >
-                <defs>
-                  <marker id="timeline-dependency-arrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
-                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#a1a1a6" />
-                  </marker>
-                  <marker id="timeline-dependency-arrow-active" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
-                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#007aff" />
-                  </marker>
-                </defs>
                 {dependencyLines.map(line => (
                   <path
                     key={line.id}
@@ -2026,7 +2331,6 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
-                    markerEnd={`url(#${line.active ? "timeline-dependency-arrow-active" : "timeline-dependency-arrow"})`}
                   />
                 ))}
               </svg>
@@ -2077,6 +2381,8 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 isDragging={barDrag?.idx === r.idx}
                 linkMode={linkMode}
                 isLinked={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0 || (dependencyState.successorsById.get(r.b.id) || []).length > 0}
+                hasIncomingLink={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0}
+                hasOutgoingLink={(dependencyState.successorsById.get(r.b.id) || []).length > 0}
                 isHighlighted={highlightedTaskIds.has(r.b.id)}
               />
             ))}
@@ -2110,6 +2416,24 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           Сегодня
         </span>
       </div>
+
+      {dependencyDebugEdges.length > 0 && (
+        <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#8e8e93", textTransform: "uppercase", letterSpacing: 0.4 }}>
+            Debug связей
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {dependencyDebugEdges.map(edge => (
+              <div key={`${edge.sourceId}->${edge.targetId}`} style={{ fontSize: 12, color: "#3a3a3c", fontFamily: FONT_STACK }}>
+                <span style={{ color: "#1d1d1f", fontWeight: 600 }}>{edge.sourceTitle}</span>
+                <span style={{ color: "#8e8e93", padding: "0 6px" }}>→</span>
+                <span style={{ color: "#1d1d1f", fontWeight: 600 }}>{edge.targetTitle}</span>
+                <span style={{ color: "#a1a1a6", paddingLeft: 8, fontSize: 11 }}>{edge.sourceId} → {edge.targetId}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

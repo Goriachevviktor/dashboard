@@ -66,6 +66,55 @@ export function buildDependencyState(bars = []) {
   return { taskById, predecessorsById, successorsById };
 }
 
+
+export function buildDependencyDebugEdges(bars = []) {
+  const { taskById, predecessorsById } = buildDependencyState(bars);
+  const edges = [];
+
+  predecessorsById.forEach((predecessors, targetId) => {
+    const target = taskById.get(targetId);
+    (predecessors || []).forEach(sourceId => {
+      const source = taskById.get(sourceId);
+      if (!source || !target) return;
+      edges.push({
+        sourceId,
+        sourceTitle: source.title || sourceId,
+        targetId,
+        targetTitle: target.title || targetId,
+      });
+    });
+  });
+
+  return edges;
+}
+
+export function computeDependencyLineLayout({
+  predecessorEndPct,
+  targetStartPct,
+  chartWidth,
+  predecessorTop,
+  targetTop,
+  rowHeight,
+  predecessorAnchorOutsetPx = 4,
+  targetAnchorInsetPx = 0,
+  minHorizontalGapPx = 8,
+  elbowOffsetPx = 12,
+}) {
+  const startX = (predecessorEndPct / 100) * chartWidth + predecessorAnchorOutsetPx;
+  const targetAnchorX = (targetStartPct / 100) * chartWidth + targetAnchorInsetPx;
+  const endX = Math.max(startX + minHorizontalGapPx, targetAnchorX);
+  const startY = predecessorTop + rowHeight / 2;
+  const endY = targetTop + rowHeight / 2;
+  const middleX = endX > startX + elbowOffsetPx * 2 ? startX + elbowOffsetPx : (startX + endX) / 2;
+  return {
+    startX,
+    endX,
+    startY,
+    endY,
+    middleX,
+  };
+}
+
 function topologicalOrder(bars = []) {
   const { taskById, predecessorsById, successorsById } = buildDependencyState(bars);
   const inDegree = new Map();
