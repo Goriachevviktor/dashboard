@@ -84,7 +84,11 @@ def test_production_deployment() -> None:
 def test_no_embedded_credentials() -> None:
     workflow_dir = ROOT / ".github" / "workflows"
     content = "\n".join(path.read_text() for path in workflow_dir.glob("*.yml"))
-    forbidden = ("Kettle69", "138.16.178.245", "BEGIN OPENSSH PRIVATE KEY")
+    forbidden = (
+        "BEGIN " + "OPENSSH PRIVATE KEY",
+        "BEGIN " + "RSA PRIVATE KEY",
+        "ssh-" + "password:",
+    )
     for marker in forbidden:
         assert marker not in content, f"embedded credential marker found: {marker}"
 
