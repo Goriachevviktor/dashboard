@@ -41,6 +41,7 @@ Install the restore validator without enabling a backup timer:
 ```bash
 sudo MODE=test \
   RESTORE_STAGING_DIR=/absolute/restore-staging \
+  RESTORE_USER=viktor \
   COMPOSE_FILE=/absolute/release/server/docker-compose.yml \
   COMPOSE_ENV_FILE=/absolute/shared/.env \
   COMPOSE_OVERRIDE_FILE=/absolute/shared/docker-compose.override.yml \
