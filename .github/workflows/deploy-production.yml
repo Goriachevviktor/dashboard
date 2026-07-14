@@ -19,7 +19,7 @@ jobs:
   validate-sha:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Require an exact commit reachable from main
@@ -44,7 +44,7 @@ jobs:
       SHARED_CONFIG_DIR: ${{ vars.SHARED_CONFIG_DIR }}
       PUBLIC_HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.sha }}
           fetch-depth: 1
@@ -58,7 +58,7 @@ jobs:
         run: |
           git archive --format=tar.gz --output="/tmp/dashboard-$RELEASE_SHA.tar.gz" "$RELEASE_SHA"
           tar -czf "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" ops/deploy-release.sh ops/lib/release_helpers.sh
-      - uses: webfactory/ssh-agent@v0.9.0
+      - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
       - name: Trust deployment host for this run

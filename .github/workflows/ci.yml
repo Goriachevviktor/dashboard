@@ -13,15 +13,21 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+        working-directory: frontend
+      - name: Audit production dependencies
+        run: npm audit --audit-level=moderate
+        working-directory: frontend
+      - name: Verify roadmap workbook export
+        run: npm run verify:xlsx
         working-directory: frontend
       - name: Unit tests
         run: find src -name '*.test.js' -print0 | xargs -0 node --test
@@ -51,7 +57,7 @@ jobs:
       DASHBOARD_VAPID_PUBLIC_KEY: ci-public-key
       DASHBOARD_VAPID_CLAIMS_SUB: mailto:ci@example.test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Start PostgreSQL
         run: docker compose up -d --wait dashboard-db
         working-directory: server
@@ -65,8 +71,8 @@ jobs:
   caddy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - run: node --test tests/caddy_contract.test.js
@@ -75,7 +81,7 @@ jobs:
   release-contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: bash ops/tests/release_helpers_test.sh
       - run: bash ops/tests/deploy_release_contract_test.sh
       - run: python3 ops/tests/workflow_contract_test.py
@@ -93,7 +99,7 @@ jobs:
       DASHBOARD_VAPID_PUBLIC_KEY: ci-public-key
       DASHBOARD_VAPID_CLAIMS_SUB: mailto:ci@example.test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: touch vapid_private.pem
         working-directory: server
       - run: docker compose build

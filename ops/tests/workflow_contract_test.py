@@ -93,9 +93,31 @@ def test_no_embedded_credentials() -> None:
         assert marker not in content, f"embedded credential marker found: {marker}"
 
 
+def test_actions_use_node_24_runtimes() -> None:
+    contents = {
+        name: workflow(name)
+        for name in ("ci.yml", "deploy-test.yml", "deploy-production.yml")
+    }
+    combined = "\n".join(contents.values())
+    assert "actions/checkout@v4" not in combined
+    assert "actions/setup-node@v4" not in combined
+    assert "webfactory/ssh-agent@v0.9.0" not in combined
+    assert combined.count("actions/checkout@v6") == 8
+    assert contents["ci.yml"].count("actions/setup-node@v6") == 2
+    assert contents["deploy-test.yml"].count("webfactory/ssh-agent@v0.10.0") == 1
+    assert contents["deploy-production.yml"].count("webfactory/ssh-agent@v0.10.0") == 1
+
+
+def test_frontend_security_and_workbook_gates() -> None:
+    content = workflow("ci.yml")
+    require(content, "npm audit --audit-level=moderate", "npm run verify:xlsx")
+
+
 if __name__ == "__main__":
     test_ci()
     test_test_deployment()
     test_production_deployment()
     test_no_embedded_credentials()
+    test_actions_use_node_24_runtimes()
+    test_frontend_security_and_workbook_gates()
     print("all workflow contract assertions passed")
