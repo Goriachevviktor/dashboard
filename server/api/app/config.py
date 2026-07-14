@@ -1,4 +1,6 @@
+import base64
 import os
+import tempfile
 
 DATABASE_URL = os.getenv("DASHBOARD_DATABASE_URL", "postgresql://dashboard:dashboard@localhost:5432/dashboard")
 API_TOKEN = os.getenv("DASHBOARD_API_TOKEN", "")
@@ -16,5 +18,18 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 VAPID_PUBLIC_KEY = os.getenv("DASHBOARD_VAPID_PUBLIC_KEY", "")
-VAPID_PRIVATE_KEY_FILE = os.getenv("DASHBOARD_VAPID_PRIVATE_KEY_FILE", "")
 VAPID_CLAIMS_SUB = os.getenv("DASHBOARD_VAPID_CLAIMS_SUB", "")
+
+# Support VAPID private key via env var (base64-encoded PEM) or file path.
+# If DASHBOARD_VAPID_PRIVATE_KEY is set, write it to a temp file at import time.
+_vapid_key_content = os.getenv("DASHBOARD_VAPID_PRIVATE_KEY", "")
+if _vapid_key_content:
+    _tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode="wb")
+    try:
+        _tmp.write(base64.b64decode(_vapid_key_content))
+    except Exception:
+        _tmp.write(_vapid_key_content.encode())
+    _tmp.close()
+    VAPID_PRIVATE_KEY_FILE = _tmp.name
+else:
+    VAPID_PRIVATE_KEY_FILE = os.getenv("DASHBOARD_VAPID_PRIVATE_KEY_FILE", "")

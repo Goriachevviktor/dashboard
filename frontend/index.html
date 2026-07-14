@@ -31,19 +31,43 @@
       #boot-status {
         position: fixed;
         inset: 0;
-        z-index: 99999;
+        z-index: 2147483647;
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: 24px;
         background: #f0f6ff;
-        color: #64748b;
-        font-size: 14px;
-        font-weight: 600;
+        color: #1e3a6e;
+        font: 500 15px/1.5 Inter, system-ui, sans-serif;
+        text-align: center;
+        white-space: pre-wrap;
       }
       body.booted #boot-status {
         display: none;
       }
     </style>
+    <script>
+      (function () {
+        function showBootError(message) {
+          var node = document.getElementById('boot-status');
+          if (!node) return;
+          node.textContent = ['Ошибка загрузки дашборда.', String(message || 'Неизвестная ошибка'), '', 'Обновите страницу. Если ошибка останется, сообщите текст этой ошибки.'].join('\n');
+        }
+        window.addEventListener('error', function (event) {
+          showBootError(event && event.message ? event.message : 'Не удалось загрузить JavaScript');
+        });
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason;
+          showBootError(reason && reason.message ? reason.message : String(reason || 'Unhandled promise rejection'));
+        });
+        window.addEventListener('load', function () {
+          setTimeout(function () {
+            var root = document.getElementById('root');
+            if (root && root.childElementCount > 0) document.body.classList.add('booted');
+          }, 1500);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="boot-status">Загружаем дашборд...</div>

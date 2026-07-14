@@ -11,3 +11,9 @@ dashboard-config.js
 /frontend-dist/
 .worktrees/
 .superpowers/
+
+# Runtime artifacts
+backups/
+*.bak-*
+*.bak
+__pycache__/

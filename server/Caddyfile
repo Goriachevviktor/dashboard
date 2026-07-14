@@ -1,12 +1,16 @@
 :80 {
   root * /srv/frontend-dist
 
-  header /index.html Cache-Control "no-cache"
-  @sw_missing {
-    path /service-worker.js /manifest.webmanifest
-    not file
+  @app_shell path / /index.html
+  header @app_shell Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+  header @app_shell Clear-Site-Data "\"cache\""
+
+  @pwa_assets path /service-worker.js /manifest.webmanifest
+  handle @pwa_assets {
+    header /service-worker.js Cache-Control "no-store, no-cache, must-revalidate"
+    try_files {path} =404
+    file_server
   }
-  respond @sw_missing 404
 
   header {
     X-Frame-Options "DENY"
