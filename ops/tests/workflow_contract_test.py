@@ -108,10 +108,16 @@ def test_actions_use_node_24_runtimes() -> None:
     assert contents["deploy-production.yml"].count("webfactory/ssh-agent@v0.10.0") == 1
 
 
+def test_frontend_security_and_workbook_gates() -> None:
+    content = workflow("ci.yml")
+    require(content, "npm audit --audit-level=moderate", "npm run verify:xlsx")
+
+
 if __name__ == "__main__":
     test_ci()
     test_test_deployment()
     test_production_deployment()
     test_no_embedded_credentials()
     test_actions_use_node_24_runtimes()
+    test_frontend_security_and_workbook_gates()
     print("all workflow contract assertions passed")
