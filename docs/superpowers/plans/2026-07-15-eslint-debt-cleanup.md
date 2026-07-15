@@ -12,7 +12,7 @@
 
 - Preserve rendering, interaction, API requests, persisted payload shapes, and business rules.
 - Do not add global rule suppressions or blanket `eslint-disable` comments.
-- Every task must keep `npm test` and `npm run build` green.
+- Every task must keep `find src -name '*.test.js' -print0 | xargs -0 node --test` and `npm run build` green.
 - Final `npm run lint` must report zero errors and zero warnings.
 - Keep mechanical cleanup separate from Hook and component-boundary changes.
 
@@ -70,7 +70,7 @@ Run:
 cd frontend
 npx eslint src --format json > /tmp/eslint-mechanical.json || true
 node -e 'const r=require("/tmp/eslint-mechanical.json"); const x=r.flatMap(f=>f.messages).filter(m=>["no-unused-vars","no-empty","no-undef","react-refresh/only-export-components"].includes(m.ruleId)); console.log(x.length); process.exit(x.length?1:0)'
-npm test
+find src -name '*.test.js' -print0 | xargs -0 node --test
 npm run build
 ```
 
@@ -134,7 +134,7 @@ Run:
 cd frontend
 npx eslint src --format json > /tmp/eslint-state-after.json || true
 node -e 'const r=require("/tmp/eslint-state-after.json"); const x=r.flatMap(f=>f.messages).filter(m=>m.ruleId==="react-hooks/set-state-in-effect"); console.log(x.length); process.exit(x.length?1:0)'
-npm test
+find src -name '*.test.js' -print0 | xargs -0 node --test
 npm run build
 ```
 
@@ -194,7 +194,7 @@ Run:
 cd frontend
 npx eslint src --format json > /tmp/eslint-deps-after.json || true
 node -e 'const r=require("/tmp/eslint-deps-after.json"); const x=r.flatMap(f=>f.messages).filter(m=>m.ruleId==="react-hooks/exhaustive-deps"); console.log(x.length); process.exit(x.length?1:0)'
-npm test
+find src -name '*.test.js' -print0 | xargs -0 node --test
 npm run build
 ```
 
@@ -253,7 +253,7 @@ Run:
 cd frontend
 npx eslint src --format json > /tmp/eslint-static-after.json || true
 node -e 'const r=require("/tmp/eslint-static-after.json"); const x=r.flatMap(f=>f.messages).filter(m=>m.ruleId==="react-hooks/static-components"); console.log(x.length); process.exit(x.length?1:0)'
-npm test
+find src -name '*.test.js' -print0 | xargs -0 node --test
 npm run build
 ```
 
@@ -311,7 +311,7 @@ Run:
 ```bash
 cd frontend
 npm run lint
-npm test
+find src -name '*.test.js' -print0 | xargs -0 node --test
 npm run build
 cd ..
 python3 ops/tests/workflow_contract_test.py
@@ -342,7 +342,7 @@ git commit -m "ci: require complete frontend lint"
 cd frontend
 npm ci
 npm run lint
-npm test
+find src -name '*.test.js' -print0 | xargs -0 node --test
 npm run verify:xlsx
 npm run build
 cd ..
