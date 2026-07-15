@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useViewportFlags } from '../utils.js';
 
 function AmbpSection({ initialTopics = [], api, onError }) {

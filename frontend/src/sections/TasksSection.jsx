@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
 import AssigneePicker from '../components/common/AssigneePicker.jsx';
-import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useViewportFlags, formatShortDate, isTaskOverdue, findTeamMember } from '../utils.js';
 import { COLORS, FONT_STACK, PRIORITY_COLOR, COLUMN_TEXT, COLUMN_DOT, COLUMN_SURFACE, SHADOWS, RADII, segmentedWrapStyle, segmentedItemStyle, pillButtonStyle, chipStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
 
@@ -9,7 +9,7 @@ import { COLORS, FONT_STACK, PRIORITY_COLOR, COLUMN_TEXT, COLUMN_DOT, COLUMN_SUR
 const LEGACY_PRI_COLOR = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
 const LEGACY_COL_COLOR = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
 
-function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
+export function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const scrollRef = useRef(null);
   const touchStartY = useRef(0);

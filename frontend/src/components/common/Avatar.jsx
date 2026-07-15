@@ -1,5 +1,3 @@
-import { userColor } from '../../utils.js';
-
 export default function Avatar({ member, size = 28 }) {
   if (!member) return (
     <div style={{ width: size, height: size, borderRadius: "50%", background: "#e2edf8", border: "1.5px dashed #94a3b8", display: "flex", alignItems: "center", justifyContent: "center" }}>

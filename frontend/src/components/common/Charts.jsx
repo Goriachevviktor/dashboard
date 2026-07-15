@@ -1,5 +1,3 @@
-import { useRef, useEffect } from 'react';
-
 export function KpiRadarChart({ items, size = 260 }) {
   const center = size / 2;
   const radius = size * 0.3;

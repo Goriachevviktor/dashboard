@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import Avatar from '../components/common/Avatar.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
-import { KpiRadarChart, BurndownChart } from '../components/common/Charts.jsx';
-import { useViewportFlags, formatDashboardDate } from '../utils.js';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
+import { useViewportFlags } from '../utils.js';
 
 function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
   const { isMobile } = useViewportFlags();

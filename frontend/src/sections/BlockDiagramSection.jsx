@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Background, Controls, ConnectionMode, Handle, MiniMap, Position, ReactFlow, addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 
 // Custom node with a connection handle on every side, so edges can start/end
 // from whichever side is closest instead of being locked to top/bottom.

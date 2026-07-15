@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import Avatar from '../components/common/Avatar.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
-import { KpiRadarChart } from '../components/common/Charts.jsx';
-import { useViewportFlags, formatDashboardDate } from '../utils.js';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
+import { useViewportFlags } from '../utils.js';
 
 function PlanSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
   const { isMobile } = useViewportFlags();
@@ -268,7 +266,6 @@ function PlanSection({ initialTasks = [], team = [], api, onError, currentUser =
   const completed = tasks.filter(task => task.done || (task.status || "").toLowerCase().includes("заверш")).length;
   const totalCheckpoints = tasks.reduce((sum, task) => sum + (task.checkpoints || []).length, 0);
   const completedCheckpoints = tasks.reduce((sum, task) => sum + (task.checkpoints || []).filter(point => point.done).length, 0);
-  const overdue = tasks.filter(task => !task.done && task.due && new Date(task.due + "T23:59:59") < new Date()).length;
   const nearest = [...tasks].filter(task => task.due).sort((a, b) => a.due.localeCompare(b.due))[0];
   const selectedTask = tasks.find(task => task.id === selectedTaskId) || tasks[0] || null;
   const selectedMembers = selectedTask ? team.filter(member => (selectedTask.memberIds || []).includes(member.id)) : [];
