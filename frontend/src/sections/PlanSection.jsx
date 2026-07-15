@@ -12,20 +12,6 @@ function PlanSection({ initialTasks = [], team = [], api, onError, currentUser =
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const statusTimers = useRef({});
 
-  useEffect(() => {
-    setTasks(initialTasks || []);
-  }, [initialTasks]);
-
-  useEffect(() => {
-    if (!tasks.length) {
-      setSelectedTaskId(null);
-      return;
-    }
-    if (!selectedTaskId || !tasks.some(task => task.id === selectedTaskId)) {
-      setSelectedTaskId(tasks[0].id);
-    }
-  }, [tasks, selectedTaskId]);
-
   const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc" };
   const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
 

@@ -10,10 +10,6 @@ function AmbpSection({ initialTopics = [], api, onError }) {
   const [showCreate, setShowCreate] = useState(false);
   const [editTopic, setEditTopic] = useState(null);
 
-  useEffect(() => {
-    setTopics(initialTopics || []);
-  }, [initialTopics]);
-
   const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc" };
   const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
 

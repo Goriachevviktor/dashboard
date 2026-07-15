@@ -26,10 +26,6 @@ function SyncsSection({ initialStickers = null, api, onError }) {
     { id: 3, speaker: "Дмитрий П.", topic: "Технический комитет", text: "Собрать решения по архитектуре и вынести 2 спорных вопроса.", colorId: "amber", x: 558, y: 36, width: 236, height: 188 },
   ]);
 
-  useEffect(() => {
-    if (initialStickers) setStickers(initialStickers);
-  }, [initialStickers]);
-
   function clampStickerPosition(x, y, width = 236, height = 188) {
     const board = boardRef.current;
     if (!board) return { x, y };

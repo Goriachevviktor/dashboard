@@ -56,7 +56,9 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [standalone, setStandalone] = useState(isStandalonePwa());
-  const [pushStatus, setPushStatus] = useState("idle");
+  const [pushStatus, setPushStatus] = useState(() => (
+    "Notification" in window && Notification.permission === "denied" ? "denied" : "idle"
+  ));
 
   const visibleSections = SECTIONS.filter(s => (!s.adminOnly || currentUser?.role === "admin") && !(standalone && s.id === "archive"));
   const section = visibleSections.find(s => s.id === active) || visibleSections[0];
@@ -91,10 +93,6 @@ export default function App() {
     document.body.classList.toggle("dashboard-mobile", isMobile);
     return () => document.body.classList.remove("dashboard-mobile");
   }, [isMobile]);
-
-  useEffect(() => {
-    if (section && section.id !== active) setActive(section.id);
-  }, [active, section]);
 
   useEffect(() => {
     if (!section?.id) return;
@@ -154,16 +152,9 @@ export default function App() {
     }
     load();
     return () => { cancelled = true; };
-  }, [api, onError]);
+  }, [accessToken, api, currentUser, onError]);
 
-  // Push notifications
-  useEffect(() => {
-    if (!accessToken || !("Notification" in window)) return;
-    if (Notification.permission === "granted") enablePush({ silent: true });
-    else if (Notification.permission === "denied") setPushStatus("denied");
-  }, [accessToken, api]);
-
-  async function enablePush({ silent = false } = {}) {
+  const enablePush = useCallback(async ({ silent = false } = {}) => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       setPushStatus("unsupported");
       if (!silent) onError(new Error("Push-уведомления не поддерживаются"));
@@ -185,7 +176,15 @@ export default function App() {
       setPushStatus("error");
       if (!silent) onError(error);
     }
-  }
+  }, [api, onError]);
+
+  // Push notifications
+  useEffect(() => {
+    if (!accessToken || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    const timer = window.setTimeout(() => { void enablePush({ silent: true }); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, enablePush]);
 
   function handleLogin(result) {
     setLoading(true);

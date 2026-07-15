@@ -30,16 +30,6 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const [pwaEventStatusFilter, setPwaEventStatusFilter] = useState("all");
   const [showClosedPastMonths, setShowClosedPastMonths] = useState(false);
 
-  useEffect(() => {
-    if (!Array.isArray(initialEvents)) return;
-    setEvents(initialEvents);
-    setSelectedId(current => initialEvents.some(item => item.id === current) ? current : (initialEvents[0]?.id || null));
-  }, [initialEvents]);
-
-  useEffect(() => {
-    if (initialEventTasks) setEventTasks(initialEventTasks);
-  }, [initialEventTasks]);
-
   const daysToYearEnd = useMemo(() => {
     const now = new Date();
     const referenceDate = now.getFullYear() === ROADMAP_YEAR
@@ -114,14 +104,12 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const clampTimelinePct = value => Math.max(0, Math.min(1, value));
   const todayPct = clampTimelinePct((TODAY_MONTH - timelineStartMonth + (TODAY_DAY - 1) / 31) / timelineMonthSpan);
 
-  const selectedEvent = visibleRoadmapEvents.find(e => e.id === selectedId) || null;
+  const activeSelectedId = visibleRoadmapEvents.some(event => event.id === selectedId)
+    ? selectedId
+    : (visibleRoadmapEvents[0]?.id || null);
+  const selectedEvent = visibleRoadmapEvents.find(e => e.id === activeSelectedId) || null;
   const selectedEventGenerated = Boolean(selectedEvent?.generated);
-  const tasks = (!selectedEventGenerated && selectedId && eventTasks[selectedId]) || [];
-
-  useEffect(() => {
-    if (!visibleRoadmapEvents.length) return;
-    if (!visibleRoadmapEvents.some(event => event.id === selectedId)) setSelectedId(visibleRoadmapEvents[0].id);
-  }, [visibleRoadmapEvents, selectedId]);
+  const tasks = (!selectedEventGenerated && activeSelectedId && eventTasks[activeSelectedId]) || [];
 
   async function addEvent(data) {
     try {
@@ -617,7 +605,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       {confirmDialog}
       {showAddEvent && <EventModal onClose={() => setShowAddEvent(false)} onSubmit={addEvent} />}
       {editEvent && <EventModal event={editEvent} onClose={() => setEditEvent(null)} onSubmit={(patch) => { saveEvent(editEvent.id, patch); setEditEvent(null); }} />}
-      {showAddTask && selectedEvent && <AddTaskModal eventId={selectedId} onClose={() => setShowAddTask(false)} onAdd={addTask} />}
+      {showAddTask && selectedEvent && <AddTaskModal eventId={activeSelectedId} onClose={() => setShowAddTask(false)} onAdd={addTask} />}
       {selectedTask && <EventTaskModal eventId={selectedTask.eventId} task={selectedTask.task} onClose={() => setSelectedTask(null)} onSave={saveEventTask} />}
 
       {/* Stats */}
@@ -676,7 +664,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               .slice()
               .sort((a, b) => a.month === b.month ? a.day - b.day : a.month - b.month)
               .map(ev => {
-                const isSel = selectedId === ev.id;
+                const isSel = activeSelectedId === ev.id;
                 return (
                   <button
                     key={ev.id}
@@ -705,7 +693,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           <div style={{ position:"relative", height: Math.max(1, topEvents.length ? Math.max(...topEvents.map(e=>e.level))+1 : 1) * 48 + 16 }}>
             {topEvents.map(ev => {
               const pct = getEventPct(ev);
-              const isSel = selectedId === ev.id;
+              const isSel = activeSelectedId === ev.id;
               // level 0 = closest to track (bottom of zone), higher levels = further up
               const bottomOffset = ev.level * 48;
               return (
@@ -737,7 +725,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
             {/* Event dots */}
             {[...topEvents, ...bottomEvents].map(ev => {
               const pct = getEventPct(ev);
-              const isSel = selectedId === ev.id;
+              const isSel = activeSelectedId === ev.id;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
                   style={{ position:"absolute", left:`${pct*100}%`, top:"50%", transform:"translateX(-50%) translateY(-50%)", zIndex:5, cursor:"pointer" }}>
@@ -767,7 +755,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           <div style={{ position:"relative", height: Math.max(1, bottomEvents.length ? Math.max(...bottomEvents.map(e=>e.level))+1 : 1) * 48 + 16, marginTop:4 }}>
             {bottomEvents.map(ev => {
               const pct = getEventPct(ev);
-              const isSel = selectedId === ev.id;
+              const isSel = activeSelectedId === ev.id;
               const topOffset = ev.level * 48;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
@@ -868,11 +856,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               {tasks.map(task => {
                 const assignee = team.find(m => m.id === task.assigneeId) || null;
                 return (
-                  <div key={task.id} onClick={() => setSelectedTask({ eventId: selectedId, task })}
+                  <div key={task.id} onClick={() => setSelectedTask({ eventId: activeSelectedId, task })}
                     style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:12, padding:isMobile ? "12px" : "12px 16px", background:task.done?"rgba(52,199,89,.06)":"rgba(118,118,128,.04)", borderRadius:12, border:"1px solid "+(task.done?"rgba(52,199,89,.25)":COLORS.hairline), cursor:"pointer", transition:"all .15s", flexWrap:isMobile ? "wrap" : "nowrap" }}
                     onMouseEnter={e => e.currentTarget.style.background = task.done?"rgba(52,199,89,.1)":COLORS.accentSoft}
                     onMouseLeave={e => e.currentTarget.style.background = task.done?"rgba(52,199,89,.06)":"rgba(118,118,128,.04)"}>
-                    <button onClick={e => { e.stopPropagation(); toggleTask(selectedId, task.id); }} title="Отметить выполнение" style={{ width:20, height:20, borderRadius:6, border:task.done?"none":"2px solid rgba(15,23,42,.2)", background:task.done?COLORS.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", padding:0 }}>
+                    <button onClick={e => { e.stopPropagation(); toggleTask(activeSelectedId, task.id); }} title="Отметить выполнение" style={{ width:20, height:20, borderRadius:6, border:task.done?"none":"2px solid rgba(15,23,42,.2)", background:task.done?COLORS.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", padding:0 }}>
                       {task.done && <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </button>
                     <span style={{ flex:1, fontSize:14, color:task.done?COLORS.textMuted:COLORS.ink, fontWeight:500, textDecoration:task.done?"line-through":"none" }}>
@@ -888,11 +876,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                     ) : (
                       <span style={{ fontSize:11, color:"#94a3b8", whiteSpace:"nowrap" }}>Не назначен</span>
                     )}
-                    <button onClick={e => { e.stopPropagation(); setSelectedTask({ eventId: selectedId, task }); }} title="Редактировать" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.textMid, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <button onClick={e => { e.stopPropagation(); setSelectedTask({ eventId: activeSelectedId, task }); }} title="Редактировать" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.textMid, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
                       <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5l2 2L5.2 10.8H3.2V8.8L8.5 3.5z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </button>
                     {(currentUser?.role === "admin" || currentUser?.id === task.ownerId) && (
-                      <button onClick={e => { e.stopPropagation(); deleteEventTask(selectedId, task.id); }} title="Удалить" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.redText, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <button onClick={e => { e.stopPropagation(); deleteEventTask(activeSelectedId, task.id); }} title="Удалить" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.redText, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
                         <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                       </button>
                     )}

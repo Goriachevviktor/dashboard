@@ -10,10 +10,6 @@ function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = 
   const [editTask, setEditTask] = useState(null);
   const [tasks, setTasks] = useState(() => Array.isArray(initialTasks) ? initialTasks : []);
 
-  useEffect(() => {
-    if (initialTasks) setTasks(initialTasks);
-  }, [initialTasks]);
-
   const canDeleteTask = task => currentUser?.role === "admin" || currentUser?.id === task.ownerId;
 
   function formatCheckpointDate(value) {

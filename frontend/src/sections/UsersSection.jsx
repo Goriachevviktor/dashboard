@@ -24,7 +24,10 @@ function UsersSection({ api, onError }) {
     }
   }, [api, onError]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
 
   function formatUserActivityDate(value) {

@@ -744,8 +744,6 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
   const colBg     = COLUMN_SURFACE;
   const colDropBg = { "Беклог": "rgba(118,118,128,.1)", "В работе": "rgba(0,122,255,.09)", "Готов": "rgba(52,199,89,.1)", "Архив": "rgba(118,118,128,.1)" };
 
-  useEffect(() => setTasks(initialTasks), [initialTasks]);
-
   function normalizeTaskColumn(column) {
     return column === "Готово" ? "Готов" : column;
   }

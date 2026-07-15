@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
 import { useViewportFlags } from '../utils.js';
 import { TaskDetailModal } from './TasksSection.jsx';
@@ -7,8 +7,6 @@ function TaskArchiveSection({ initialTasks = [], team = [], api, onError, curren
   const { isMobile } = useViewportFlags();
   const [tasks, setTasks] = useState(initialTasks);
   const [editTask, setEditTask] = useState(null);
-
-  useEffect(() => setTasks(initialTasks), [initialTasks]);
 
   const archivedTasks = tasks.filter(task => task.column === "Архив");
   async function updateTask(taskId, payload) {
