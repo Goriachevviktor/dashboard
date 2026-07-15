@@ -39,22 +39,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     return Math.max(0, Math.ceil((endOfYear - referenceDate) / (1000 * 60 * 60 * 24)));
   }, [TODAY_DAY, TODAY_MONTH]);
 
-  const displayEvents = useMemo(
-    () => hideClosedEventsInPwa ? events.filter(event => !isRoadmapEventClosed(event)) : events,
-    [events, eventTasks, hideClosedEventsInPwa]
-  );
+  const displayEvents = hideClosedEventsInPwa ? events.filter(event => !isRoadmapEventClosed(event)) : events;
 
-  const statusFilteredEvents = useMemo(
-    () => !hideClosedEventsInPwa || pwaEventStatusFilter === "all"
+  const statusFilteredEvents = !hideClosedEventsInPwa || pwaEventStatusFilter === "all"
       ? displayEvents
-      : displayEvents.filter(event => roadmapEventTimeStatus(event) === pwaEventStatusFilter),
-    [displayEvents, hideClosedEventsInPwa, pwaEventStatusFilter]
-  );
+      : displayEvents.filter(event => roadmapEventTimeStatus(event) === pwaEventStatusFilter);
 
-  const roadmapEvents = useMemo(
-    () => roadmapTypeFilter === "all" ? statusFilteredEvents : statusFilteredEvents.filter(event => event.type === roadmapTypeFilter),
-    [statusFilteredEvents, roadmapTypeFilter]
-  );
+  const roadmapEvents = roadmapTypeFilter === "all"
+    ? statusFilteredEvents
+    : statusFilteredEvents.filter(event => event.type === roadmapTypeFilter);
 
   function isRoadmapEventClosed(event) {
     if (!event) return true;
@@ -70,15 +63,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     return "upcoming";
   }
 
-  const pwaStatusOptions = useMemo(() => [
+  const pwaStatusOptions = [
     { id: "all", label: "Все", count: displayEvents.length },
     { id: "done", label: "Завершено", count: 0 },
     { id: "overdue", label: "Просрочено", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "overdue").length },
     { id: "today", label: "Сегодня", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "today").length },
     { id: "upcoming", label: "Предстоит", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "upcoming").length },
-  ], [displayEvents, eventTasks, TODAY_DAY, TODAY_MONTH]);
+  ];
 
-  const hiddenPastMonths = useMemo(() => {
+  const hiddenPastMonths = (() => {
     if (showClosedPastMonths) return new Set();
     const hidden = new Set();
     for (let month = 0; month < TODAY_MONTH; month += 1) {
@@ -86,7 +79,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       if (!monthEvents.length || monthEvents.every(isRoadmapEventClosed)) hidden.add(month);
     }
     return hidden;
-  }, [roadmapEvents, eventTasks, showClosedPastMonths, TODAY_MONTH]);
+  })();
 
   const visibleRoadmapEvents = useMemo(
     () => roadmapEvents.filter(event => !hiddenPastMonths.has(event.month)),
@@ -321,7 +314,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     };
   }
 
-  const { topEvents, bottomEvents } = useMemo(() => assignLevels(visibleRoadmapEvents), [visibleRoadmapEvents, todayPct, timelineStartMonth]);
+  const { topEvents, bottomEvents } = assignLevels(visibleRoadmapEvents);
 
   function EventModal({ event, onClose, onSubmit }) {
     const isEdit = Boolean(event);
@@ -345,7 +338,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       const fn = e => { if (e.key === "Escape") onClose(); };
       window.addEventListener("keydown", fn);
       return () => window.removeEventListener("keydown", fn);
-    }, []);
+    }, [onClose]);
 
     function handleSave() {
       if (!title.trim()) { setError("Введите название"); return; }
@@ -457,7 +450,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       const fn = e => { if (e.key === "Escape") onClose(); };
       window.addEventListener("keydown", fn);
       return () => window.removeEventListener("keydown", fn);
-    }, []);
+    }, [onClose]);
 
     function handleSave() {
       if (!title.trim()) { setError("Введите название задачи"); return; }
@@ -541,7 +534,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       const fn = e => { if (e.key === "Escape") onClose(); };
       window.addEventListener("keydown", fn);
       return () => window.removeEventListener("keydown", fn);
-    }, []);
+    }, [onClose]);
 
     function handleSave() {
       if (!title.trim()) { setError("Введите название задачи"); return; }

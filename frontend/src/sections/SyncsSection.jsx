@@ -122,7 +122,7 @@ function SyncsSection({ initialStickers = null, api, onError }) {
       function onKeyDown(e) { if (e.key === "Escape") onClose(); }
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
+    }, [onClose]);
 
     function handleSubmit() {
       if (!topic.trim()) {

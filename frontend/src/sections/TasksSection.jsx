@@ -73,7 +73,7 @@ export function TaskDetailModal({ task, onClose, onSave, team = [], currentUser 
     function onKey(e) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onClose]);
 
   useEffect(() => {
     const scrollY = window.scrollY || window.pageYOffset || 0;
@@ -454,7 +454,7 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onClose]);
 
   const labelStyle = themeLabelStyle;
   const inputStyle = { ...themeInputStyle, transition: "border-color .15s" };

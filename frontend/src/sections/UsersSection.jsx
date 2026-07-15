@@ -88,7 +88,7 @@ function UsersSection({ api, onError }) {
       function onKeyDown(e) { if (e.key === "Escape") onClose(); }
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
+    }, [onClose]);
 
     async function resetPassword() {
       const confirmed = window.confirm(`Сбросить пароль для ${user.email}? Старые сессии пользователя будут завершены.`);

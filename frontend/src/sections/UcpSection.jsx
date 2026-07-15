@@ -35,7 +35,7 @@ function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = 
       function onKeyDown(e) { if (e.key === "Escape") onClose(); }
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
+    }, [onClose]);
 
     function toggleMember(memberId) {
       setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);

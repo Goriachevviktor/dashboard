@@ -51,7 +51,7 @@ function AmbpSection({ initialTopics = [], api, onError }) {
       function onKeyDown(e) { if (e.key === "Escape") onClose(); }
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
+    }, [onClose]);
 
     function numeric(value) {
       return Number(String(value || "0").replace(",", ".")) || 0;
