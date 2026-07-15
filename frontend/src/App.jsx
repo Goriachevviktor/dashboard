@@ -98,12 +98,16 @@ export default function App() {
 
   useEffect(() => {
     if (!section?.id) return;
+    if (requestedActive !== section.id) {
+      const timer = window.setTimeout(() => setActive(section.id), 0);
+      return () => window.clearTimeout(timer);
+    }
     try {
       window.localStorage.setItem(ACTIVE_SECTION_KEY, section.id);
     } catch {
       // Ignore localStorage restrictions.
     }
-  }, [section?.id]);
+  }, [requestedActive, section?.id]);
 
   // Restore session on mount
   useEffect(() => {
