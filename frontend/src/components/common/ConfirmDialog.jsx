@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { COLORS, FONT_STACK, modalOverlayStyle, modalCardStyle, Z } from '../../theme.js';
 
 export function ConfirmDialog({ title, message, itemTitle, confirmText = "Удалить", cancelText = "Отмена", tone = "danger", onCancel, onConfirm }) {
@@ -90,29 +90,4 @@ export function ConfirmDialog({ title, message, itemTitle, confirmText = "Уда
       </div>
     </div>
   );
-}
-
-export function useConfirmDialog() {
-  const [request, setRequest] = useState(null);
-
-  const confirm = useCallback((options) => new Promise(resolve => {
-    setRequest({ ...options, resolve });
-  }), []);
-
-  const close = useCallback((result) => {
-    setRequest(current => {
-      if (current) current.resolve(result);
-      return null;
-    });
-  }, []);
-
-  const dialog = request ? (
-    <ConfirmDialog
-      {...request}
-      onCancel={() => close(false)}
-      onConfirm={() => close(true)}
-    />
-  ) : null;
-
-  return [confirm, dialog];
 }

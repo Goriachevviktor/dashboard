@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
 import AssigneePicker from '../components/common/AssigneePicker.jsx';
-import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useViewportFlags, formatShortDate, isTaskOverdue, findTeamMember } from '../utils.js';
 import { COLORS, FONT_STACK, PRIORITY_COLOR, COLUMN_TEXT, COLUMN_DOT, COLUMN_SURFACE, SHADOWS, RADII, segmentedWrapStyle, segmentedItemStyle, pillButtonStyle, chipStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
 
@@ -9,7 +9,7 @@ import { COLORS, FONT_STACK, PRIORITY_COLOR, COLUMN_TEXT, COLUMN_DOT, COLUMN_SUR
 const LEGACY_PRI_COLOR = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
 const LEGACY_COL_COLOR = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
 
-function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
+export function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const scrollRef = useRef(null);
   const touchStartY = useRef(0);
@@ -73,7 +73,7 @@ function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null 
     function onKey(e) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onClose]);
 
   useEffect(() => {
     const scrollY = window.scrollY || window.pageYOffset || 0;
@@ -454,7 +454,7 @@ function AddTaskModal({ onClose, onAdd, team = [] }) {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onClose]);
 
   const labelStyle = themeLabelStyle;
   const inputStyle = { ...themeInputStyle, transition: "border-color .15s" };
@@ -743,8 +743,6 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
   const colDot    = COLUMN_DOT;
   const colBg     = COLUMN_SURFACE;
   const colDropBg = { "Беклог": "rgba(118,118,128,.1)", "В работе": "rgba(0,122,255,.09)", "Готов": "rgba(52,199,89,.1)", "Архив": "rgba(118,118,128,.1)" };
-
-  useEffect(() => setTasks(initialTasks), [initialTasks]);
 
   function normalizeTaskColumn(column) {
     return column === "Готово" ? "Готов" : column;

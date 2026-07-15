@@ -11,6 +11,93 @@ const LEGACY_STICKER_COLORS = [
   { id: "rose", label: "Розовый", surface: "#fff1f2", accent: "#e11d48", text: "#e11d48", border: "#fecdd3" },
 ];
 
+function CreateStickerModal({ stickerColors, onClose, onCreate }) {
+  const [speaker, setSpeaker] = useState("");
+  const [topic, setTopic] = useState("");
+  const [text, setText] = useState("");
+  const [colorId, setColorId] = useState("sky");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    function onKeyDown(e) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  function handleSubmit() {
+    if (!topic.trim()) {
+      setError("Укажите тему спикера");
+      return;
+    }
+    onCreate({
+      speaker: speaker.trim() || "Без спикера",
+      topic: topic.trim(),
+      text: text.trim(),
+      colorId,
+      width: 236,
+      height: 188,
+    });
+    onClose();
+  }
+
+  const inputStyle = themeInputStyle;
+  const labelStyle = themeLabelStyle;
+
+  return (
+    <div style={modalOverlayStyle(Z.modalNested)}>
+      <div style={{ ...modalCardStyle(500), display: "block" }}>
+        <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid " + COLORS.hairline, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.ink, letterSpacing: -.4 }}>Новый стикер</div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Добавьте карточку для заметок</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", gap: 14 }}>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Спикер</label>
+              <input value={speaker} onChange={e => setSpeaker(e.target.value)} placeholder="Например: Мария С." style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Тема спикера *</label>
+              <input value={topic} onChange={e => { setTopic(e.target.value); setError(""); }} placeholder="О чём будет блок" style={{ ...inputStyle, borderColor: error ? COLORS.redText : "rgba(15,23,42,.08)" }} />
+              {error && <div style={{ fontSize: 12, color: COLORS.redText, marginTop: 4 }}>{error}</div>}
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Заметка</label>
+            <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Ключевые тезисы, вопросы, follow-up..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.55 }} />
+          </div>
+          <div>
+            <label style={labelStyle}>Цвет стикера</label>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {stickerColors.map(color => (
+                <button
+                  key={color.id}
+                  onClick={() => setColorId(color.id)}
+                  title={color.label}
+                  aria-label={color.label}
+                  style={{ width: 28, height: 28, borderRadius: "50%", background: color.accent, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: colorId === color.id ? `0 0 0 2px #fff, 0 0 0 4px ${color.accent}` : "none" }}
+                >
+                  {colorId === color.id && <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.12)", color: COLORS.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>Отмена</button>
+          <button onClick={handleSubmit} style={{ ...pillButtonStyle("primary"), padding: "8px 22px", fontSize: 13 }}>Создать стикер</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function SyncsSection({ initialStickers = null, api, onError }) {
   const { isMobile } = useViewportFlags();
   const MIN_STICKER_WIDTH = 220;
@@ -25,10 +112,6 @@ function SyncsSection({ initialStickers = null, api, onError }) {
     { id: 2, speaker: "Мария С.", topic: "Статус продуктовой команды", text: "Обновить прогресс по MVP и зависимостям от дизайна.", colorId: "mint", x: 286, y: 64, width: 244, height: 196 },
     { id: 3, speaker: "Дмитрий П.", topic: "Технический комитет", text: "Собрать решения по архитектуре и вынести 2 спорных вопроса.", colorId: "amber", x: 558, y: 36, width: 236, height: 188 },
   ]);
-
-  useEffect(() => {
-    if (initialStickers) setStickers(initialStickers);
-  }, [initialStickers]);
 
   function clampStickerPosition(x, y, width = 236, height = 188) {
     const board = boardRef.current;
@@ -115,92 +198,6 @@ function SyncsSection({ initialStickers = null, api, onError }) {
     }
   }
 
-  function CreateStickerModal({ onClose, onCreate }) {
-    const [speaker, setSpeaker] = useState("");
-    const [topic, setTopic] = useState("");
-    const [text, setText] = useState("");
-    const [colorId, setColorId] = useState("sky");
-    const [error, setError] = useState("");
-
-    useEffect(() => {
-      function onKeyDown(e) { if (e.key === "Escape") onClose(); }
-      window.addEventListener("keydown", onKeyDown);
-      return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
-
-    function handleSubmit() {
-      if (!topic.trim()) {
-        setError("Укажите тему спикера");
-        return;
-      }
-      onCreate({
-        speaker: speaker.trim() || "Без спикера",
-        topic: topic.trim(),
-        text: text.trim(),
-        colorId,
-        width: 236,
-        height: 188,
-      });
-      onClose();
-    }
-
-    const inputStyle = themeInputStyle;
-    const labelStyle = themeLabelStyle;
-
-    return (
-      <div style={modalOverlayStyle(Z.modalNested)}>
-        <div style={{ ...modalCardStyle(500), display: "block" }}>
-          <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid " + COLORS.hairline, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.ink, letterSpacing: -.4 }}>Новый стикер</div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Добавьте карточку для заметок</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Спикер</label>
-                <input value={speaker} onChange={e => setSpeaker(e.target.value)} placeholder="Например: Мария С." style={inputStyle} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Тема спикера *</label>
-                <input value={topic} onChange={e => { setTopic(e.target.value); setError(""); }} placeholder="О чём будет блок" style={{ ...inputStyle, borderColor: error ? COLORS.redText : "rgba(15,23,42,.08)" }} />
-                {error && <div style={{ fontSize: 12, color: COLORS.redText, marginTop: 4 }}>{error}</div>}
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Заметка</label>
-              <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Ключевые тезисы, вопросы, follow-up..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.55 }} />
-            </div>
-            <div>
-              <label style={labelStyle}>Цвет стикера</label>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {STICKER_COLORS.map(color => (
-                  <button
-                    key={color.id}
-                    onClick={() => setColorId(color.id)}
-                    title={color.label}
-                    aria-label={color.label}
-                    style={{ width: 28, height: 28, borderRadius: "50%", background: color.accent, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: colorId === color.id ? `0 0 0 2px #fff, 0 0 0 4px ${color.accent}` : "none" }}
-                  >
-                    {colorId === color.id && <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 7.2 5.8 10 11 4" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 999, border: "none", background: "rgba(118,118,128,.12)", color: COLORS.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT_STACK }}>Отмена</button>
-            <button onClick={handleSubmit} style={{ ...pillButtonStyle("primary"), padding: "8px 22px", fontSize: 13 }}>Создать стикер</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   async function addSticker(payload) {
     const board = boardRef.current;
     const baseX = board ? 20 + (stickers.length % 3) * Math.min(264, Math.max(180, board.clientWidth / 3 - 18)) : 24;
@@ -218,7 +215,7 @@ function SyncsSection({ initialStickers = null, api, onError }) {
     const mobileInputStyle = color => ({ width: "100%", border: "1.5px solid " + color.border, outline: "none", background: "rgba(255,255,255,.78)", color: "#1e3a6e", fontFamily: "Inter", fontSize: 16, borderRadius: 12, padding: "10px 12px", boxSizing: "border-box" });
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {showCreate && <CreateStickerModal onClose={() => setShowCreate(false)} onCreate={addSticker} />}
+        {showCreate && <CreateStickerModal key="new" stickerColors={STICKER_COLORS} onClose={() => setShowCreate(false)} onCreate={addSticker} />}
         <button
           onClick={() => setShowCreate(true)}
           style={{ minHeight: 46, borderRadius: 12, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 16, fontWeight: 750, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 2px 8px rgba(37,99,235,.22)" }}
@@ -295,7 +292,7 @@ function SyncsSection({ initialStickers = null, api, onError }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", margin: isMobile ? "-16px" : "-28px", background: "transparent" }}>
-      {showCreate && <CreateStickerModal onClose={() => setShowCreate(false)} onCreate={addSticker} />}
+      {showCreate && <CreateStickerModal key="new" stickerColors={STICKER_COLORS} onClose={() => setShowCreate(false)} onCreate={addSticker} />}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "flex-end", padding: isMobile ? "16px 16px 12px" : "22px 28px 14px", flexShrink: 0 }}>
           <button

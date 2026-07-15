@@ -1,7 +1,116 @@
 import { useState, useEffect } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useViewportFlags } from '../utils.js';
+
+
+function AmbpTopicModal({ topic, isMobile, inputStyle, labelStyle, onClose, onSubmit }) {
+  const isEdit = Boolean(topic);
+  const [title, setTitle] = useState(topic?.title || "");
+  const [description, setDescription] = useState(topic?.description || "");
+  const [planRevenue, setPlanRevenue] = useState(topic?.planRevenue ?? "");
+  const [factRevenue, setFactRevenue] = useState(topic?.factRevenue ?? "");
+  const [funnelLeads, setFunnelLeads] = useState(topic?.funnelLeads ?? "");
+  const [funnelQualified, setFunnelQualified] = useState(topic?.funnelQualified ?? "");
+  const [funnelProposals, setFunnelProposals] = useState(topic?.funnelProposals ?? "");
+  const [funnelContracts, setFunnelContracts] = useState(topic?.funnelContracts ?? "");
+  const [comment, setComment] = useState(topic?.comment || "");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    function onKeyDown(e) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  function numeric(value) {
+    return Number(String(value || "0").replace(",", ".")) || 0;
+  }
+
+  function handleSubmit() {
+    if (!title.trim()) {
+      setError("Введите название темы");
+      return;
+    }
+    onSubmit({
+      ...(topic ? { id: topic.id } : {}),
+      title: title.trim(),
+      description: description.trim(),
+      planRevenue: numeric(planRevenue),
+      factRevenue: numeric(factRevenue),
+      funnelLeads: Math.round(numeric(funnelLeads)),
+      funnelQualified: Math.round(numeric(funnelQualified)),
+      funnelProposals: Math.round(numeric(funnelProposals)),
+      funnelContracts: Math.round(numeric(funnelContracts)),
+      comment: comment.trim(),
+    });
+    onClose();
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 310, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+      <div style={{ width: "min(94vw, 820px)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 20, boxShadow: "0 24px 64px rgba(37,99,235,.22)" }}>
+        <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>{isEdit ? "Редактирование темы АМБП" : "Новая тема АМБП"}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>План, факт, воронка продаж и комментарий по активности</div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+          <div>
+            <label style={labelStyle}>Название темы *</label>
+            <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} placeholder="Например: Импортозамещение ЕСФМ" style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#e2edf8" }} />
+            {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={labelStyle}>Описание темы</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, резерв, зона ответственности..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>План выручки, млн ₽</label>
+              <input value={planRevenue} onChange={e => setPlanRevenue(e.target.value)} inputMode="decimal" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Факт выручки, млн ₽</label>
+              <input value={factRevenue} onChange={e => setFactRevenue(e.target.value)} inputMode="decimal" style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Лиды</label>
+              <input value={funnelLeads} onChange={e => setFunnelLeads(e.target.value)} inputMode="numeric" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Квалификация</label>
+              <input value={funnelQualified} onChange={e => setFunnelQualified(e.target.value)} inputMode="numeric" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Предложения</label>
+              <input value={funnelProposals} onChange={e => setFunnelProposals(e.target.value)} inputMode="numeric" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Договоры</label>
+              <input value={funnelContracts} onChange={e => setFunnelContracts(e.target.value)} inputMode="numeric" style={inputStyle} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Комментарий по активности</label>
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={4} placeholder="Что сделано, что блокирует, какой следующий шаг..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
+          </div>
+        </div>
+        <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
+          <button onClick={handleSubmit} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>{isEdit ? "Сохранить изменения" : "Создать тему"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function AmbpSection({ initialTopics = [], api, onError }) {
   const { isMobile } = useViewportFlags();
@@ -9,10 +118,6 @@ function AmbpSection({ initialTopics = [], api, onError }) {
   const [topics, setTopics] = useState(initialTopics || []);
   const [showCreate, setShowCreate] = useState(false);
   const [editTopic, setEditTopic] = useState(null);
-
-  useEffect(() => {
-    setTopics(initialTopics || []);
-  }, [initialTopics]);
 
   const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc" };
   const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
@@ -36,113 +141,6 @@ function AmbpSection({ initialTopics = [], api, onError }) {
     if (done >= 35) return { color: "#2563eb", bg: "#2563eb18", label: "В работе" };
     if (done > 0) return { color: "#f59e0b", bg: "#f59e0b18", label: "Нужно ускорить" };
     return { color: "#94a3b8", bg: "#e2edf8", label: "Без факта" };
-  }
-
-  function AmbpTopicModal({ topic, onClose, onSubmit }) {
-    const isEdit = Boolean(topic);
-    const [title, setTitle] = useState(topic?.title || "");
-    const [description, setDescription] = useState(topic?.description || "");
-    const [planRevenue, setPlanRevenue] = useState(topic?.planRevenue ?? "");
-    const [factRevenue, setFactRevenue] = useState(topic?.factRevenue ?? "");
-    const [funnelLeads, setFunnelLeads] = useState(topic?.funnelLeads ?? "");
-    const [funnelQualified, setFunnelQualified] = useState(topic?.funnelQualified ?? "");
-    const [funnelProposals, setFunnelProposals] = useState(topic?.funnelProposals ?? "");
-    const [funnelContracts, setFunnelContracts] = useState(topic?.funnelContracts ?? "");
-    const [comment, setComment] = useState(topic?.comment || "");
-    const [error, setError] = useState("");
-
-    useEffect(() => {
-      function onKeyDown(e) { if (e.key === "Escape") onClose(); }
-      window.addEventListener("keydown", onKeyDown);
-      return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
-
-    function numeric(value) {
-      return Number(String(value || "0").replace(",", ".")) || 0;
-    }
-
-    function handleSubmit() {
-      if (!title.trim()) {
-        setError("Введите название темы");
-        return;
-      }
-      onSubmit({
-        ...(topic ? { id: topic.id } : {}),
-        title: title.trim(),
-        description: description.trim(),
-        planRevenue: numeric(planRevenue),
-        factRevenue: numeric(factRevenue),
-        funnelLeads: Math.round(numeric(funnelLeads)),
-        funnelQualified: Math.round(numeric(funnelQualified)),
-        funnelProposals: Math.round(numeric(funnelProposals)),
-        funnelContracts: Math.round(numeric(funnelContracts)),
-        comment: comment.trim(),
-      });
-      onClose();
-    }
-
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 310, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-        <div style={{ width: "min(94vw, 820px)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 20, boxShadow: "0 24px 64px rgba(37,99,235,.22)" }}>
-          <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>{isEdit ? "Редактирование темы АМБП" : "Новая тема АМБП"}</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>План, факт, воронка продаж и комментарий по активности</div>
-            </div>
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
-            <div>
-              <label style={labelStyle}>Название темы *</label>
-              <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} placeholder="Например: Импортозамещение ЕСФМ" style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#e2edf8" }} />
-              {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={labelStyle}>Описание темы</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, резерв, зона ответственности..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-              <div>
-                <label style={labelStyle}>План выручки, млн ₽</label>
-                <input value={planRevenue} onChange={e => setPlanRevenue(e.target.value)} inputMode="decimal" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Факт выручки, млн ₽</label>
-                <input value={factRevenue} onChange={e => setFactRevenue(e.target.value)} inputMode="decimal" style={inputStyle} />
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 14 }}>
-              <div>
-                <label style={labelStyle}>Лиды</label>
-                <input value={funnelLeads} onChange={e => setFunnelLeads(e.target.value)} inputMode="numeric" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Квалификация</label>
-                <input value={funnelQualified} onChange={e => setFunnelQualified(e.target.value)} inputMode="numeric" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Предложения</label>
-                <input value={funnelProposals} onChange={e => setFunnelProposals(e.target.value)} inputMode="numeric" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Договоры</label>
-                <input value={funnelContracts} onChange={e => setFunnelContracts(e.target.value)} inputMode="numeric" style={inputStyle} />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Комментарий по активности</label>
-              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={4} placeholder="Что сделано, что блокирует, какой следующий шаг..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
-            </div>
-          </div>
-          <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
-            <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
-            <button onClick={handleSubmit} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>{isEdit ? "Сохранить изменения" : "Создать тему"}</button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   async function addTopic(topic) {
@@ -197,8 +195,8 @@ function AmbpSection({ initialTopics = [], api, onError }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {confirmDialog}
-      {showCreate && <AmbpTopicModal onClose={() => setShowCreate(false)} onSubmit={addTopic} />}
-      {editTopic && <AmbpTopicModal topic={editTopic} onClose={() => setEditTopic(null)} onSubmit={(topic) => { saveTopic(topic); setEditTopic(null); }} />}
+      {showCreate && <AmbpTopicModal key="new" isMobile={isMobile} inputStyle={inputStyle} labelStyle={labelStyle} onClose={() => setShowCreate(false)} onSubmit={addTopic} />}
+      {editTopic && <AmbpTopicModal key={editTopic.id} topic={editTopic} isMobile={isMobile} inputStyle={inputStyle} labelStyle={labelStyle} onClose={() => setEditTopic(null)} onSubmit={(topic) => { saveTopic(topic); setEditTopic(null); }} />}
 
       <div style={{ background: "#fff", borderRadius: isMobile ? 18 : 20, padding: isMobile ? 14 : 28, boxShadow: "0 1px 3px rgba(37,99,235,.06), 0 10px 28px rgba(37,99,235,.08)", border: "1px solid #dbeafe" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap", marginBottom: isMobile ? 14 : 22 }}>

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
-import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import {
   applyDependencySchedule,

@@ -39,7 +39,7 @@ export default function App() {
   const { isCompact, isMobile } = useViewportFlags();
 
   // ── 10a: Auth state ──
-  const [active, setActive] = useState(() => {
+  const [requestedActive, setActive] = useState(() => {
     try {
       return window.localStorage.getItem(ACTIVE_SECTION_KEY) || "tasks";
     } catch {
@@ -51,15 +51,19 @@ export default function App() {
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardDataRevision, setDashboardDataRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [standalone, setStandalone] = useState(isStandalonePwa());
-  const [pushStatus, setPushStatus] = useState("idle");
+  const [pushStatus, setPushStatus] = useState(() => (
+    "Notification" in window && Notification.permission === "denied" ? "denied" : "idle"
+  ));
 
   const visibleSections = SECTIONS.filter(s => (!s.adminOnly || currentUser?.role === "admin") && !(standalone && s.id === "archive"));
-  const section = visibleSections.find(s => s.id === active) || visibleSections[0];
+  const section = visibleSections.find(s => s.id === requestedActive) || visibleSections[0];
+  const active = section?.id || "tasks";
   const sidebarCollapsed = isCompact ? true : collapsed;
   const topbarDate = formatDashboardDate(new Date());
   const userInitials = initialsFromName(currentUser?.displayName, currentUser?.email);
@@ -93,17 +97,17 @@ export default function App() {
   }, [isMobile]);
 
   useEffect(() => {
-    if (section && section.id !== active) setActive(section.id);
-  }, [active, section]);
-
-  useEffect(() => {
     if (!section?.id) return;
+    if (requestedActive !== section.id) {
+      const timer = window.setTimeout(() => setActive(section.id), 0);
+      return () => window.clearTimeout(timer);
+    }
     try {
       window.localStorage.setItem(ACTIVE_SECTION_KEY, section.id);
     } catch {
       // Ignore localStorage restrictions.
     }
-  }, [section?.id]);
+  }, [requestedActive, section?.id]);
 
   // Restore session on mount
   useEffect(() => {
@@ -145,25 +149,25 @@ export default function App() {
       setLoading(true);
       try {
         const data = await api.bootstrap();
-        if (!cancelled) setDashboardData(normalizeDashboardData(data, currentUser));
+        if (!cancelled) {
+          setDashboardData(normalizeDashboardData(data, currentUser));
+          setDashboardDataRevision(revision => revision + 1);
+        }
       } catch (error) {
-        if (!cancelled) { setDashboardData(normalizeDashboardData({}, currentUser)); onError(error); }
+        if (!cancelled) {
+          setDashboardData(normalizeDashboardData({}, currentUser));
+          setDashboardDataRevision(revision => revision + 1);
+          onError(error);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [api, onError]);
+  }, [accessToken, api, currentUser, onError]);
 
-  // Push notifications
-  useEffect(() => {
-    if (!accessToken || !("Notification" in window)) return;
-    if (Notification.permission === "granted") enablePush({ silent: true });
-    else if (Notification.permission === "denied") setPushStatus("denied");
-  }, [accessToken, api]);
-
-  async function enablePush({ silent = false } = {}) {
+  const enablePush = useCallback(async ({ silent = false } = {}) => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       setPushStatus("unsupported");
       if (!silent) onError(new Error("Push-уведомления не поддерживаются"));
@@ -185,7 +189,15 @@ export default function App() {
       setPushStatus("error");
       if (!silent) onError(error);
     }
-  }
+  }, [api, onError]);
+
+  // Push notifications
+  useEffect(() => {
+    if (!accessToken || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    const timer = window.setTimeout(() => { void enablePush({ silent: true }); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, enablePush]);
 
   function handleLogin(result) {
     setLoading(true);
@@ -325,7 +337,7 @@ export default function App() {
           {loading || !dashboardData ? (
             <DashboardSkeleton />
           ) : (
-            <ErrorBoundary key={section.id}>
+            <ErrorBoundary key={`${section.id}:${dashboardDataRevision}`}>
               {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser })}
             </ErrorBoundary>
           )}

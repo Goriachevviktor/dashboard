@@ -1,11 +1,290 @@
 import { useState, useEffect, useMemo } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import { useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
+import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useViewportFlags, getRoadmapToday, formatShortDate, isStandalonePwa, ROADMAP_YEAR } from '../utils.js';
 import { COLORS, FONT_STACK, EVENT_TYPE_COLOR, SHADOWS, RADII, pillButtonStyle, chipStyle, modalOverlayStyle, modalCardStyle, modalCloseButtonStyle, inputStyle as themeInputStyle, labelStyle as themeLabelStyle, Z } from '../theme.js';
 
 // мобильная ветка, удалить при рестайле мобильной
 const LEGACY_TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b","УПЦ":"#0f766e","План развития":"#7c3aed" };
+
+function EventModal({ event, team, currentUser, todayMonth, todayDay, typeOptions, typeColor, onClose, onSubmit }) {
+  const isEdit = Boolean(event);
+  const [title, setTitle] = useState(event?.title || "");
+  const [description, setDescription] = useState(event?.description || "");
+  const [type,  setType]  = useState(event?.type || "Совещание");
+  const initialMonth = event?.month ?? todayMonth;
+  const initialDay = event?.day ?? todayDay;
+  const formatEventDate = (monthIndex, dayValue) => `${ROADMAP_YEAR}-${String(Number(monthIndex) + 1).padStart(2, "0")}-${String(Number(dayValue)).padStart(2, "0")}`;
+  const [eventDate, setEventDate] = useState(formatEventDate(initialMonth, initialDay));
+  const [done, setDone] = useState(Boolean(event?.done));
+  const [memberIds, setMemberIds] = useState(event?.memberIds || []);
+  const [ownerId, setOwnerId] = useState(event?.ownerId || currentUser?.id || null);
+  const [error, setError] = useState("");
+
+  function toggleMember(memberId) {
+    setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
+  }
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  function handleSave() {
+    if (!title.trim()) { setError("Введите название"); return; }
+    if (!eventDate) { setError("Выберите дату события"); return; }
+    const parsedDate = new Date(eventDate + "T00:00:00");
+    if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
+    onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds, ownerId });
+    onClose();
+  }
+
+  const lbl = themeLabelStyle;
+  const inp = themeInputStyle;
+
+  return (
+    <div style={modalOverlayStyle(Z.modal)}>
+      <div style={{ ...modalCardStyle(520), display:"block", overflowY:"auto" }}>
+        <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
+            <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>{isEdit ? "Измените поля события" : "Добавьте событие на дорожную карту"}</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <label style={lbl}>Название события *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
+              placeholder="Например: Запуск нового продукта"
+              style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
+              onFocus={e => e.target.style.borderColor = "#93c5fd"}
+              onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
+            {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={lbl}>Тип события</label>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {typeOptions.map(t => (
+                <button key={t} onClick={() => setType(t)} style={{ ...chipStyle(type===t, typeColor[t]), gap:5, fontSize:12, transition:"all .15s" }}>
+                  <span style={{ width:7, height:7, borderRadius:"50%", background:typeColor[t], flexShrink:0 }}></span>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, цель или важные детали события" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
+          </div>
+          <div>
+            <label style={lbl}>Дата события</label>
+            <input type="date" value={eventDate} min={`${ROADMAP_YEAR}-01-01`} max={`${ROADMAP_YEAR}-12-31`} onChange={e => setEventDate(e.target.value)} style={{ ...inp, cursor:"pointer" }}
+              onFocus={e => e.target.style.borderColor = "#93c5fd"}
+              onBlur={e => e.target.style.borderColor = "#e2edf8"} />
+          </div>
+          {isEdit && currentUser?.role === "admin" && (
+            <div>
+              <label style={lbl}>Автор события</label>
+              <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer" }}>
+                <option value="">— Не указан —</option>
+                {team.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label style={lbl}>Участники события</label>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {team.map(member => {
+                const active = memberIds.includes(member.id);
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => toggleMember(member.id)}
+                    style={{ ...chipStyle(active), gap:8, padding:"6px 12px" }}
+                  >
+                    <span style={{ width:22, height:22, borderRadius:"50%", background:member.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{member.initials}</span>
+                    <span style={{ fontSize:12, fontWeight:active ? 600 : 400 }}>{member.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
+            Событие завершено
+          </label>
+        </div>
+        <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>{isEdit ? "Сохранить" : "Добавить событие"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function AddTaskModal({ eventId, events, team, typeColor, onClose, onAdd }) {
+  const [title,      setTitle]      = useState("");
+  const [description, setDescription] = useState("");
+  const [assigneeId, setAssigneeId] = useState(null);
+  const [due,        setDue]        = useState("");
+  const [error,      setError]      = useState("");
+  const ev = events.find(e => e.id === eventId);
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  function handleSave() {
+    if (!title.trim()) { setError("Введите название задачи"); return; }
+    onAdd(eventId, { title: title.trim(), description: description.trim(), assigneeId, due });
+    onClose();
+  }
+
+  const lbl = themeLabelStyle;
+  const inp = themeInputStyle;
+  const assignee = team.find(m => m.id === assigneeId) || null;
+
+  return (
+    <div style={modalOverlayStyle(Z.modal)}>
+      <div style={{ ...modalCardStyle(460), display:"block" }}>
+        <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:12, color:"#94a3b8", marginBottom:2 }}>К событию: <span style={{ color: ev ? typeColor[ev.type] : "#1e3a6e", fontWeight:600 }}>{ev?.title}</span></div>
+            <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Новая задача</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <label style={lbl}>Название задачи *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
+              placeholder="Что нужно сделать?"
+              style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
+              onFocus={e => e.target.style.borderColor = "#93c5fd"}
+              onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
+            {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
+          </div>
+          <div style={{ display:"flex", gap:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Исполнитель</label>
+              <div style={{ position:"relative" }}>
+                <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)}
+                  style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
+                  <option value="">— Не назначен —</option>
+                  {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                {assignee && (
+                  <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>
+                )}
+              </div>
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Срок выполнения</label>
+              <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp}
+                onFocus={e => e.target.style.borderColor = "#93c5fd"}
+                onBlur={e => e.target.style.borderColor = "#e2edf8"} />
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст задачи, ожидания или результат" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
+          </div>
+        </div>
+        <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Добавить задачу</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function EventTaskModal({ eventId, task, team, onClose, onSave }) {
+  const [title, setTitle] = useState(task.title || "");
+  const [description, setDescription] = useState(task.description || "");
+  const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
+  const [due, setDue] = useState(task.due || "");
+  const [done, setDone] = useState(Boolean(task.done));
+  const [error, setError] = useState("");
+  const assignee = team.find(m => m.id === assigneeId) || null;
+  const lbl = themeLabelStyle;
+  const inp = themeInputStyle;
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  function handleSave() {
+    if (!title.trim()) { setError("Введите название задачи"); return; }
+    onSave(eventId, task.id, { title: title.trim(), description: description.trim(), assigneeId, due, done });
+  }
+
+  return (
+    <div style={modalOverlayStyle(Z.modalNested)}>
+      <div style={{ ...modalCardStyle(560), display:"block", overflowY:"auto" }}>
+        <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Задача события</div>
+            <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>Описание, исполнитель и срок</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <label style={lbl}>Название задачи *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }} style={{ ...inp, borderColor:error ? "#ef4444" : "#e2edf8" }} />
+            {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={lbl}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5} placeholder="Добавьте описание задачи..." style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:120, maxHeight:320 }} />
+          </div>
+          <div style={{ display:"flex", gap:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Исполнитель</label>
+              <div style={{ position:"relative" }}>
+                <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
+                  <option value="">— Не назначен —</option>
+                  {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                {assignee && <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>}
+              </div>
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Срок</label>
+              <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
+            Задача выполнена
+          </label>
+        </div>
+        <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Сохранить</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function EventsSection({ initialEvents = null, initialEventTasks = null, team = [], api, onError, currentUser = null }) {
   const { isCompact, isMobile } = useViewportFlags();
@@ -30,16 +309,6 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const [pwaEventStatusFilter, setPwaEventStatusFilter] = useState("all");
   const [showClosedPastMonths, setShowClosedPastMonths] = useState(false);
 
-  useEffect(() => {
-    if (!Array.isArray(initialEvents)) return;
-    setEvents(initialEvents);
-    setSelectedId(current => initialEvents.some(item => item.id === current) ? current : (initialEvents[0]?.id || null));
-  }, [initialEvents]);
-
-  useEffect(() => {
-    if (initialEventTasks) setEventTasks(initialEventTasks);
-  }, [initialEventTasks]);
-
   const daysToYearEnd = useMemo(() => {
     const now = new Date();
     const referenceDate = now.getFullYear() === ROADMAP_YEAR
@@ -49,22 +318,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     return Math.max(0, Math.ceil((endOfYear - referenceDate) / (1000 * 60 * 60 * 24)));
   }, [TODAY_DAY, TODAY_MONTH]);
 
-  const displayEvents = useMemo(
-    () => hideClosedEventsInPwa ? events.filter(event => !isRoadmapEventClosed(event)) : events,
-    [events, eventTasks, hideClosedEventsInPwa]
-  );
+  const displayEvents = hideClosedEventsInPwa ? events.filter(event => !isRoadmapEventClosed(event)) : events;
 
-  const statusFilteredEvents = useMemo(
-    () => !hideClosedEventsInPwa || pwaEventStatusFilter === "all"
+  const statusFilteredEvents = !hideClosedEventsInPwa || pwaEventStatusFilter === "all"
       ? displayEvents
-      : displayEvents.filter(event => roadmapEventTimeStatus(event) === pwaEventStatusFilter),
-    [displayEvents, hideClosedEventsInPwa, pwaEventStatusFilter]
-  );
+      : displayEvents.filter(event => roadmapEventTimeStatus(event) === pwaEventStatusFilter);
 
-  const roadmapEvents = useMemo(
-    () => roadmapTypeFilter === "all" ? statusFilteredEvents : statusFilteredEvents.filter(event => event.type === roadmapTypeFilter),
-    [statusFilteredEvents, roadmapTypeFilter]
-  );
+  const roadmapEvents = roadmapTypeFilter === "all"
+    ? statusFilteredEvents
+    : statusFilteredEvents.filter(event => event.type === roadmapTypeFilter);
 
   function isRoadmapEventClosed(event) {
     if (!event) return true;
@@ -80,15 +342,15 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     return "upcoming";
   }
 
-  const pwaStatusOptions = useMemo(() => [
+  const pwaStatusOptions = [
     { id: "all", label: "Все", count: displayEvents.length },
     { id: "done", label: "Завершено", count: 0 },
     { id: "overdue", label: "Просрочено", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "overdue").length },
     { id: "today", label: "Сегодня", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "today").length },
     { id: "upcoming", label: "Предстоит", count: displayEvents.filter(event => roadmapEventTimeStatus(event) === "upcoming").length },
-  ], [displayEvents, eventTasks, TODAY_DAY, TODAY_MONTH]);
+  ];
 
-  const hiddenPastMonths = useMemo(() => {
+  const hiddenPastMonths = (() => {
     if (showClosedPastMonths) return new Set();
     const hidden = new Set();
     for (let month = 0; month < TODAY_MONTH; month += 1) {
@@ -96,7 +358,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
       if (!monthEvents.length || monthEvents.every(isRoadmapEventClosed)) hidden.add(month);
     }
     return hidden;
-  }, [roadmapEvents, eventTasks, showClosedPastMonths, TODAY_MONTH]);
+  })();
 
   const visibleRoadmapEvents = useMemo(
     () => roadmapEvents.filter(event => !hiddenPastMonths.has(event.month)),
@@ -114,14 +376,12 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
   const clampTimelinePct = value => Math.max(0, Math.min(1, value));
   const todayPct = clampTimelinePct((TODAY_MONTH - timelineStartMonth + (TODAY_DAY - 1) / 31) / timelineMonthSpan);
 
-  const selectedEvent = visibleRoadmapEvents.find(e => e.id === selectedId) || null;
+  const activeSelectedId = visibleRoadmapEvents.some(event => event.id === selectedId)
+    ? selectedId
+    : (visibleRoadmapEvents[0]?.id || null);
+  const selectedEvent = visibleRoadmapEvents.find(e => e.id === activeSelectedId) || null;
   const selectedEventGenerated = Boolean(selectedEvent?.generated);
-  const tasks = (!selectedEventGenerated && selectedId && eventTasks[selectedId]) || [];
-
-  useEffect(() => {
-    if (!visibleRoadmapEvents.length) return;
-    if (!visibleRoadmapEvents.some(event => event.id === selectedId)) setSelectedId(visibleRoadmapEvents[0].id);
-  }, [visibleRoadmapEvents, selectedId]);
+  const tasks = (!selectedEventGenerated && activeSelectedId && eventTasks[activeSelectedId]) || [];
 
   async function addEvent(data) {
     try {
@@ -333,292 +593,16 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
     };
   }
 
-  const { topEvents, bottomEvents } = useMemo(() => assignLevels(visibleRoadmapEvents), [visibleRoadmapEvents, todayPct, timelineStartMonth]);
-
-  function EventModal({ event, onClose, onSubmit }) {
-    const isEdit = Boolean(event);
-    const [title, setTitle] = useState(event?.title || "");
-    const [description, setDescription] = useState(event?.description || "");
-    const [type,  setType]  = useState(event?.type || "Совещание");
-    const initialMonth = event?.month ?? TODAY_MONTH;
-    const initialDay = event?.day ?? TODAY_DAY;
-    const formatEventDate = (monthIndex, dayValue) => `${ROADMAP_YEAR}-${String(Number(monthIndex) + 1).padStart(2, "0")}-${String(Number(dayValue)).padStart(2, "0")}`;
-    const [eventDate, setEventDate] = useState(formatEventDate(initialMonth, initialDay));
-    const [done, setDone] = useState(Boolean(event?.done));
-    const [memberIds, setMemberIds] = useState(event?.memberIds || []);
-    const [ownerId, setOwnerId] = useState(event?.ownerId || currentUser?.id || null);
-    const [error, setError] = useState("");
-
-    function toggleMember(memberId) {
-      setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
-    }
-
-    useEffect(() => {
-      const fn = e => { if (e.key === "Escape") onClose(); };
-      window.addEventListener("keydown", fn);
-      return () => window.removeEventListener("keydown", fn);
-    }, []);
-
-    function handleSave() {
-      if (!title.trim()) { setError("Введите название"); return; }
-      if (!eventDate) { setError("Выберите дату события"); return; }
-      const parsedDate = new Date(eventDate + "T00:00:00");
-      if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
-      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds, ownerId });
-      onClose();
-    }
-
-    const lbl = themeLabelStyle;
-    const inp = themeInputStyle;
-
-    return (
-      <div style={modalOverlayStyle(Z.modal)}>
-        <div style={{ ...modalCardStyle(520), display:"block", overflowY:"auto" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div>
-              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
-              <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>{isEdit ? "Измените поля события" : "Добавьте событие на дорожную карту"}</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={lbl}>Название события *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
-                placeholder="Например: Запуск нового продукта"
-                style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
-                onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
-              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={lbl}>Тип события</label>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                {TYPE_OPTIONS.map(t => (
-                  <button key={t} onClick={() => setType(t)} style={{ ...chipStyle(type===t, TYPE_COLOR[t]), gap:5, fontSize:12, transition:"all .15s" }}>
-                    <span style={{ width:7, height:7, borderRadius:"50%", background:TYPE_COLOR[t], flexShrink:0 }}></span>
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label style={lbl}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, цель или важные детали события" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
-            </div>
-            <div>
-              <label style={lbl}>Дата события</label>
-              <input type="date" value={eventDate} min={`${ROADMAP_YEAR}-01-01`} max={`${ROADMAP_YEAR}-12-31`} onChange={e => setEventDate(e.target.value)} style={{ ...inp, cursor:"pointer" }}
-                onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                onBlur={e => e.target.style.borderColor = "#e2edf8"} />
-            </div>
-            {isEdit && currentUser?.role === "admin" && (
-              <div>
-                <label style={lbl}>Автор события</label>
-                <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer" }}>
-                  <option value="">— Не указан —</option>
-                  {team.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
-                </select>
-              </div>
-            )}
-            <div>
-              <label style={lbl}>Участники события</label>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {team.map(member => {
-                  const active = memberIds.includes(member.id);
-                  return (
-                    <button
-                      key={member.id}
-                      type="button"
-                      onClick={() => toggleMember(member.id)}
-                      style={{ ...chipStyle(active), gap:8, padding:"6px 12px" }}
-                    >
-                      <span style={{ width:22, height:22, borderRadius:"50%", background:member.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{member.initials}</span>
-                      <span style={{ fontSize:12, fontWeight:active ? 600 : 400 }}>{member.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
-              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
-              Событие завершено
-            </label>
-          </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
-            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>{isEdit ? "Сохранить" : "Добавить событие"}</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const { topEvents, bottomEvents } = assignLevels(visibleRoadmapEvents);
 
   // Add Task Modal
-  function AddTaskModal({ eventId, onClose, onAdd }) {
-    const [title,      setTitle]      = useState("");
-    const [description, setDescription] = useState("");
-    const [assigneeId, setAssigneeId] = useState(null);
-    const [due,        setDue]        = useState("");
-    const [error,      setError]      = useState("");
-    const ev = events.find(e => e.id === eventId);
-
-    useEffect(() => {
-      const fn = e => { if (e.key === "Escape") onClose(); };
-      window.addEventListener("keydown", fn);
-      return () => window.removeEventListener("keydown", fn);
-    }, []);
-
-    function handleSave() {
-      if (!title.trim()) { setError("Введите название задачи"); return; }
-      onAdd(eventId, { title: title.trim(), description: description.trim(), assigneeId, due });
-      onClose();
-    }
-
-    const lbl = themeLabelStyle;
-    const inp = themeInputStyle;
-    const assignee = team.find(m => m.id === assigneeId) || null;
-
-    return (
-      <div style={modalOverlayStyle(Z.modal)}>
-        <div style={{ ...modalCardStyle(460), display:"block" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div>
-              <div style={{ fontSize:12, color:"#94a3b8", marginBottom:2 }}>К событию: <span style={{ color: ev ? TYPE_COLOR[ev.type] : "#1e3a6e", fontWeight:600 }}>{ev?.title}</span></div>
-              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Новая задача</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={lbl}>Название задачи *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
-                placeholder="Что нужно сделать?"
-                style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
-                onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
-              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
-            </div>
-            <div style={{ display:"flex", gap:14 }}>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Исполнитель</label>
-                <div style={{ position:"relative" }}>
-                  <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)}
-                    style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
-                    <option value="">— Не назначен —</option>
-                    {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  {assignee && (
-                    <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>
-                  )}
-                </div>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Срок выполнения</label>
-                <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp}
-                  onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                  onBlur={e => e.target.style.borderColor = "#e2edf8"} />
-              </div>
-            </div>
-            <div>
-              <label style={lbl}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст задачи, ожидания или результат" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
-            </div>
-          </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
-            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Добавить задачу</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function EventTaskModal({ eventId, task, onClose, onSave }) {
-    const [title, setTitle] = useState(task.title || "");
-    const [description, setDescription] = useState(task.description || "");
-    const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
-    const [due, setDue] = useState(task.due || "");
-    const [done, setDone] = useState(Boolean(task.done));
-    const [error, setError] = useState("");
-    const assignee = team.find(m => m.id === assigneeId) || null;
-    const lbl = themeLabelStyle;
-    const inp = themeInputStyle;
-
-    useEffect(() => {
-      const fn = e => { if (e.key === "Escape") onClose(); };
-      window.addEventListener("keydown", fn);
-      return () => window.removeEventListener("keydown", fn);
-    }, []);
-
-    function handleSave() {
-      if (!title.trim()) { setError("Введите название задачи"); return; }
-      onSave(eventId, task.id, { title: title.trim(), description: description.trim(), assigneeId, due, done });
-    }
-
-    return (
-      <div style={modalOverlayStyle(Z.modalNested)}>
-        <div style={{ ...modalCardStyle(560), display:"block", overflowY:"auto" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div>
-              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Задача события</div>
-              <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>Описание, исполнитель и срок</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={lbl}>Название задачи *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }} style={{ ...inp, borderColor:error ? "#ef4444" : "#e2edf8" }} />
-              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={lbl}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5} placeholder="Добавьте описание задачи..." style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:120, maxHeight:320 }} />
-            </div>
-            <div style={{ display:"flex", gap:14 }}>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Исполнитель</label>
-                <div style={{ position:"relative" }}>
-                  <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
-                    <option value="">— Не назначен —</option>
-                    {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  {assignee && <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>}
-                </div>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Срок</label>
-                <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} />
-              </div>
-            </div>
-            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
-              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
-              Задача выполнена
-            </label>
-          </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
-            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Сохранить</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
       {confirmDialog}
-      {showAddEvent && <EventModal onClose={() => setShowAddEvent(false)} onSubmit={addEvent} />}
-      {editEvent && <EventModal event={editEvent} onClose={() => setEditEvent(null)} onSubmit={(patch) => { saveEvent(editEvent.id, patch); setEditEvent(null); }} />}
-      {showAddTask && selectedEvent && <AddTaskModal eventId={selectedId} onClose={() => setShowAddTask(false)} onAdd={addTask} />}
-      {selectedTask && <EventTaskModal eventId={selectedTask.eventId} task={selectedTask.task} onClose={() => setSelectedTask(null)} onSave={saveEventTask} />}
+      {showAddEvent && <EventModal key="new" team={team} currentUser={currentUser} todayMonth={TODAY_MONTH} todayDay={TODAY_DAY} typeOptions={TYPE_OPTIONS} typeColor={TYPE_COLOR} onClose={() => setShowAddEvent(false)} onSubmit={addEvent} />}
+      {editEvent && <EventModal key={editEvent.id} event={editEvent} team={team} currentUser={currentUser} todayMonth={TODAY_MONTH} todayDay={TODAY_DAY} typeOptions={TYPE_OPTIONS} typeColor={TYPE_COLOR} onClose={() => setEditEvent(null)} onSubmit={(patch) => { saveEvent(editEvent.id, patch); setEditEvent(null); }} />}
+      {showAddTask && selectedEvent && <AddTaskModal key={activeSelectedId} eventId={activeSelectedId} events={events} team={team} typeColor={TYPE_COLOR} onClose={() => setShowAddTask(false)} onAdd={addTask} />}
+      {selectedTask && <EventTaskModal key={selectedTask.task.id} eventId={selectedTask.eventId} team={team} task={selectedTask.task} onClose={() => setSelectedTask(null)} onSave={saveEventTask} />}
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap:isMobile ? 6 : 14 }}>
@@ -676,7 +660,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               .slice()
               .sort((a, b) => a.month === b.month ? a.day - b.day : a.month - b.month)
               .map(ev => {
-                const isSel = selectedId === ev.id;
+                const isSel = activeSelectedId === ev.id;
                 return (
                   <button
                     key={ev.id}
@@ -705,7 +689,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           <div style={{ position:"relative", height: Math.max(1, topEvents.length ? Math.max(...topEvents.map(e=>e.level))+1 : 1) * 48 + 16 }}>
             {topEvents.map(ev => {
               const pct = getEventPct(ev);
-              const isSel = selectedId === ev.id;
+              const isSel = activeSelectedId === ev.id;
               // level 0 = closest to track (bottom of zone), higher levels = further up
               const bottomOffset = ev.level * 48;
               return (
@@ -737,7 +721,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
             {/* Event dots */}
             {[...topEvents, ...bottomEvents].map(ev => {
               const pct = getEventPct(ev);
-              const isSel = selectedId === ev.id;
+              const isSel = activeSelectedId === ev.id;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
                   style={{ position:"absolute", left:`${pct*100}%`, top:"50%", transform:"translateX(-50%) translateY(-50%)", zIndex:5, cursor:"pointer" }}>
@@ -767,7 +751,7 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
           <div style={{ position:"relative", height: Math.max(1, bottomEvents.length ? Math.max(...bottomEvents.map(e=>e.level))+1 : 1) * 48 + 16, marginTop:4 }}>
             {bottomEvents.map(ev => {
               const pct = getEventPct(ev);
-              const isSel = selectedId === ev.id;
+              const isSel = activeSelectedId === ev.id;
               const topOffset = ev.level * 48;
               return (
                 <div key={ev.id} onClick={() => setSelectedId(ev.id)}
@@ -868,11 +852,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
               {tasks.map(task => {
                 const assignee = team.find(m => m.id === task.assigneeId) || null;
                 return (
-                  <div key={task.id} onClick={() => setSelectedTask({ eventId: selectedId, task })}
+                  <div key={task.id} onClick={() => setSelectedTask({ eventId: activeSelectedId, task })}
                     style={{ display:"flex", alignItems:isMobile ? "flex-start" : "center", gap:12, padding:isMobile ? "12px" : "12px 16px", background:task.done?"rgba(52,199,89,.06)":"rgba(118,118,128,.04)", borderRadius:12, border:"1px solid "+(task.done?"rgba(52,199,89,.25)":COLORS.hairline), cursor:"pointer", transition:"all .15s", flexWrap:isMobile ? "wrap" : "nowrap" }}
                     onMouseEnter={e => e.currentTarget.style.background = task.done?"rgba(52,199,89,.1)":COLORS.accentSoft}
                     onMouseLeave={e => e.currentTarget.style.background = task.done?"rgba(52,199,89,.06)":"rgba(118,118,128,.04)"}>
-                    <button onClick={e => { e.stopPropagation(); toggleTask(selectedId, task.id); }} title="Отметить выполнение" style={{ width:20, height:20, borderRadius:6, border:task.done?"none":"2px solid rgba(15,23,42,.2)", background:task.done?COLORS.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", padding:0 }}>
+                    <button onClick={e => { e.stopPropagation(); toggleTask(activeSelectedId, task.id); }} title="Отметить выполнение" style={{ width:20, height:20, borderRadius:6, border:task.done?"none":"2px solid rgba(15,23,42,.2)", background:task.done?COLORS.green:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", padding:0 }}>
                       {task.done && <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </button>
                     <span style={{ flex:1, fontSize:14, color:task.done?COLORS.textMuted:COLORS.ink, fontWeight:500, textDecoration:task.done?"line-through":"none" }}>
@@ -888,11 +872,11 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
                     ) : (
                       <span style={{ fontSize:11, color:"#94a3b8", whiteSpace:"nowrap" }}>Не назначен</span>
                     )}
-                    <button onClick={e => { e.stopPropagation(); setSelectedTask({ eventId: selectedId, task }); }} title="Редактировать" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.textMid, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <button onClick={e => { e.stopPropagation(); setSelectedTask({ eventId: activeSelectedId, task }); }} title="Редактировать" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.textMid, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
                       <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5l2 2L5.2 10.8H3.2V8.8L8.5 3.5z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </button>
                     {(currentUser?.role === "admin" || currentUser?.id === task.ownerId) && (
-                      <button onClick={e => { e.stopPropagation(); deleteEventTask(selectedId, task.id); }} title="Удалить" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.redText, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <button onClick={e => { e.stopPropagation(); deleteEventTask(activeSelectedId, task.id); }} title="Удалить" style={{ width:28, height:28, borderRadius:999, border:"none", background:"rgba(118,118,128,.08)", color:COLORS.redText, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
                         <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 4h8M5 4V3h4v1m-5 2 .4 5h5.2L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                       </button>
                     )}

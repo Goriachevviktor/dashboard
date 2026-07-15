@@ -1,6 +1,106 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useViewportFlags, initialsFromName, userColor } from '../utils.js';
 
+function UserEditModal({ user, api, onError, onUserReset, onClose, onSave }) {
+  const [displayName, setDisplayName] = useState(user.displayName || "");
+  const [nextRole, setNextRole] = useState(user.role || "member");
+  const [isActive, setIsActive] = useState(user.isActive !== false);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [error, setError] = useState("");
+  const color = userColor(user);
+  const initials = initialsFromName(displayName, user.email);
+  const inputStyle = { width: "100%", height: 40, border: "1.5px solid #dbeafe", borderRadius: 8, padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none", background: "#fff" };
+  const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 7 };
+
+  useEffect(() => {
+    function onKeyDown(e) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  async function resetPassword() {
+    const confirmed = window.confirm(`Сбросить пароль для ${user.email}? Старые сессии пользователя будут завершены.`);
+    if (!confirmed) return;
+    setResettingPassword(true);
+    setTemporaryPassword("");
+    try {
+      const result = await api.resetUserPassword(user.id);
+      setTemporaryPassword(result.temporaryPassword || "");
+      if (result.user) onUserReset(result.user);
+    } catch (err) {
+      onError(err);
+    } finally {
+      setResettingPassword(false);
+    }
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!displayName.trim()) {
+      setError("Введите имя пользователя");
+      return;
+    }
+    onSave(user.id, { displayName: displayName.trim(), role: nextRole, isActive });
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 330, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 20 }}>
+      <form onSubmit={handleSubmit} style={{ width: "min(92vw, 460px)", background: "#fff", borderRadius: 16, boxShadow: "0 24px 64px rgba(37,99,235,.22)", overflow: "hidden" }}>
+        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 42, height: 42, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 800 }}>{initials}</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>Карточка пользователя</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{user.email}</div>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", color: "#64748b", cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+          <div>
+            <label style={labelStyle}>Имя</label>
+            <input value={displayName} onChange={e => { setDisplayName(e.target.value); setError(""); }} style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#dbeafe" }} />
+            {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 5 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={labelStyle}>Роль</label>
+            <select value={nextRole} onChange={e => setNextRole(e.target.value)} style={inputStyle}>
+              <option value="member">Участник</option>
+              <option value="viewer">Наблюдатель</option>
+              <option value="admin">Администратор</option>
+            </select>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600, color: "#475569" }}>
+            <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+            Активный пользователь
+          </label>
+          <div style={{ padding: 12, borderRadius: 10, border: "1px solid #fee2e2", background: "#fff7f7", display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 750, color: "#991b1b" }}>Сброс пароля</div>
+                <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>Создаёт временный пароль и завершает активные сессии пользователя.</div>
+              </div>
+              <button type="button" onClick={resetPassword} disabled={resettingPassword} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, fontWeight: 750, cursor: resettingPassword ? "default" : "pointer", fontFamily: "Inter" }}>{resettingPassword ? "Сбрасываю..." : "Сбросить"}</button>
+            </div>
+            {temporaryPassword && (
+              <div>
+                <label style={{ ...labelStyle, color: "#991b1b" }}>Временный пароль</label>
+                <input readOnly value={temporaryPassword} onFocus={e => e.target.select()} style={{ ...inputStyle, borderColor: "#fecaca", background: "#fff" }} />
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ padding: "16px 24px 24px", borderTop: "1px solid #f0f6ff", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
+          <button type="submit" style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.25)" }}>Сохранить</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+
 function UsersSection({ api, onError }) {
   const { isMobile } = useViewportFlags();
   const [users, setUsers] = useState([]);
@@ -24,7 +124,10 @@ function UsersSection({ api, onError }) {
     }
   }, [api, onError]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
 
   function formatUserActivityDate(value) {
@@ -69,108 +172,9 @@ function UsersSection({ api, onError }) {
     }
   }
 
-  function UserEditModal({ user, onClose, onSave }) {
-    const [displayName, setDisplayName] = useState(user.displayName || "");
-    const [nextRole, setNextRole] = useState(user.role || "member");
-    const [isActive, setIsActive] = useState(user.isActive !== false);
-    const [temporaryPassword, setTemporaryPassword] = useState("");
-    const [resettingPassword, setResettingPassword] = useState(false);
-    const [error, setError] = useState("");
-    const color = userColor(user);
-    const initials = initialsFromName(displayName, user.email);
-    const inputStyle = { width: "100%", height: 40, border: "1.5px solid #dbeafe", borderRadius: 8, padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none", background: "#fff" };
-    const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 7 };
-
-    useEffect(() => {
-      function onKeyDown(e) { if (e.key === "Escape") onClose(); }
-      window.addEventListener("keydown", onKeyDown);
-      return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
-
-    async function resetPassword() {
-      const confirmed = window.confirm(`Сбросить пароль для ${user.email}? Старые сессии пользователя будут завершены.`);
-      if (!confirmed) return;
-      setResettingPassword(true);
-      setTemporaryPassword("");
-      try {
-        const result = await api.resetUserPassword(user.id);
-        setTemporaryPassword(result.temporaryPassword || "");
-        if (result.user) setUsers(rows => rows.map(row => row.id === result.user.id ? { ...row, ...result.user } : row));
-      } catch (err) {
-        onError(err);
-      } finally {
-        setResettingPassword(false);
-      }
-    }
-
-    function handleSubmit(event) {
-      event.preventDefault();
-      if (!displayName.trim()) {
-        setError("Введите имя пользователя");
-        return;
-      }
-      onSave(user.id, { displayName: displayName.trim(), role: nextRole, isActive });
-    }
-
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 330, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 20 }}>
-        <form onSubmit={handleSubmit} style={{ width: "min(92vw, 460px)", background: "#fff", borderRadius: 16, boxShadow: "0 24px 64px rgba(37,99,235,.22)", overflow: "hidden" }}>
-          <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 42, height: 42, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 800 }}>{initials}</div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>Карточка пользователя</div>
-                <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{user.email}</div>
-              </div>
-            </div>
-            <button type="button" onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", color: "#64748b", cursor: "pointer" }}>×</button>
-          </div>
-          <div style={{ padding: 24, display: "grid", gap: 16 }}>
-            <div>
-              <label style={labelStyle}>Имя</label>
-              <input value={displayName} onChange={e => { setDisplayName(e.target.value); setError(""); }} style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#dbeafe" }} />
-              {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 5 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={labelStyle}>Роль</label>
-              <select value={nextRole} onChange={e => setNextRole(e.target.value)} style={inputStyle}>
-                <option value="member">Участник</option>
-                <option value="viewer">Наблюдатель</option>
-                <option value="admin">Администратор</option>
-              </select>
-            </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600, color: "#475569" }}>
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-              Активный пользователь
-            </label>
-            <div style={{ padding: 12, borderRadius: 10, border: "1px solid #fee2e2", background: "#fff7f7", display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 750, color: "#991b1b" }}>Сброс пароля</div>
-                  <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>Создаёт временный пароль и завершает активные сессии пользователя.</div>
-                </div>
-                <button type="button" onClick={resetPassword} disabled={resettingPassword} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, fontWeight: 750, cursor: resettingPassword ? "default" : "pointer", fontFamily: "Inter" }}>{resettingPassword ? "Сбрасываю..." : "Сбросить"}</button>
-              </div>
-              {temporaryPassword && (
-                <div>
-                  <label style={{ ...labelStyle, color: "#991b1b" }}>Временный пароль</label>
-                  <input readOnly value={temporaryPassword} onFocus={e => e.target.select()} style={{ ...inputStyle, borderColor: "#fecaca", background: "#fff" }} />
-                </div>
-              )}
-            </div>
-          </div>
-          <div style={{ padding: "16px 24px 24px", borderTop: "1px solid #f0f6ff", display: "flex", justifyContent: "flex-end", gap: 10 }}>
-            <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
-            <button type="submit" style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.25)" }}>Сохранить</button>
-          </div>
-        </form>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 360px) 1fr", gap: 18, alignItems: "start" }}>
-      {editUser && <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSave={saveUser} />}
+      {editUser && <UserEditModal key={editUser.id} user={editUser} api={api} onError={onError} onUserReset={resetUser => setUsers(rows => rows.map(row => row.id === resetUser.id ? { ...row, ...resetUser } : row))} onClose={() => setEditUser(null)} onSave={saveUser} />}
       <form onSubmit={createInvite} style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 8, padding: 18, boxShadow: "0 2px 12px rgba(37,99,235,.06)" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e", marginBottom: 14 }}>Новое приглашение</div>
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 7 }}>Email коллеги</label>

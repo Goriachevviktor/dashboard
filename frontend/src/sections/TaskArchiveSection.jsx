@@ -1,20 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import StatCard from '../components/common/StatCard.jsx';
-import Avatar from '../components/common/Avatar.jsx';
-import { ConfirmDialog, useConfirmDialog } from '../components/common/ConfirmDialog.jsx';
-import { useViewportFlags, formatShortDate, isTaskOverdue } from '../utils.js';
+import { useViewportFlags } from '../utils.js';
+import { TaskDetailModal } from './TasksSection.jsx';
 
 function TaskArchiveSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
   const { isMobile } = useViewportFlags();
-  const [confirmDelete, confirmDialog] = useConfirmDialog();
   const [tasks, setTasks] = useState(initialTasks);
   const [editTask, setEditTask] = useState(null);
 
-  useEffect(() => setTasks(initialTasks), [initialTasks]);
-
   const archivedTasks = tasks.filter(task => task.column === "Архив");
-  const canDeleteTask = task => currentUser?.role === "admin" || currentUser?.id === task.ownerId;
-
   async function updateTask(taskId, payload) {
     try {
       const saved = await api.patchTask(taskId, payload);
@@ -31,48 +25,8 @@ function TaskArchiveSection({ initialTasks = [], team = [], api, onError, curren
     if (saved) setEditTask(null);
   }
 
-  async function restoreTask(taskId, column) {
-    await updateTask(taskId, { column });
-  }
-
-  async function deleteTask(taskId) {
-    const task = tasks.find(item => item.id === taskId);
-    const confirmed = await confirmDelete({
-      title: "Удалить задачу из архива?",
-      message: "Задача будет удалена окончательно. Это действие нельзя отменить.",
-      itemTitle: task?.title,
-      confirmText: "Удалить",
-    });
-    if (!confirmed) return;
-    try {
-      await api.deleteTask(taskId);
-      setTasks(items => items.filter(item => item.id !== taskId));
-      if (editTask?.id === taskId) setEditTask(null);
-    } catch (error) {
-      onError(error);
-    }
-  }
-
-  const buttonStyle = (color = "#2563eb") => ({
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    minHeight: isMobile ? 34 : 32,
-    padding: isMobile ? "7px 10px" : "6px 10px",
-    borderRadius: 9,
-    border: "1px solid " + (color === "#ef4444" ? "#fecaca" : "#dbeafe"),
-    background: "#fff",
-    color,
-    fontSize: 12,
-    fontWeight: 750,
-    fontFamily: "Inter",
-    cursor: "pointer",
-  });
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {confirmDialog}
       {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(180px, 1fr))", gap: isMobile ? 8 : 14 }}>

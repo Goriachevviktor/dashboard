@@ -20,7 +20,9 @@ export async function dashboardRequest(path, options = {}) {
     try {
       const body = await response.json();
       message = body.detail || message;
-    } catch (_) {}
+    } catch {
+      // Keep the status-based fallback when an error response is not JSON.
+    }
     const error = new Error(message);
     error.status = response.status;
     throw error;
