@@ -3,6 +3,145 @@ import StatCard from '../components/common/StatCard.jsx';
 import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useViewportFlags } from '../utils.js';
 
+function CreateUcpTaskModal({ task, team, isMobile, onClose, onSubmit }) {
+  const isEdit = Boolean(task);
+  const [title, setTitle] = useState(task?.title || "");
+  const [description, setDescription] = useState(task?.description || "");
+  const [done, setDone] = useState(Boolean(task?.done));
+  const [memberIds, setMemberIds] = useState(task?.memberIds || []);
+  const [checkpoints, setCheckpoints] = useState(
+    task?.checkpoints?.length
+      ? task.checkpoints.map(item => ({ ...item, evidenceMaterials: item.evidenceMaterials || "", done: Boolean(item.done) }))
+      : [{ id: 1, label: "", date: "", evidenceMaterials: "", done: false }]
+  );
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    function onKeyDown(e) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  function toggleMember(memberId) {
+    setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
+  }
+
+  function updateCheckpoint(checkpointId, patch) {
+    setCheckpoints(items => items.map(item => item.id === checkpointId ? { ...item, ...patch } : item));
+  }
+
+  function addCheckpoint() {
+    setCheckpoints(items => [...items, { id: Date.now() + items.length, label: "", date: "", evidenceMaterials: "", done: false }]);
+  }
+
+  function removeCheckpoint(checkpointId) {
+    setCheckpoints(items => items.length === 1 ? items : items.filter(item => item.id !== checkpointId));
+  }
+
+  function handleSubmit() {
+    if (!title.trim()) {
+      setError("Введите название задачи");
+      return;
+    }
+    const normalizedCheckpoints = checkpoints
+      .map(item => ({
+        ...item,
+        label: item.label.trim(),
+        date: item.date,
+        evidenceMaterials: (item.evidenceMaterials || "").trim(),
+        done: Boolean(item.done),
+      }))
+      .filter(item => item.label || item.date || item.evidenceMaterials);
+    onSubmit({
+      ...(task ? { id: task.id } : {}),
+      title: title.trim(),
+      description: description.trim(),
+      done,
+      memberIds,
+      checkpoints: normalizedCheckpoints,
+    });
+    onClose();
+  }
+
+  const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc" };
+  const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 310, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+      <div style={{ width: "min(94vw, 760px)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 20, boxShadow: "0 24px 64px rgba(37,99,235,.22)" }}>
+        <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>{isEdit ? "Редактирование задачи УПЦ" : "Новая задача УПЦ"}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Название, описание, контрольные точки и команда соисполнителей</div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+          <div>
+            <label style={labelStyle}>Название задачи *</label>
+            <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} placeholder="Например: Улучшить целевой показатель активации" style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#e2edf8" }} />
+            {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={labelStyle}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder="Опишите контекст, ожидаемый результат и критерии успеха..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1.5px solid " + (done ? "#86efac" : "#e2edf8"), background: done ? "#f0fdf4" : "#f8fafc", color: done ? "#15803d" : "#1e3a6e", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
+            Задача выполнена
+          </label>
+          <div>
+            <label style={labelStyle}>Команда соисполнителей</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {team.map(member => {
+                const active = memberIds.includes(member.id);
+                return (
+                  <button
+                    key={member.id}
+                    onClick={() => toggleMember(member.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 999, border: "1.5px solid " + (active ? member.color : "#e2edf8"), background: active ? member.color + "18" : "#f8fafc", color: active ? member.color : "#64748b", cursor: "pointer", fontFamily: "Inter" }}
+                  >
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: member.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700 }}>{member.initials}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{member.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Контрольные точки</label>
+              <button onClick={addCheckpoint} style={{ border: "none", background: "none", color: "#2563eb", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>+ Добавить точку</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {checkpoints.map(point => (
+                <div key={point.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "auto 1fr", gap: 10, alignItems: "start" }}>
+                  <label title="Выполнено" style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid " + (point.done ? "#86efac" : "#e2edf8"), background: point.done ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    <input type="checkbox" checked={Boolean(point.done)} onChange={e => updateCheckpoint(point.id, { done: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr .8fr 1.2fr auto", gap: 10, alignItems: "center" }}>
+                    <input value={point.label} onChange={e => updateCheckpoint(point.id, { label: e.target.value })} placeholder="Название контрольной точки" style={inputStyle} />
+                    <input type="date" value={point.date} onChange={e => updateCheckpoint(point.id, { date: e.target.value })} style={inputStyle} />
+                    <input value={point.evidenceMaterials || ""} onChange={e => updateCheckpoint(point.id, { evidenceMaterials: e.target.value })} placeholder="Подтверждающие материалы" style={inputStyle} />
+                    <button onClick={() => removeCheckpoint(point.id)} style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#94a3b8", cursor: "pointer" }}>×</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
+          <button onClick={handleSubmit} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>{isEdit ? "Сохранить изменения" : "Создать задачу"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const [confirmDelete, confirmDialog] = useConfirmDialog();
@@ -16,144 +155,6 @@ function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = 
     if (!value) return "Без даты";
     const date = new Date(value + "T00:00:00");
     return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(date);
-  }
-
-  function CreateUcpTaskModal({ task, onClose, onSubmit }) {
-    const isEdit = Boolean(task);
-    const [title, setTitle] = useState(task?.title || "");
-    const [description, setDescription] = useState(task?.description || "");
-    const [done, setDone] = useState(Boolean(task?.done));
-    const [memberIds, setMemberIds] = useState(task?.memberIds || []);
-    const [checkpoints, setCheckpoints] = useState(
-      task?.checkpoints?.length
-        ? task.checkpoints.map(item => ({ ...item, evidenceMaterials: item.evidenceMaterials || "", done: Boolean(item.done) }))
-        : [{ id: 1, label: "", date: "", evidenceMaterials: "", done: false }]
-    );
-    const [error, setError] = useState("");
-
-    useEffect(() => {
-      function onKeyDown(e) { if (e.key === "Escape") onClose(); }
-      window.addEventListener("keydown", onKeyDown);
-      return () => window.removeEventListener("keydown", onKeyDown);
-    }, [onClose]);
-
-    function toggleMember(memberId) {
-      setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
-    }
-
-    function updateCheckpoint(checkpointId, patch) {
-      setCheckpoints(items => items.map(item => item.id === checkpointId ? { ...item, ...patch } : item));
-    }
-
-    function addCheckpoint() {
-      setCheckpoints(items => [...items, { id: Date.now() + items.length, label: "", date: "", evidenceMaterials: "", done: false }]);
-    }
-
-    function removeCheckpoint(checkpointId) {
-      setCheckpoints(items => items.length === 1 ? items : items.filter(item => item.id !== checkpointId));
-    }
-
-    function handleSubmit() {
-      if (!title.trim()) {
-        setError("Введите название задачи");
-        return;
-      }
-      const normalizedCheckpoints = checkpoints
-        .map(item => ({
-          ...item,
-          label: item.label.trim(),
-          date: item.date,
-          evidenceMaterials: (item.evidenceMaterials || "").trim(),
-          done: Boolean(item.done),
-        }))
-        .filter(item => item.label || item.date || item.evidenceMaterials);
-      onSubmit({
-        ...(task ? { id: task.id } : {}),
-        title: title.trim(),
-        description: description.trim(),
-        done,
-        memberIds,
-        checkpoints: normalizedCheckpoints,
-      });
-      onClose();
-    }
-
-    const inputStyle = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2edf8", fontSize: 14, color: "#1e3a6e", fontFamily: "Inter", outline: "none", background: "#f8fafc" };
-    const labelStyle = { fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6, display: "block", letterSpacing: .3 };
-
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(15,30,70,.38)", zIndex: 310, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-        <div style={{ width: "min(94vw, 760px)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 20, boxShadow: "0 24px 64px rgba(37,99,235,.22)" }}>
-          <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid #e8f1fd", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e" }}>{isEdit ? "Редактирование задачи УПЦ" : "Новая задача УПЦ"}</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Название, описание, контрольные точки и команда соисполнителей</div>
-            </div>
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#f0f6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
-            <div>
-              <label style={labelStyle}>Название задачи *</label>
-              <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} placeholder="Например: Улучшить целевой показатель активации" style={{ ...inputStyle, borderColor: error ? "#ef4444" : "#e2edf8" }} />
-              {error && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={labelStyle}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder="Опишите контекст, ожидаемый результат и критерии успеха..." style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
-            </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1.5px solid " + (done ? "#86efac" : "#e2edf8"), background: done ? "#f0fdf4" : "#f8fafc", color: done ? "#15803d" : "#1e3a6e", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
-              Задача выполнена
-            </label>
-            <div>
-              <label style={labelStyle}>Команда соисполнителей</label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {team.map(member => {
-                  const active = memberIds.includes(member.id);
-                  return (
-                    <button
-                      key={member.id}
-                      onClick={() => toggleMember(member.id)}
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 999, border: "1.5px solid " + (active ? member.color : "#e2edf8"), background: active ? member.color + "18" : "#f8fafc", color: active ? member.color : "#64748b", cursor: "pointer", fontFamily: "Inter" }}
-                    >
-                      <span style={{ width: 22, height: 22, borderRadius: "50%", background: member.color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700 }}>{member.initials}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600 }}>{member.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>Контрольные точки</label>
-                <button onClick={addCheckpoint} style={{ border: "none", background: "none", color: "#2563eb", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "Inter" }}>+ Добавить точку</button>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {checkpoints.map(point => (
-                  <div key={point.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "auto 1fr", gap: 10, alignItems: "start" }}>
-                    <label title="Выполнено" style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid " + (point.done ? "#86efac" : "#e2edf8"), background: point.done ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                      <input type="checkbox" checked={Boolean(point.done)} onChange={e => updateCheckpoint(point.id, { done: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#22c55e" }} />
-                    </label>
-                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr .8fr 1.2fr auto", gap: 10, alignItems: "center" }}>
-                      <input value={point.label} onChange={e => updateCheckpoint(point.id, { label: e.target.value })} placeholder="Название контрольной точки" style={inputStyle} />
-                      <input type="date" value={point.date} onChange={e => updateCheckpoint(point.id, { date: e.target.value })} style={inputStyle} />
-                      <input value={point.evidenceMaterials || ""} onChange={e => updateCheckpoint(point.id, { evidenceMaterials: e.target.value })} placeholder="Подтверждающие материалы" style={inputStyle} />
-                      <button onClick={() => removeCheckpoint(point.id)} style={{ width: 36, height: 36, borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#94a3b8", cursor: "pointer" }}>×</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #f0f6ff" }}>
-            <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 10, border: "1.5px solid #e2edf8", background: "#f8fafc", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "Inter" }}>Отмена</button>
-            <button onClick={handleSubmit} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#2563eb,#3b82f6)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "Inter", boxShadow: "0 4px 12px rgba(37,99,235,.3)" }}>{isEdit ? "Сохранить изменения" : "Создать задачу"}</button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   async function addTask(task) {
@@ -205,8 +206,8 @@ function UcpSection({ initialTasks = [], team = [], api, onError, currentUser = 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {confirmDialog}
-      {showCreate && <CreateUcpTaskModal onClose={() => setShowCreate(false)} onSubmit={addTask} />}
-      {editTask && <CreateUcpTaskModal task={editTask} onClose={() => setEditTask(null)} onSubmit={(task) => { saveTask(task); setEditTask(null); }} />}
+      {showCreate && <CreateUcpTaskModal key="new" team={team} isMobile={isMobile} onClose={() => setShowCreate(false)} onSubmit={addTask} />}
+      {editTask && <CreateUcpTaskModal key={editTask.id} task={editTask} team={team} isMobile={isMobile} onClose={() => setEditTask(null)} onSubmit={(task) => { saveTask(task); setEditTask(null); }} />}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, minmax(0, 1fr))" : "repeat(3, minmax(180px, 1fr))", gap: isMobile ? 6 : 14 }}>
         <StatCard compact={isMobile} label="Задач УПЦ" value={tasks.length} sub={tasks.filter(task => task.done).length + " выполнено"} color="#1e3a6e"/>
         <StatCard compact={isMobile} label="Контрольных точек" value={tasks.reduce((sum, task) => sum + (task.checkpoints || []).length, 0)} sub={tasks.reduce((sum, task) => sum + (task.checkpoints || []).filter(point => point.done).length, 0) + " выполнено"} color="#2563eb"/>

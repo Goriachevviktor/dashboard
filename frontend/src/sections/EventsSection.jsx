@@ -7,6 +7,285 @@ import { COLORS, FONT_STACK, EVENT_TYPE_COLOR, SHADOWS, RADII, pillButtonStyle, 
 // мобильная ветка, удалить при рестайле мобильной
 const LEGACY_TYPE_COLOR = { "Совещание":"#2563eb","Мероприятие":"#8b5cf6","Релиз":"#10b981","Дедлайн":"#ef4444","Планирование":"#f59e0b","УПЦ":"#0f766e","План развития":"#7c3aed" };
 
+function EventModal({ event, team, currentUser, todayMonth, todayDay, typeOptions, typeColor, onClose, onSubmit }) {
+  const isEdit = Boolean(event);
+  const [title, setTitle] = useState(event?.title || "");
+  const [description, setDescription] = useState(event?.description || "");
+  const [type,  setType]  = useState(event?.type || "Совещание");
+  const initialMonth = event?.month ?? todayMonth;
+  const initialDay = event?.day ?? todayDay;
+  const formatEventDate = (monthIndex, dayValue) => `${ROADMAP_YEAR}-${String(Number(monthIndex) + 1).padStart(2, "0")}-${String(Number(dayValue)).padStart(2, "0")}`;
+  const [eventDate, setEventDate] = useState(formatEventDate(initialMonth, initialDay));
+  const [done, setDone] = useState(Boolean(event?.done));
+  const [memberIds, setMemberIds] = useState(event?.memberIds || []);
+  const [ownerId, setOwnerId] = useState(event?.ownerId || currentUser?.id || null);
+  const [error, setError] = useState("");
+
+  function toggleMember(memberId) {
+    setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
+  }
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  function handleSave() {
+    if (!title.trim()) { setError("Введите название"); return; }
+    if (!eventDate) { setError("Выберите дату события"); return; }
+    const parsedDate = new Date(eventDate + "T00:00:00");
+    if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
+    onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds, ownerId });
+    onClose();
+  }
+
+  const lbl = themeLabelStyle;
+  const inp = themeInputStyle;
+
+  return (
+    <div style={modalOverlayStyle(Z.modal)}>
+      <div style={{ ...modalCardStyle(520), display:"block", overflowY:"auto" }}>
+        <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
+            <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>{isEdit ? "Измените поля события" : "Добавьте событие на дорожную карту"}</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <label style={lbl}>Название события *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
+              placeholder="Например: Запуск нового продукта"
+              style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
+              onFocus={e => e.target.style.borderColor = "#93c5fd"}
+              onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
+            {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={lbl}>Тип события</label>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {typeOptions.map(t => (
+                <button key={t} onClick={() => setType(t)} style={{ ...chipStyle(type===t, typeColor[t]), gap:5, fontSize:12, transition:"all .15s" }}>
+                  <span style={{ width:7, height:7, borderRadius:"50%", background:typeColor[t], flexShrink:0 }}></span>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, цель или важные детали события" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
+          </div>
+          <div>
+            <label style={lbl}>Дата события</label>
+            <input type="date" value={eventDate} min={`${ROADMAP_YEAR}-01-01`} max={`${ROADMAP_YEAR}-12-31`} onChange={e => setEventDate(e.target.value)} style={{ ...inp, cursor:"pointer" }}
+              onFocus={e => e.target.style.borderColor = "#93c5fd"}
+              onBlur={e => e.target.style.borderColor = "#e2edf8"} />
+          </div>
+          {isEdit && currentUser?.role === "admin" && (
+            <div>
+              <label style={lbl}>Автор события</label>
+              <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer" }}>
+                <option value="">— Не указан —</option>
+                {team.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label style={lbl}>Участники события</label>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {team.map(member => {
+                const active = memberIds.includes(member.id);
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => toggleMember(member.id)}
+                    style={{ ...chipStyle(active), gap:8, padding:"6px 12px" }}
+                  >
+                    <span style={{ width:22, height:22, borderRadius:"50%", background:member.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{member.initials}</span>
+                    <span style={{ fontSize:12, fontWeight:active ? 600 : 400 }}>{member.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
+            Событие завершено
+          </label>
+        </div>
+        <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>{isEdit ? "Сохранить" : "Добавить событие"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function AddTaskModal({ eventId, events, team, typeColor, onClose, onAdd }) {
+  const [title,      setTitle]      = useState("");
+  const [description, setDescription] = useState("");
+  const [assigneeId, setAssigneeId] = useState(null);
+  const [due,        setDue]        = useState("");
+  const [error,      setError]      = useState("");
+  const ev = events.find(e => e.id === eventId);
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  function handleSave() {
+    if (!title.trim()) { setError("Введите название задачи"); return; }
+    onAdd(eventId, { title: title.trim(), description: description.trim(), assigneeId, due });
+    onClose();
+  }
+
+  const lbl = themeLabelStyle;
+  const inp = themeInputStyle;
+  const assignee = team.find(m => m.id === assigneeId) || null;
+
+  return (
+    <div style={modalOverlayStyle(Z.modal)}>
+      <div style={{ ...modalCardStyle(460), display:"block" }}>
+        <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:12, color:"#94a3b8", marginBottom:2 }}>К событию: <span style={{ color: ev ? typeColor[ev.type] : "#1e3a6e", fontWeight:600 }}>{ev?.title}</span></div>
+            <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Новая задача</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <label style={lbl}>Название задачи *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
+              placeholder="Что нужно сделать?"
+              style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
+              onFocus={e => e.target.style.borderColor = "#93c5fd"}
+              onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
+            {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
+          </div>
+          <div style={{ display:"flex", gap:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Исполнитель</label>
+              <div style={{ position:"relative" }}>
+                <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)}
+                  style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
+                  <option value="">— Не назначен —</option>
+                  {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                {assignee && (
+                  <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>
+                )}
+              </div>
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Срок выполнения</label>
+              <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp}
+                onFocus={e => e.target.style.borderColor = "#93c5fd"}
+                onBlur={e => e.target.style.borderColor = "#e2edf8"} />
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст задачи, ожидания или результат" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
+          </div>
+        </div>
+        <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Добавить задачу</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function EventTaskModal({ eventId, task, team, onClose, onSave }) {
+  const [title, setTitle] = useState(task.title || "");
+  const [description, setDescription] = useState(task.description || "");
+  const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
+  const [due, setDue] = useState(task.due || "");
+  const [done, setDone] = useState(Boolean(task.done));
+  const [error, setError] = useState("");
+  const assignee = team.find(m => m.id === assigneeId) || null;
+  const lbl = themeLabelStyle;
+  const inp = themeInputStyle;
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  function handleSave() {
+    if (!title.trim()) { setError("Введите название задачи"); return; }
+    onSave(eventId, task.id, { title: title.trim(), description: description.trim(), assigneeId, due, done });
+  }
+
+  return (
+    <div style={modalOverlayStyle(Z.modalNested)}>
+      <div style={{ ...modalCardStyle(560), display:"block", overflowY:"auto" }}>
+        <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Задача события</div>
+            <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>Описание, исполнитель и срок</div>
+          </div>
+          <button onClick={onClose} style={modalCloseButtonStyle}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
+          <div>
+            <label style={lbl}>Название задачи *</label>
+            <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }} style={{ ...inp, borderColor:error ? "#ef4444" : "#e2edf8" }} />
+            {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
+          </div>
+          <div>
+            <label style={lbl}>Описание</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5} placeholder="Добавьте описание задачи..." style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:120, maxHeight:320 }} />
+          </div>
+          <div style={{ display:"flex", gap:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Исполнитель</label>
+              <div style={{ position:"relative" }}>
+                <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
+                  <option value="">— Не назначен —</option>
+                  {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                {assignee && <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>}
+              </div>
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={lbl}>Срок</label>
+              <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
+            Задача выполнена
+          </label>
+        </div>
+        <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
+          <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
+          <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Сохранить</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function EventsSection({ initialEvents = null, initialEventTasks = null, team = [], api, onError, currentUser = null }) {
   const { isCompact, isMobile } = useViewportFlags();
   const [confirmDelete, confirmDialog] = useConfirmDialog();
@@ -316,290 +595,14 @@ function EventsSection({ initialEvents = null, initialEventTasks = null, team = 
 
   const { topEvents, bottomEvents } = assignLevels(visibleRoadmapEvents);
 
-  function EventModal({ event, onClose, onSubmit }) {
-    const isEdit = Boolean(event);
-    const [title, setTitle] = useState(event?.title || "");
-    const [description, setDescription] = useState(event?.description || "");
-    const [type,  setType]  = useState(event?.type || "Совещание");
-    const initialMonth = event?.month ?? TODAY_MONTH;
-    const initialDay = event?.day ?? TODAY_DAY;
-    const formatEventDate = (monthIndex, dayValue) => `${ROADMAP_YEAR}-${String(Number(monthIndex) + 1).padStart(2, "0")}-${String(Number(dayValue)).padStart(2, "0")}`;
-    const [eventDate, setEventDate] = useState(formatEventDate(initialMonth, initialDay));
-    const [done, setDone] = useState(Boolean(event?.done));
-    const [memberIds, setMemberIds] = useState(event?.memberIds || []);
-    const [ownerId, setOwnerId] = useState(event?.ownerId || currentUser?.id || null);
-    const [error, setError] = useState("");
-
-    function toggleMember(memberId) {
-      setMemberIds(ids => ids.includes(memberId) ? ids.filter(id => id !== memberId) : [...ids, memberId]);
-    }
-
-    useEffect(() => {
-      const fn = e => { if (e.key === "Escape") onClose(); };
-      window.addEventListener("keydown", fn);
-      return () => window.removeEventListener("keydown", fn);
-    }, [onClose]);
-
-    function handleSave() {
-      if (!title.trim()) { setError("Введите название"); return; }
-      if (!eventDate) { setError("Выберите дату события"); return; }
-      const parsedDate = new Date(eventDate + "T00:00:00");
-      if (Number.isNaN(parsedDate.getTime())) { setError("Выберите корректную дату события"); return; }
-      onSubmit({ title: title.trim(), description: description.trim(), type, month: parsedDate.getMonth(), day: parsedDate.getDate(), done, memberIds, ownerId });
-      onClose();
-    }
-
-    const lbl = themeLabelStyle;
-    const inp = themeInputStyle;
-
-    return (
-      <div style={modalOverlayStyle(Z.modal)}>
-        <div style={{ ...modalCardStyle(520), display:"block", overflowY:"auto" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div>
-              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>{isEdit ? "Редактирование события" : "Новое событие"}</div>
-              <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>{isEdit ? "Измените поля события" : "Добавьте событие на дорожную карту"}</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={lbl}>Название события *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
-                placeholder="Например: Запуск нового продукта"
-                style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
-                onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
-              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={lbl}>Тип события</label>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                {TYPE_OPTIONS.map(t => (
-                  <button key={t} onClick={() => setType(t)} style={{ ...chipStyle(type===t, TYPE_COLOR[t]), gap:5, fontSize:12, transition:"all .15s" }}>
-                    <span style={{ width:7, height:7, borderRadius:"50%", background:TYPE_COLOR[t], flexShrink:0 }}></span>
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label style={lbl}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст, цель или важные детали события" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
-            </div>
-            <div>
-              <label style={lbl}>Дата события</label>
-              <input type="date" value={eventDate} min={`${ROADMAP_YEAR}-01-01`} max={`${ROADMAP_YEAR}-12-31`} onChange={e => setEventDate(e.target.value)} style={{ ...inp, cursor:"pointer" }}
-                onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                onBlur={e => e.target.style.borderColor = "#e2edf8"} />
-            </div>
-            {isEdit && currentUser?.role === "admin" && (
-              <div>
-                <label style={lbl}>Автор события</label>
-                <select value={ownerId || ""} onChange={e => setOwnerId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer" }}>
-                  <option value="">— Не указан —</option>
-                  {team.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
-                </select>
-              </div>
-            )}
-            <div>
-              <label style={lbl}>Участники события</label>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {team.map(member => {
-                  const active = memberIds.includes(member.id);
-                  return (
-                    <button
-                      key={member.id}
-                      type="button"
-                      onClick={() => toggleMember(member.id)}
-                      style={{ ...chipStyle(active), gap:8, padding:"6px 12px" }}
-                    >
-                      <span style={{ width:22, height:22, borderRadius:"50%", background:member.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:700 }}>{member.initials}</span>
-                      <span style={{ fontSize:12, fontWeight:active ? 600 : 400 }}>{member.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
-              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
-              Событие завершено
-            </label>
-          </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
-            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>{isEdit ? "Сохранить" : "Добавить событие"}</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Add Task Modal
-  function AddTaskModal({ eventId, onClose, onAdd }) {
-    const [title,      setTitle]      = useState("");
-    const [description, setDescription] = useState("");
-    const [assigneeId, setAssigneeId] = useState(null);
-    const [due,        setDue]        = useState("");
-    const [error,      setError]      = useState("");
-    const ev = events.find(e => e.id === eventId);
-
-    useEffect(() => {
-      const fn = e => { if (e.key === "Escape") onClose(); };
-      window.addEventListener("keydown", fn);
-      return () => window.removeEventListener("keydown", fn);
-    }, [onClose]);
-
-    function handleSave() {
-      if (!title.trim()) { setError("Введите название задачи"); return; }
-      onAdd(eventId, { title: title.trim(), description: description.trim(), assigneeId, due });
-      onClose();
-    }
-
-    const lbl = themeLabelStyle;
-    const inp = themeInputStyle;
-    const assignee = team.find(m => m.id === assigneeId) || null;
-
-    return (
-      <div style={modalOverlayStyle(Z.modal)}>
-        <div style={{ ...modalCardStyle(460), display:"block" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div>
-              <div style={{ fontSize:12, color:"#94a3b8", marginBottom:2 }}>К событию: <span style={{ color: ev ? TYPE_COLOR[ev.type] : "#1e3a6e", fontWeight:600 }}>{ev?.title}</span></div>
-              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Новая задача</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={lbl}>Название задачи *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }}
-                placeholder="Что нужно сделать?"
-                style={{ ...inp, borderColor: error ? "#ef4444" : "#e2edf8" }}
-                onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                onBlur={e => e.target.style.borderColor = error ? "#ef4444" : "#e2edf8"} />
-              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
-            </div>
-            <div style={{ display:"flex", gap:14 }}>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Исполнитель</label>
-                <div style={{ position:"relative" }}>
-                  <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)}
-                    style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
-                    <option value="">— Не назначен —</option>
-                    {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  {assignee && (
-                    <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>
-                  )}
-                </div>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Срок выполнения</label>
-                <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp}
-                  onFocus={e => e.target.style.borderColor = "#93c5fd"}
-                  onBlur={e => e.target.style.borderColor = "#e2edf8"} />
-              </div>
-            </div>
-            <div>
-              <label style={lbl}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Контекст задачи, ожидания или результат" style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:90, maxHeight:220 }} />
-            </div>
-          </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
-            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Добавить задачу</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function EventTaskModal({ eventId, task, onClose, onSave }) {
-    const [title, setTitle] = useState(task.title || "");
-    const [description, setDescription] = useState(task.description || "");
-    const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
-    const [due, setDue] = useState(task.due || "");
-    const [done, setDone] = useState(Boolean(task.done));
-    const [error, setError] = useState("");
-    const assignee = team.find(m => m.id === assigneeId) || null;
-    const lbl = themeLabelStyle;
-    const inp = themeInputStyle;
-
-    useEffect(() => {
-      const fn = e => { if (e.key === "Escape") onClose(); };
-      window.addEventListener("keydown", fn);
-      return () => window.removeEventListener("keydown", fn);
-    }, [onClose]);
-
-    function handleSave() {
-      if (!title.trim()) { setError("Введите название задачи"); return; }
-      onSave(eventId, task.id, { title: title.trim(), description: description.trim(), assigneeId, due, done });
-    }
-
-    return (
-      <div style={modalOverlayStyle(Z.modalNested)}>
-        <div style={{ ...modalCardStyle(560), display:"block", overflowY:"auto" }}>
-          <div style={{ padding:"22px 28px 18px", borderBottom:"1px solid " + COLORS.hairline, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div>
-              <div style={{ fontSize:18, fontWeight:800, color:COLORS.ink, letterSpacing:-.4 }}>Задача события</div>
-              <div style={{ fontSize:12, color:COLORS.textMuted, marginTop:2 }}>Описание, исполнитель и срок</div>
-            </div>
-            <button onClick={onClose} style={modalCloseButtonStyle}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-          <div style={{ padding:"22px 28px", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={lbl}>Название задачи *</label>
-              <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setError(""); }} style={{ ...inp, borderColor:error ? "#ef4444" : "#e2edf8" }} />
-              {error && <div style={{ fontSize:12, color:COLORS.redText, marginTop:4 }}>{error}</div>}
-            </div>
-            <div>
-              <label style={lbl}>Описание</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5} placeholder="Добавьте описание задачи..." style={{ ...inp, resize:"vertical", lineHeight:1.55, minHeight:120, maxHeight:320 }} />
-            </div>
-            <div style={{ display:"flex", gap:14 }}>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Исполнитель</label>
-                <div style={{ position:"relative" }}>
-                  <select value={assigneeId || ""} onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, cursor:"pointer", paddingLeft: assignee ? 40 : 14 }}>
-                    <option value="">— Не назначен —</option>
-                    {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  {assignee && <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:22, height:22, borderRadius:"50%", background:assignee.color, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, pointerEvents:"none" }}>{assignee.initials}</div>}
-                </div>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Срок</label>
-                <input type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} />
-              </div>
-            </div>
-            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#64748b", fontWeight:600 }}>
-              <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
-              Задача выполнена
-            </label>
-          </div>
-          <div style={{ padding:"16px 28px 24px", display:"flex", gap:10, justifyContent:"flex-end", borderTop:"1px solid " + COLORS.hairline }}>
-            <button onClick={onClose} style={{ padding:"8px 18px", borderRadius:999, border:"none", background:"rgba(118,118,128,.12)", color:COLORS.ink, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:FONT_STACK }}>Отмена</button>
-            <button onClick={handleSave} style={{ ...pillButtonStyle("primary"), padding:"8px 22px", fontSize:13 }}>Сохранить</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
       {confirmDialog}
-      {showAddEvent && <EventModal onClose={() => setShowAddEvent(false)} onSubmit={addEvent} />}
-      {editEvent && <EventModal event={editEvent} onClose={() => setEditEvent(null)} onSubmit={(patch) => { saveEvent(editEvent.id, patch); setEditEvent(null); }} />}
-      {showAddTask && selectedEvent && <AddTaskModal eventId={activeSelectedId} onClose={() => setShowAddTask(false)} onAdd={addTask} />}
-      {selectedTask && <EventTaskModal eventId={selectedTask.eventId} task={selectedTask.task} onClose={() => setSelectedTask(null)} onSave={saveEventTask} />}
+      {showAddEvent && <EventModal key="new" team={team} currentUser={currentUser} todayMonth={TODAY_MONTH} todayDay={TODAY_DAY} typeOptions={TYPE_OPTIONS} typeColor={TYPE_COLOR} onClose={() => setShowAddEvent(false)} onSubmit={addEvent} />}
+      {editEvent && <EventModal key={editEvent.id} event={editEvent} team={team} currentUser={currentUser} todayMonth={TODAY_MONTH} todayDay={TODAY_DAY} typeOptions={TYPE_OPTIONS} typeColor={TYPE_COLOR} onClose={() => setEditEvent(null)} onSubmit={(patch) => { saveEvent(editEvent.id, patch); setEditEvent(null); }} />}
+      {showAddTask && selectedEvent && <AddTaskModal key={activeSelectedId} eventId={activeSelectedId} events={events} team={team} typeColor={TYPE_COLOR} onClose={() => setShowAddTask(false)} onAdd={addTask} />}
+      {selectedTask && <EventTaskModal key={selectedTask.task.id} eventId={selectedTask.eventId} team={team} task={selectedTask.task} onClose={() => setSelectedTask(null)} onSave={saveEventTask} />}
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(4, minmax(180px, 1fr))", gap:isMobile ? 6 : 14 }}>
