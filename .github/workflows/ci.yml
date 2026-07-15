@@ -34,15 +34,9 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      - name: Lint changed frontend files
-        env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          if [[ "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
-            BASE_SHA=$(git rev-list --max-parents=0 "$HEAD_SHA")
-          fi
-          bash ops/lint-changed-frontend.sh "$BASE_SHA" "$HEAD_SHA"
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: frontend
 
   backend:
     runs-on: ubuntu-latest

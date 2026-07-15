@@ -29,7 +29,7 @@ def test_ci() -> None:
         "release-contracts:",
         "compose-build:",
         "npm run build",
-        "lint-changed-frontend.sh",
+        "npm run lint",
         "docker compose up -d --wait dashboard-db",
         "pytest -q",
         "tests/caddy_contract.test.js",
@@ -110,7 +110,8 @@ def test_actions_use_node_24_runtimes() -> None:
 
 def test_frontend_security_and_workbook_gates() -> None:
     content = workflow("ci.yml")
-    require(content, "npm audit --audit-level=moderate", "npm run verify:xlsx")
+    require(content, "npm audit --audit-level=moderate", "npm run verify:xlsx", "npm run lint")
+    assert "Lint changed frontend files" not in content
 
 
 def test_backup_monitoring_and_restore_drill() -> None:
