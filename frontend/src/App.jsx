@@ -39,7 +39,7 @@ export default function App() {
   const { isCompact, isMobile } = useViewportFlags();
 
   // ── 10a: Auth state ──
-  const [active, setActive] = useState(() => {
+  const [requestedActive, setActive] = useState(() => {
     try {
       return window.localStorage.getItem(ACTIVE_SECTION_KEY) || "tasks";
     } catch {
@@ -51,6 +51,7 @@ export default function App() {
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardDataRevision, setDashboardDataRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
@@ -61,7 +62,8 @@ export default function App() {
   ));
 
   const visibleSections = SECTIONS.filter(s => (!s.adminOnly || currentUser?.role === "admin") && !(standalone && s.id === "archive"));
-  const section = visibleSections.find(s => s.id === active) || visibleSections[0];
+  const section = visibleSections.find(s => s.id === requestedActive) || visibleSections[0];
+  const active = section?.id || "tasks";
   const sidebarCollapsed = isCompact ? true : collapsed;
   const topbarDate = formatDashboardDate(new Date());
   const userInitials = initialsFromName(currentUser?.displayName, currentUser?.email);
@@ -143,9 +145,16 @@ export default function App() {
       setLoading(true);
       try {
         const data = await api.bootstrap();
-        if (!cancelled) setDashboardData(normalizeDashboardData(data, currentUser));
+        if (!cancelled) {
+          setDashboardData(normalizeDashboardData(data, currentUser));
+          setDashboardDataRevision(revision => revision + 1);
+        }
       } catch (error) {
-        if (!cancelled) { setDashboardData(normalizeDashboardData({}, currentUser)); onError(error); }
+        if (!cancelled) {
+          setDashboardData(normalizeDashboardData({}, currentUser));
+          setDashboardDataRevision(revision => revision + 1);
+          onError(error);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -324,7 +333,7 @@ export default function App() {
           {loading || !dashboardData ? (
             <DashboardSkeleton />
           ) : (
-            <ErrorBoundary key={section.id}>
+            <ErrorBoundary key={`${section.id}:${dashboardDataRevision}`}>
               {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser })}
             </ErrorBoundary>
           )}
