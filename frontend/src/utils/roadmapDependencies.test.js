@@ -8,6 +8,7 @@ import {
   applyDependencySchedule,
   computeDependencyLineLayout,
   dependencyPathData,
+  DEPENDENCY_SVG_OVERFLOW,
   resolveRenderedTimelineWidth,
   buildDependencyDebugEdges,
 } from "./roadmapDependencies.js";
@@ -137,6 +138,45 @@ test("dependencyPathData keeps both horizontal connector shoulders", () => {
 
 test("resolveRenderedTimelineWidth uses a measured grid wider than the minimum", () => {
   assert.equal(resolveRenderedTimelineWidth(1280, 900), 1280);
+});
+
+test("reverse dependency routes left with a shoulder beyond both anchors", () => {
+  const line = computeDependencyLineLayout({
+    predecessorEndPct: 80,
+    targetStartPct: 20,
+    chartWidth: 1000,
+    predecessorCenterY: 27,
+    targetCenterY: 81,
+    predecessorAnchorOffsetX: -4,
+    targetAnchorOffsetX: 0,
+    minimumShoulder: 16,
+  });
+  assert.equal(line.startX, 796);
+  assert.equal(line.endX, 200);
+  assert.equal(line.middleX, 184);
+  assert.ok(line.startX - line.middleX >= 16);
+  assert.ok(line.endX - line.middleX >= 16);
+  assert.equal(dependencyPathData(line), "M 796 27 H 184 V 81 H 200");
+});
+
+test("boundary routes require visible SVG overflow", () => {
+  const rightEdge = computeDependencyLineLayout({
+    predecessorEndPct: 100,
+    targetStartPct: 100,
+    chartWidth: 1000,
+    predecessorCenterY: 27,
+    targetCenterY: 81,
+  });
+  const leftEdge = computeDependencyLineLayout({
+    predecessorEndPct: 20,
+    targetStartPct: 0,
+    chartWidth: 1000,
+    predecessorCenterY: 81,
+    targetCenterY: 27,
+  });
+  assert.ok(rightEdge.middleX > 1000);
+  assert.ok(leftEdge.middleX < 0);
+  assert.equal(DEPENDENCY_SVG_OVERFLOW, "visible");
 });
 
 

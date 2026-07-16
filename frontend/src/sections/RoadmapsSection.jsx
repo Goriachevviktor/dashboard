@@ -10,6 +10,7 @@ import {
   buildDependencyState,
   buildDependencyDebugEdges,
   computeDependencyLineLayout,
+  DEPENDENCY_SVG_OVERFLOW,
   dependencyPathData,
   ensureRoadmapTaskIds,
   resolveRenderedTimelineWidth,
@@ -2407,7 +2408,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               <svg
                 viewBox={`0 0 ${renderedChartWidth} ${totalHeight}`}
                 preserveAspectRatio="none"
-                style={{ position: "absolute", inset: 0, width: "100%", height: totalHeight, pointerEvents: "none", zIndex: TIMELINE_DEPENDENCY_LAYER }}
+                style={{ position: "absolute", inset: 0, width: "100%", height: totalHeight, overflow: DEPENDENCY_SVG_OVERFLOW, pointerEvents: "none", zIndex: TIMELINE_DEPENDENCY_LAYER }}
               >
                 {dependencyLines.map(line => (
                   <path

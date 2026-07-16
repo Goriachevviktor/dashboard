@@ -2,6 +2,8 @@ function taskId(value) {
   return value == null ? "" : String(value);
 }
 
+export const DEPENDENCY_SVG_OVERFLOW = "visible";
+
 function parseIsoDate(value) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null;
   const date = new Date(`${value}T00:00:00`);
