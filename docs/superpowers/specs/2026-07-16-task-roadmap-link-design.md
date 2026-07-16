@@ -34,7 +34,7 @@ The existing roadmap bar object gains these optional fields:
 
 `linkedTaskId` is the relationship. `linkedTaskSnapshot` preserves the last visible ordinary-task values if the ordinary task is later deleted. Existing roadmap items have neither field and continue to behave exactly as before.
 
-The relationship is stored with the existing roadmap data in local storage. No new backend table or roadmap persistence API is introduced in this version.
+The relationship is stored inside the existing roadmap payload through the existing roadmap persistence API. No new backend table or API endpoint is introduced in this version. Browser local storage remains only a legacy-import source and is not the active roadmap store.
 
 ## Source of Truth and Derived Values
 
@@ -79,7 +79,7 @@ For a linked item, the roadmap edit modal permits changes to:
 - status/progress through the mapped ordinary-task column;
 - roadmap-owned lane, start date, and dependencies.
 
-Saving calls `api.patchTask(linkedTaskId, patch)` for ordinary-task-owned values, then saves the roadmap-owned fields locally. Dragging or resizing a linked bar updates the ordinary task due date to the resulting `endDate`; moving only the start edge changes only the roadmap `startDate`.
+Saving calls `api.patchTask(linkedTaskId, patch)` for ordinary-task-owned values, then saves the roadmap-owned fields through `api.patchRoadmap`. Dragging or resizing a linked bar updates the ordinary task due date to the resulting `endDate`; moving only the start edge changes only the roadmap `startDate`.
 
 The inverse status mapping is:
 
@@ -102,7 +102,7 @@ If an ordinary task no longer exists, normalization converts the linked bar to a
 ## Components and Data Flow
 
 - `App.jsx` passes `dashboardData.tasks` into `RoadmapsSection`.
-- `RoadmapsSection.jsx` owns link uniqueness, task lookup, normalization, API patching, unlinking, and persistence with the existing roadmap store.
+- `RoadmapsSection.jsx` owns link uniqueness, task lookup, normalization, API patching, unlinking, and persistence through the existing roadmap API.
 - `BarFormModal` receives the ordinary-task lookup and exposes linked-task status plus unlinking.
 - A focused utility module owns pure mapping, resolution, snapshot, uniqueness, and unlink helpers so the behavior can be unit tested without rendering the large roadmap component.
 - `TasksSection` and `TaskDetailModal` receive optional roadmap link metadata to display the linked roadmap title; ordinary task editing remains unchanged.
@@ -140,7 +140,7 @@ Integration and regression verification covers:
 
 ## Out of Scope
 
-- Server-side roadmap persistence or a relationship table.
+- A dedicated relationship table or new relationship API.
 - Linking one ordinary task to multiple roadmaps.
 - Linking event, UCP, or development-plan tasks.
 - Portfolio reporting or cross-roadmap critical path.
