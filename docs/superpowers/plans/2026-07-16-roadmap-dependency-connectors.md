@@ -64,7 +64,7 @@ test("computeDependencyLineLayout keeps a visible shoulder for adjacent anchors"
   });
   assert.equal(line.startX, 496);
   assert.equal(line.endX, 500);
-  assert.equal(line.middleX, 512);
+  assert.equal(line.middleX, 516);
 });
 ```
 
@@ -72,7 +72,7 @@ test("computeDependencyLineLayout keeps a visible shoulder for adjacent anchors"
 
 Run: `cd frontend && node --test src/utils/roadmapDependencies.test.js`
 
-Expected: the new anchor test reports `200 !== 196`, and the adjacent-anchor test reports the old 10 px elbow instead of `512`.
+Expected: the new anchor test reports `200 !== 196`, and the adjacent-anchor test reports the old 10 px elbow instead of `516`.
 
 - [ ] **Step 3: Implement connector-aware anchors and a 16 px shoulder**
 
@@ -149,8 +149,8 @@ Write the test first, before adding the helper:
 ```js
 test("dependencyPathData keeps both horizontal connector shoulders", () => {
   assert.equal(
-    dependencyPathData({ startX: 496, startY: 27, middleX: 512, endY: 81, endX: 500 }),
-    "M 496 27 H 512 V 81 H 500",
+    dependencyPathData({ startX: 496, startY: 27, middleX: 516, endY: 81, endX: 500 }),
+    "M 496 27 H 516 V 81 H 500",
   );
 });
 ```
