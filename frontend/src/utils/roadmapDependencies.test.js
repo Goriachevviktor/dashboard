@@ -69,14 +69,27 @@ test("computeDependencyLineLayout ends on target bullet anchor", () => {
     predecessorEndPct: 20,
     targetStartPct: 50,
     chartWidth: 1000,
-    predecessorTop: 10,
-    targetTop: 80,
-    rowHeight: 54,
+    predecessorCenterY: 37,
+    targetCenterY: 107,
   });
-  assert.equal(line.startX, 204);
+  assert.equal(line.startX, 200);
   assert.equal(line.endX, 500);
   assert.equal(line.startY, 37);
   assert.equal(line.endY, 107);
+});
+
+test("computeDependencyLineLayout uses explicit centers for unequal rows", () => {
+  const line = computeDependencyLineLayout({
+    predecessorEndPct: 25,
+    targetStartPct: 60,
+    chartWidth: 1000,
+    predecessorCenterY: 83,
+    targetCenterY: 177,
+  });
+  assert.equal(line.startY, 83);
+  assert.equal(line.endY, 177);
+  assert.equal(line.startX, 250);
+  assert.equal(line.endX, 600);
 });
 
 
