@@ -5,6 +5,8 @@ import {
   TIMELINE_TASK_MIN_HEIGHT,
   buildFallbackTimelineLayout,
   normalizeMeasuredTimelineLayout,
+  reconcileTimelineLayoutRows,
+  updateObservedTimelineNode,
   timelineLayoutsEqual,
   timelineRowCenter,
 } from './timelineRowLayout.js';
@@ -24,6 +26,48 @@ test('fallback layout uses the existing minimum row heights', () => {
     { top: 40, height: 54 },
     { top: 94, height: 54 },
   ]);
+});
+
+test('row reconciliation replaces stale large geometry when keys shrink or reorder', () => {
+  const stale = {
+    signature: 'lane:structure\u0000task:one\u0000task:two',
+    layout: [
+      { ...rows[0], top: 0, height: 80 },
+      { ...rows[1], top: 80, height: 120 },
+      { ...rows[2], top: 200, height: 140 },
+    ],
+  };
+  const nextRows = [rows[0], rows[2]];
+  assert.deepEqual(reconcileTimelineLayoutRows(nextRows, stale), {
+    signature: 'lane:structure\u0000task:two',
+    layout: [
+      { ...rows[0], top: 0, height: 40 },
+      { ...rows[2], top: 40, height: 54 },
+    ],
+  });
+});
+
+test('observed row node lifecycle unobserves replacements and schedules measurement', () => {
+  const first = {};
+  const replacement = {};
+  const nodes = new Map();
+  const calls = [];
+  const observer = {
+    observe: node => calls.push(['observe', node]),
+    unobserve: node => calls.push(['unobserve', node]),
+  };
+  const schedule = () => calls.push(['schedule']);
+
+  updateObservedTimelineNode({ nodes, observer, key: 'task:one', node: first, schedule });
+  updateObservedTimelineNode({ nodes, observer, key: 'task:one', node: replacement, schedule });
+  updateObservedTimelineNode({ nodes, observer, key: 'task:one', node: null, schedule });
+
+  assert.deepEqual(calls, [
+    ['observe', first], ['schedule'],
+    ['unobserve', first], ['observe', replacement], ['schedule'],
+    ['unobserve', replacement], ['schedule'],
+  ]);
+  assert.equal(nodes.has('task:one'), false);
 });
 
 test('measured layout keeps ordered unequal heights and fills missing measurements', () => {

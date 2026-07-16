@@ -1,20 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  buildFallbackTimelineLayout,
   normalizeMeasuredTimelineLayout,
+  reconcileTimelineLayoutRows,
   timelineLayoutsEqual,
+  updateObservedTimelineNode,
 } from '../utils/timelineRowLayout.js';
 
 export function useTimelineRowLayout(rows) {
   const bodyRef = useRef(null);
   const nodesRef = useRef(new Map());
+  const callbacksRef = useRef(new Map());
   const frameRef = useRef(0);
-  const fallback = useMemo(() => buildFallbackTimelineLayout(rows), [rows]);
-  const [layout, setLayout] = useState(fallback);
+  const observerRef = useRef(null);
+  const scheduleRef = useRef(null);
+  const [layoutState, setLayoutState] = useState(() => reconcileTimelineLayoutRows(rows));
+  const currentState = reconcileTimelineLayoutRows(rows, layoutState);
+  const layout = currentState.layout;
 
-  const registerRow = useCallback(key => node => {
-    if (node) nodesRef.current.set(key, node);
-    else nodesRef.current.delete(key);
+  const registerRow = useCallback(key => {
+    if (!callbacksRef.current.has(key)) {
+      callbacksRef.current.set(key, node => updateObservedTimelineNode({
+        nodes: nodesRef.current,
+        observer: observerRef.current,
+        key,
+        node,
+        schedule: scheduleRef.current,
+      }));
+    }
+    return callbacksRef.current.get(key);
   }, []);
 
   useEffect(() => {
@@ -26,7 +39,10 @@ export function useTimelineRowLayout(rows) {
         return { key: row.key, top: rect ? rect.top - bodyTop : 0, height: rect?.height || 0 };
       });
       const next = normalizeMeasuredTimelineLayout(rows, measurements);
-      setLayout(current => timelineLayoutsEqual(current, next) ? current : next);
+      setLayoutState(current => {
+        const reconciled = reconcileTimelineLayoutRows(rows, current);
+        return timelineLayoutsEqual(reconciled.layout, next) ? reconciled : { ...reconciled, layout: next };
+      });
     };
     const schedule = () => {
       if (typeof window.requestAnimationFrame !== 'function') {
@@ -35,13 +51,17 @@ export function useTimelineRowLayout(rows) {
         frameRef.current = window.requestAnimationFrame(measure);
       }
     };
+    scheduleRef.current = schedule;
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
+    observerRef.current = observer;
     if (bodyRef.current) observer?.observe(bodyRef.current);
     nodesRef.current.forEach(node => observer?.observe(node));
     window.addEventListener('resize', schedule);
     schedule();
     return () => {
       observer?.disconnect();
+      if (observerRef.current === observer) observerRef.current = null;
+      if (scheduleRef.current === schedule) scheduleRef.current = null;
       window.removeEventListener('resize', schedule);
       if (frameRef.current && typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frameRef.current);
     };

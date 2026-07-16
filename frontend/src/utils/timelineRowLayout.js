@@ -41,3 +41,26 @@ export function timelineLayoutsEqual(left = [], right = []) {
 export function timelineRowCenter(row) {
   return row.top + row.height / 2;
 }
+
+export function timelineRowsSignature(rows = []) {
+  return rows.map(row => row.key || timelineRowKey(row)).join('\u0000');
+}
+
+export function reconcileTimelineLayoutRows(rows, state) {
+  const signature = timelineRowsSignature(rows);
+  if (state?.signature === signature) return state;
+  return { signature, layout: buildFallbackTimelineLayout(rows) };
+}
+
+export function updateObservedTimelineNode({ nodes, observer, key, node, schedule }) {
+  const previous = nodes.get(key);
+  if (previous === node) return;
+  if (previous) observer?.unobserve(previous);
+  if (node) {
+    nodes.set(key, node);
+    observer?.observe(node);
+  } else {
+    nodes.delete(key);
+  }
+  schedule?.();
+}

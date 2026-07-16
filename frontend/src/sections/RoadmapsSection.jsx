@@ -2343,7 +2343,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         </div>
 
         {/* Тело */}
-        <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: totalHeight, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
+        <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: rows.length ? undefined : 120, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
           {/* Сетка и оверлеи Gantt */}
           <div ref={gridRef} style={{ position: "absolute", top: 0, left: sideW, width: `calc(100% - ${sideW}px)`, height: totalHeight, pointerEvents: "none" }}>
             {/* Вертикальные линии */}
