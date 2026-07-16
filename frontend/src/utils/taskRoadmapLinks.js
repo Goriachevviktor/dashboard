@@ -1,6 +1,6 @@
 const COLUMN_TO_STATE = {
-  'Беклог': { status: 'todo', progress: 0 },
-  'В работе': { status: 'active', progress: 50 },
+  'Беклог': { status: 'planned', progress: 0 },
+  'В работе': { status: 'progress', progress: 50 },
   'Готов': { status: 'done', progress: 100 },
   'Архив': { status: 'done', progress: 100 },
 };
@@ -11,7 +11,7 @@ export function taskColumnToRoadmapState(column) {
 
 export function roadmapStateToTaskColumn(status, progress) {
   if (status === 'done' || Number(progress) >= 100) return 'Готов';
-  if (status === 'active' || Number(progress) > 0) return 'В работе';
+  if (status === 'progress' || Number(progress) > 0) return 'В работе';
   return 'Беклог';
 }
 
@@ -28,14 +28,18 @@ export function snapshotLinkedTask(task) {
 
 export function resolveLinkedBar(bar, task) {
   const state = taskColumnToRoadmapState(task.column);
-  return {
+  const resolved = {
     ...bar,
+    ...(bar.lane === undefined && bar.laneId !== undefined ? { lane: bar.laneId } : {}),
     title: task.title,
     endDate: task.due && task.due !== '—' ? task.due : bar.endDate,
-    ownerId: task.assigneeId || task.ownerId,
+    owner: task.assigneeId ?? task.ownerId,
     ...state,
     linkedTaskSnapshot: snapshotLinkedTask(task),
   };
+  delete resolved.laneId;
+  delete resolved.ownerId;
+  return resolved;
 }
 
 export function unlinkTaskBar(bar, task) {
@@ -45,10 +49,13 @@ export function unlinkTaskBar(bar, task) {
     ...bar,
     ...(snapshot?.title !== undefined ? { title: snapshot.title } : {}),
     ...(snapshot?.due && snapshot.due !== '—' ? { endDate: snapshot.due } : {}),
-    ...(snapshot ? { ownerId: snapshot.assigneeId || snapshot.ownerId, ...state } : {}),
+    ...(snapshot ? { owner: snapshot.assigneeId ?? snapshot.ownerId, ...state } : {}),
+    ...(bar.lane === undefined && bar.laneId !== undefined ? { lane: bar.laneId } : {}),
   };
   delete unlinked.linkedTaskId;
   delete unlinked.linkedTaskSnapshot;
+  delete unlinked.laneId;
+  delete unlinked.ownerId;
   return unlinked;
 }
 
@@ -68,12 +75,56 @@ export function normalizeTaskRoadmapLinks(roadmaps, tasks) {
   }));
 }
 
+export function normalizeTaskRoadmapLinksWithChanges(roadmaps, tasks) {
+  const normalized = normalizeTaskRoadmapLinks(roadmaps, tasks);
+  return {
+    roadmaps: normalized,
+    changedRoadmapIds: normalized
+      .filter((roadmap, index) => JSON.stringify(roadmap) !== JSON.stringify(roadmaps[index]))
+      .map(roadmap => roadmap.id),
+  };
+}
+
 export function availableTasksForLink(roadmaps, tasks, linkedTaskId) {
   const usedIds = new Set(Object.keys(buildRoadmapLinkIndex(roadmaps)));
   if (linkedTaskId !== undefined && linkedTaskId !== null) {
     usedIds.delete(String(linkedTaskId));
   }
   return tasks.filter(task => !usedIds.has(String(task.id)));
+}
+
+export function canLinkTaskToRoadmaps(roadmaps, task) {
+  return Boolean(task) && !buildRoadmapLinkIndex(roadmaps)[String(task.id)];
+}
+
+export function createSingleFlight() {
+  let active = null;
+  return {
+    run(operation) {
+      if (active) return active;
+      try {
+        active = Promise.resolve(operation());
+      } catch (error) {
+        active = Promise.reject(error);
+      }
+      active.then(() => { active = null; }, () => { active = null; });
+      return active;
+    },
+    get pending() { return Boolean(active); },
+  };
+}
+
+export async function persistRoadmapRepairs({ roadmaps, changedRoadmapIds, patchRoadmap, onError }) {
+  const changed = new Set(changedRoadmapIds);
+  const results = await Promise.all(roadmaps.filter(roadmap => changed.has(roadmap.id)).map(async roadmap => {
+    try {
+      return await patchRoadmap(roadmap.id, roadmap);
+    } catch (error) {
+      onError?.(error);
+      return null;
+    }
+  }));
+  return results.filter(Boolean);
 }
 
 export function buildLinkedTaskPatch(previousBar, nextBar) {

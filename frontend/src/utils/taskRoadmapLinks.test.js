@@ -8,30 +8,30 @@ import {
 } from './taskRoadmapLinks.js';
 
 test('maps task columns in both directions', () => {
-  assert.deepEqual(taskColumnToRoadmapState('Беклог'), { status: 'todo', progress: 0 });
-  assert.deepEqual(taskColumnToRoadmapState('В работе'), { status: 'active', progress: 50 });
+  assert.deepEqual(taskColumnToRoadmapState('Беклог'), { status: 'planned', progress: 0 });
+  assert.deepEqual(taskColumnToRoadmapState('В работе'), { status: 'progress', progress: 50 });
   assert.deepEqual(taskColumnToRoadmapState('Готов'), { status: 'done', progress: 100 });
   assert.deepEqual(taskColumnToRoadmapState('Архив'), { status: 'done', progress: 100 });
-  assert.equal(roadmapStateToTaskColumn('todo', 0), 'Беклог');
-  assert.equal(roadmapStateToTaskColumn('active', 35), 'В работе');
+  assert.equal(roadmapStateToTaskColumn('planned', 0), 'Беклог');
+  assert.equal(roadmapStateToTaskColumn('progress', 35), 'В работе');
   assert.equal(roadmapStateToTaskColumn('done', 100), 'Готов');
 });
 
 test('resolves task-owned values and preserves roadmap-owned values', () => {
-  const bar = { id: 'bar-1', linkedTaskId: 7, laneId: 'lane-a', startDate: '2026-07-10', endDate: '2026-07-15', predecessors: ['bar-0'] };
+  const bar = { id: 'bar-1', linkedTaskId: 7, lane: 'lane-a', startDate: '2026-07-10', endDate: '2026-07-15', predecessors: ['bar-0'] };
   const task = { id: 7, title: 'Отчёт', due: '2026-07-20', column: 'В работе', ownerId: 2, assigneeId: 3 };
   assert.deepEqual(resolveLinkedBar(bar, task), {
-    ...bar, title: 'Отчёт', endDate: '2026-07-20', ownerId: 3,
-    status: 'active', progress: 50, linkedTaskSnapshot: snapshotLinkedTask(task),
+    ...bar, title: 'Отчёт', endDate: '2026-07-20', owner: 3,
+    status: 'progress', progress: 50, linkedTaskSnapshot: snapshotLinkedTask(task),
   });
 });
 
 test('a newly linked bar resolves immediately from its task', () => {
   const task = { id: 8, title: 'План', due: '2026-08-02', column: 'Готов', assigneeId: 5 };
-  const bar = resolveLinkedBar({ id: 'bar-8', linkedTaskId: task.id, laneId: 'lane-a', startDate: '2026-07-25', predecessors: [] }, task);
+  const bar = resolveLinkedBar({ id: 'bar-8', linkedTaskId: task.id, lane: 'lane-a', startDate: '2026-07-25', predecessors: [] }, task);
   assert.equal(bar.title, 'План');
   assert.equal(bar.endDate, '2026-08-02');
-  assert.equal(bar.ownerId, 5);
+  assert.equal(bar.owner, 5);
   assert.equal(bar.status, 'done');
   assert.equal(bar.progress, 100);
 });
@@ -58,8 +58,8 @@ test('availability, unlink, patches, and index preserve one-task-one-roadmap', (
   assert.deepEqual(availableTasksForLink(roadmaps, tasks).map(task => task.id), [8]);
   assert.equal(unlinkTaskBar({ id: 'a', linkedTaskId: 7, linkedTaskSnapshot: { title: 'A' } }).title, 'A');
   assert.deepEqual(buildLinkedTaskPatch(
-    { endDate: '2026-07-20', status: 'todo', progress: 0 },
-    { endDate: '2026-07-21', status: 'active', progress: 50 },
+    { endDate: '2026-07-20', status: 'planned', progress: 0 },
+    { endDate: '2026-07-21', status: 'progress', progress: 50 },
   ), { due: '2026-07-21', column: 'В работе' });
   assert.deepEqual(buildRoadmapLinkIndex(roadmaps)['7'], { roadmapId: 'r1', roadmapTitle: 'One', barId: 'a' });
 });
@@ -98,8 +98,60 @@ test('linked roadmap writes stop before roadmap persistence when task patching f
       patchRoadmap: async () => { roadmapWrites += 1; },
     },
     roadmap: { id: 'r1', bars: [{ id: 'a', linkedTaskId: 7, endDate: '2026-07-20' }] },
-    previousBar: { id: 'a', linkedTaskId: 7, endDate: '2026-07-20', status: 'todo', progress: 0 },
-    nextBar: { id: 'a', linkedTaskId: 7, endDate: '2026-07-22', status: 'todo', progress: 0 },
+    previousBar: { id: 'a', linkedTaskId: 7, endDate: '2026-07-20', status: 'planned', progress: 0 },
+    nextBar: { id: 'a', linkedTaskId: 7, endDate: '2026-07-22', status: 'planned', progress: 0 },
   }), error);
   assert.equal(roadmapWrites, 0);
+});
+
+test('normalization reports repaired roadmaps and removes legacy field aliases', () => {
+  assert.equal(typeof taskRoadmapLinks.normalizeTaskRoadmapLinksWithChanges, 'function');
+  const roadmaps = [{ id: 'r1', bars: [{ id: 'a', linkedTaskId: 7, laneId: 'legacy', ownerId: 9 }] }];
+  const tasks = [{ id: 7, title: 'A', due: '—', column: 'Беклог', assigneeId: 3 }];
+  const result = taskRoadmapLinks.normalizeTaskRoadmapLinksWithChanges(roadmaps, tasks);
+  assert.deepEqual(result.changedRoadmapIds, ['r1']);
+  assert.equal(result.roadmaps[0].bars[0].lane, 'legacy');
+  assert.equal(result.roadmaps[0].bars[0].owner, 3);
+  assert.equal('laneId' in result.roadmaps[0].bars[0], false);
+  assert.equal('ownerId' in result.roadmaps[0].bars[0], false);
+});
+
+test('link availability is revalidated against current global roadmap state', () => {
+  assert.equal(typeof taskRoadmapLinks.canLinkTaskToRoadmaps, 'function');
+  const task = { id: 7 };
+  assert.equal(taskRoadmapLinks.canLinkTaskToRoadmaps([], task), true);
+  assert.equal(taskRoadmapLinks.canLinkTaskToRoadmaps([{ id: 'r1', bars: [{ linkedTaskId: 7 }] }], task), false);
+});
+
+test('single-flight runner shares an in-flight write and permits a later write', async () => {
+  assert.equal(typeof taskRoadmapLinks.createSingleFlight, 'function');
+  const gate = taskRoadmapLinks.createSingleFlight();
+  let calls = 0;
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const first = gate.run(async () => { calls += 1; await pending; return true; });
+  const second = gate.run(async () => { calls += 1; return true; });
+  assert.equal(first, second);
+  assert.equal(calls, 1);
+  release();
+  await first;
+  await gate.run(async () => { calls += 1; return true; });
+  assert.equal(calls, 2);
+});
+
+test('repaired roadmaps persist independently and report failures safely', async () => {
+  assert.equal(typeof taskRoadmapLinks.persistRoadmapRepairs, 'function');
+  const roadmaps = [{ id: 'r1' }, { id: 'r2' }];
+  const errors = [];
+  const saved = await taskRoadmapLinks.persistRoadmapRepairs({
+    roadmaps,
+    changedRoadmapIds: ['r1', 'r2'],
+    patchRoadmap: async (id, roadmap) => {
+      if (id === 'r2') throw new Error('failed repair');
+      return { ...roadmap, saved: true };
+    },
+    onError: error => errors.push(error.message),
+  });
+  assert.deepEqual(saved, [{ id: 'r1', saved: true }]);
+  assert.deepEqual(errors, ['failed repair']);
 });

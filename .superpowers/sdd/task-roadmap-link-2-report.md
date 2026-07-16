@@ -54,3 +54,33 @@ Implemented `persistLinkedBarChange` minimally, then reran the focused domain su
 
 - No component renderer harness exists in this frontend, so UI wiring was verified with lint/build and transactional behavior was extracted into tested pure orchestration as required.
 - Vite reports the pre-existing large-chunk warning (main bundle above 500 kB); this task does not change chunking.
+
+## Review fix pass
+
+### Corrections
+
+- Replaced the non-canonical `todo` / `active` link mapping with the existing roadmap vocabulary `planned` / `progress` / `done`, while retaining the ordinary-task columns `Беклог` / `В работе` / `Готов`.
+- Added changed-roadmap detection during link normalization. Repaired snapshots, duplicate links, missing links, and legacy bar aliases are now written back through `patchRoadmap`; each failed repair is reported without failing the full load.
+- Added immediate global uniqueness revalidation in the link handler.
+- Added a tested single-flight runner and disabled modal actions while linking, preventing repeated clicks from issuing duplicate writes.
+- Made the bar editor await persistence, remain open after failure, and close only when a save returns successfully.
+- Canonicalized persisted roadmap bars to `lane` and `owner`. Legacy `laneId` / `ownerId` bar aliases are accepted only at normalization boundaries and removed from normalized output; task snapshots retain task-domain `ownerId` as task data.
+
+### RED evidence
+
+Canonical mapping and normalization tests initially produced 4 expected failures: backlog returned `todo`, in-progress returned `active`, linked bars returned `ownerId`, and changed-normalization reporting was absent.
+
+After that cycle, uniqueness, single-flight, and repair-persistence contracts initially produced 3 expected failures because `canLinkTaskToRoadmaps`, `createSingleFlight`, and `persistRoadmapRepairs` did not exist.
+
+The first single-flight implementation exposed an additional expected behavioral RED: work started on a microtask, so the immediate call-count assertion was `0 !== 1`. The runner was corrected to invoke the operation synchronously while sharing its promise.
+
+### GREEN evidence
+
+- Focused domain tests after implementation: 11/11 passed.
+- Combined focused suite: 17/17 passed.
+- Touched-file ESLint: exit 0, no errors.
+
+### Review notes
+
+- The normalization repair path deliberately persists each roadmap independently so one failed repair cannot prevent other roadmaps from being repaired or displayed.
+- UI renderer infrastructure remains unavailable; async UI behavior is implemented with the tested single-flight primitive and verified additionally by lint and production build.

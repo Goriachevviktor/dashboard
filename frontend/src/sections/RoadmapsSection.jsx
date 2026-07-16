@@ -17,8 +17,11 @@ import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeR
 import {
   availableTasksForLink,
   buildRoadmapLinkIndex,
-  normalizeTaskRoadmapLinks,
+  canLinkTaskToRoadmaps,
+  createSingleFlight,
+  normalizeTaskRoadmapLinksWithChanges,
   persistLinkedBarChange,
+  persistRoadmapRepairs,
   resolveLinkedBar,
   snapshotLinkedTask,
   unlinkTaskBar,
@@ -1114,6 +1117,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
   const [predecessors, setPredecessors] = useState(sanitizePredecessorIds(initBar?.predecessors, initBar?.id));
   const [candidatePredecessorId, setCandidatePredecessorId] = useState("");
   const [error,    setError]    = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const predecessorOptions = useMemo(() => (
     (Array.isArray(bars) ? bars : [])
@@ -1152,7 +1156,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
     setMemberIds(list => list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const start = parseIsoDate(startDate);
     const end = parseIsoDate(endDate);
@@ -1164,19 +1168,25 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
       setError("Дата окончания должна быть позже даты начала");
       return;
     }
-    onSave({
-      id: initBar?.id,
-      title,
-      lane,
-      status,
-      progress: Number(progress),
-      startDate,
-      endDate,
-      owner,
-      memberIds: sanitizeMemberIds(memberIds, owner),
-      predecessors: sanitizePredecessorIds(predecessors, initBar?.id),
-    });
-    onClose();
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const saved = await onSave({
+        id: initBar?.id,
+        title,
+        lane,
+        status,
+        progress: Number(progress),
+        startDate,
+        endDate,
+        owner,
+        memberIds: sanitizeMemberIds(memberIds, owner),
+        predecessors: sanitizePredecessorIds(predecessors, initBar?.id),
+      });
+      if (saved) onClose();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const inputStyle = {
@@ -1403,11 +1413,11 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
               padding: "8px 20px", borderRadius: 999, border: "none",
               background: "rgba(118,118,128,.12)", color: "#1d1d1f", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Отмена</button>
-            <button type="submit" style={{
+            <button type="submit" disabled={submitting} style={{
               padding: "8px 22px", borderRadius: 999, border: "none",
               background: "#007aff", color: "#fff", boxShadow: "0 2px 8px rgba(0,122,255,.28)",
               fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
-            }}>Сохранить</button>
+            }}>{submitting ? "Сохраняем…" : "Сохранить"}</button>
           </div>
         </div>
       </form>
@@ -1417,6 +1427,8 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
 
 function TaskLinkModal({ tasks, members, onClose, onLink }) {
   const [query, setQuery] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const singleFlight = useRef(createSingleFlight());
   const filtered = tasks.filter(task => String(task.title || "").toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.30)", display: "grid", placeItems: "center", padding: 20 }}>
@@ -1425,8 +1437,16 @@ function TaskLinkModal({ tasks, members, onClose, onLink }) {
         <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Поиск по названию" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #dbeafe", borderRadius: 10, marginBottom: 12 }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map(task => {
-            const assignee = getMemberById(members, task.assigneeId || task.ownerId);
-            return <button key={task.id} type="button" onClick={() => onLink(task)} style={{ textAlign: "left", border: "1px solid #e8f2ff", borderRadius: 12, padding: 12, background: "#fff", cursor: "pointer" }}>
+            const assignee = getMemberById(members, task.assigneeId ?? task.ownerId);
+            return <button key={task.id} type="button" disabled={submitting} onClick={() => singleFlight.current.run(async () => {
+              setSubmitting(true);
+              try {
+                const linked = await onLink(task);
+                if (linked) onClose();
+              } finally {
+                setSubmitting(false);
+              }
+            })} style={{ textAlign: "left", border: "1px solid #e8f2ff", borderRadius: 12, padding: 12, background: "#fff", cursor: "pointer" }}>
               <div style={{ fontWeight: 700 }}>{task.title || "Без названия"}</div>
               <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{task.column || "Беклог"} · {task.due || "—"} · {assignee?.name || "Не назначен"}</div>
             </button>;
@@ -2877,7 +2897,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, 
         <button onClick={() => setTaskLinkModal(true)} style={{ display: "inline-flex", alignItems: "center", padding: "8px 16px", borderRadius: 999, border: "none", color: "#007aff", cursor: "pointer", fontFamily: FONT_STACK, fontWeight: 600 }}>Связать обычную задачу</button>
       </div>
 
-      {taskLinkModal && <TaskLinkModal tasks={availableTasks} members={members} onClose={() => setTaskLinkModal(false)} onLink={async task => { await onLinkOrdinaryTask(task); setTaskLinkModal(false); }} />}
+      {taskLinkModal && <TaskLinkModal tasks={availableTasks} members={members} onClose={() => setTaskLinkModal(false)} onLink={onLinkOrdinaryTask} />}
 
       {/* Модалка дорожки */}
       {laneModal && (
@@ -2928,10 +2948,7 @@ function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, 
 function recalc(rm) {
   const baseYear = inferRoadmapBaseYear(rm);
   const barsWithIds = ensureRoadmapTaskIds(rm?.id || "roadmap", rm.bars || []);
-  const bars = applyDependencySchedule(barsWithIds.map(barItem => normalizeBarDates({
-    ...barItem,
-    ...(barItem.linkedTaskId != null && barItem.ownerId != null ? { owner: memberKey(barItem.ownerId) } : {}),
-  }, baseYear)));
+  const bars = applyDependencySchedule(barsWithIds.map(barItem => normalizeBarDates(barItem, baseYear)));
   const milestones = (rm.milestones || []).map(milestone => normalizeMilestoneDate(milestone, baseYear));
   const timeline = buildTimelineMeta({ ...rm, bars, milestones });
   const total = bars.length || 1;
@@ -3503,7 +3520,15 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
           listRoadmaps: () => api.listRoadmaps(),
           clearLegacy: () => window.localStorage.removeItem(LEGACY_ROADMAPS_KEY),
         });
-        if (!cancelled) setRoadmaps(normalizeRoadmaps(normalizeTaskRoadmapLinks(resolvedRoadmaps, tasks), recalc));
+        const normalizedLinks = normalizeTaskRoadmapLinksWithChanges(resolvedRoadmaps, tasks);
+        const normalizedRoadmaps = normalizeRoadmaps(normalizedLinks.roadmaps, recalc);
+        if (!cancelled) setRoadmaps(normalizedRoadmaps);
+        await persistRoadmapRepairs({
+          roadmaps: normalizedRoadmaps,
+          changedRoadmapIds: normalizedLinks.changedRoadmapIds,
+          patchRoadmap: (id, roadmap) => api.patchRoadmap(id, roadmap),
+          onError: error => { if (!cancelled) onError?.(error); },
+        });
       } catch (error) {
         if (!cancelled) {
           setLoadError(error?.message || "Не удалось загрузить дорожные карты");
@@ -3591,12 +3616,13 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
       try {
         const saved = recalc(await persistLinkedBarChange({ api, roadmap: current, previousBar, nextBar }));
         replaceRoadmap(saved);
+        return saved;
       } catch (error) {
         onError?.(error);
+        return null;
       }
-      return;
     }
-    await updateOpenRoadmap(roadmap => {
+    return updateOpenRoadmap(roadmap => {
       const bars = idx === null
         ? [...roadmap.bars, { ...data, id: data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, data.id) }]
         : roadmap.bars.map((barItem, index) => index === idx ? { ...barItem, ...data, id: barItem.id || data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, barItem.id || data.id) } : barItem);
@@ -3606,15 +3632,14 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
 
   async function handleLinkOrdinaryTask(task) {
     const current = roadmaps.find(roadmap => roadmap.id === openId);
-    if (!current || !task) return;
+    if (!current || !task || !canLinkTaskToRoadmaps(roadmaps, task)) return null;
     const today = new Date().toISOString().slice(0, 10);
     const dueDate = task.due && task.due !== "—" ? task.due : null;
     const startDate = dueDate && dueDate < today ? dueDate : today;
     const base = {
       id: createRoadmapTaskId(),
       lane: current.lanes[0]?.id || "",
-      laneId: current.lanes[0]?.id || "",
-      owner: memberKey(task.assigneeId || task.ownerId || defaultOwnerId),
+      owner: memberKey(task.assigneeId ?? task.ownerId ?? defaultOwnerId),
       startDate,
       endDate: dueDate || startDate,
       predecessors: [],
@@ -3622,7 +3647,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
       linkedTaskSnapshot: snapshotLinkedTask(task),
     };
     const resolved = resolveLinkedBar(base, task);
-    await persistRoadmap(recalc({ ...current, bars: [...current.bars, resolved] }));
+    return persistRoadmap(recalc({ ...current, bars: [...current.bars, resolved] }));
   }
 
   async function handleUnlinkBar(idx) {
@@ -3630,8 +3655,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
       ...roadmap,
       bars: roadmap.bars.map((bar, index) => {
         if (index !== idx) return bar;
-        const unlinked = unlinkTaskBar(bar, taskById.get(String(bar.linkedTaskId)));
-        return { ...unlinked, ...(unlinked.ownerId != null ? { owner: memberKey(unlinked.ownerId) } : {}) };
+        return unlinkTaskBar(bar, taskById.get(String(bar.linkedTaskId)));
       }),
     }));
   }
