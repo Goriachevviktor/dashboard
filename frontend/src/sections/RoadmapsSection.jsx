@@ -14,7 +14,13 @@ import {
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
-import { timelineRowCenter, timelineRowKey } from '../utils/timelineRowLayout.js';
+import {
+  TIMELINE_LANE_MIN_HEIGHT,
+  TIMELINE_TASK_MIN_HEIGHT,
+  timelineRowCenter,
+  timelineRowKey,
+  waitForTimelineReady,
+} from '../utils/timelineRowLayout.js';
 import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
 import {
   availableTasksForLink,
@@ -1978,9 +1984,6 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
 
 // ── Timeline (Gantt) ───────────────────────────────────────────────────────
 
-const TIMELINE_TASK_ROW_HEIGHT = 54;
-const TIMELINE_LANE_ROW_HEIGHT = 40;
-
 function GanttBar({
   b,
   hover,
@@ -2006,7 +2009,7 @@ function GanttBar({
   const ownerMember = getMemberById(members, b.owner);
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
-    <div style={{ height: "100%", minHeight: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
+    <div style={{ height: "100%", minHeight: TIMELINE_TASK_MIN_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
       <div
         onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
@@ -2421,7 +2424,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           {rows.map(r => (
             <div key={r.key} style={{ display: "contents" }}>
               <div style={{
-                minHeight: r.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT,
+                minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT,
                 padding: r.type === "lane" ? "0 20px" : "7px 20px 7px 28px",
                 display: "flex", alignItems: "center", gap: 8,
                 borderRight: "1px solid rgba(15,23,42,.06)", position: "sticky", left: 0, zIndex: 6,
@@ -2434,7 +2437,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 {r.type === "lane" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />}
                 {r.type === "lane" ? r.lane.name : r.b.title}
               </div>
-              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT, position: "relative", background: r.type === "lane" ? "rgba(118,118,128,.04)" : undefined }}>
+              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT, position: "relative", background: r.type === "lane" ? "rgba(118,118,128,.04)" : undefined }}>
                 {r.type === "bar" && (
                   <GanttBar
                     b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick}
@@ -3315,12 +3318,12 @@ function buildTimelinePrintHtml(roadmap, members) {
           .timeline-body { position: relative; width: ${totalW}px; }
           .timeline-pair { display: grid; grid-template-columns: 340px ${chartW}px; align-items: stretch; position: relative; }
           .timeline-label { border-right: 1px solid rgba(15,23,42,.06); background: #fff; position: relative; z-index: 2; box-sizing: border-box; white-space: normal; }
-          .lane-label { display: flex; align-items: center; gap: 8px; min-height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
+          .lane-label { display: flex; align-items: center; gap: 8px; min-height: ${TIMELINE_LANE_MIN_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
           .lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-          .task-label { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #3a3a3c; overflow-wrap: anywhere; }
+          .task-label { min-height: ${TIMELINE_TASK_MIN_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #3a3a3c; overflow-wrap: anywhere; }
           .timeline-chart-row { position: relative; min-width: 0; }
-          .lane-chart { min-height: ${TIMELINE_LANE_ROW_HEIGHT}px; background: rgba(118,118,128,.04); }
-          .task-chart { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; }
+          .lane-chart { min-height: ${TIMELINE_LANE_MIN_HEIGHT}px; background: rgba(118,118,128,.04); }
+          .task-chart { min-height: ${TIMELINE_TASK_MIN_HEIGHT}px; }
           .timeline-overlays { position: absolute; left: ${sideW}px; top: 0; width: ${chartW}px; height: 100%; pointer-events: none; z-index: 1; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
           .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
@@ -3503,10 +3506,11 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     }
     frameWindow.focus();
     try {
-      await Promise.race([
-        Promise.resolve(frameWindow.__timelineReady),
-        new Promise(resolve => window.setTimeout(resolve, 1500)),
-      ]);
+      await waitForTimelineReady(() => frameWindow.__timelineReady, {
+        timeoutMs: 1500,
+        setTimer: window.setTimeout.bind(window),
+        clearTimer: window.clearTimeout.bind(window),
+      });
       frameWindow.print();
     } finally {
       cleanup();

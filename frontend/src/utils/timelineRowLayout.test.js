@@ -12,6 +12,7 @@ import {
   timelineLayoutsEqual,
   timelineRowCenter,
   timelineRowKey,
+  waitForTimelineReady,
 } from './timelineRowLayout.js';
 
 const rows = [
@@ -23,6 +24,25 @@ const rows = [
 test('row keys remain stable for print and browser layout', () => {
   assert.equal(timelineRowKey({ type: 'lane', lane: { id: 'people' } }), 'lane:people');
   assert.equal(timelineRowKey({ type: 'bar', b: { id: 'hire-lead' } }), 'task:hire-lead');
+});
+
+test('rejected print readiness still resolves the wait and clears its timeout', async () => {
+  const cleared = [];
+  const timer = { id: 17 };
+  await waitForTimelineReady(() => Promise.reject(new Error('layout failed')), {
+    setTimer: () => timer,
+    clearTimer: token => cleared.push(token),
+  });
+  assert.deepEqual(cleared, [timer]);
+});
+
+test('throwing print readiness still resolves the wait and clears its timeout', async () => {
+  const cleared = [];
+  await waitForTimelineReady(() => { throw new Error('readiness getter failed'); }, {
+    setTimer: () => 23,
+    clearTimer: token => cleared.push(token),
+  });
+  assert.deepEqual(cleared, [23]);
 });
 
 test('fallback layout uses the existing minimum row heights', () => {

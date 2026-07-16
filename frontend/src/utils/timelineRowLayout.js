@@ -42,6 +42,23 @@ export function timelineRowCenter(row) {
   return row.top + row.height / 2;
 }
 
+export async function waitForTimelineReady(getReadiness, {
+  timeoutMs = 1500,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+} = {}) {
+  let timeoutToken;
+  const timeout = new Promise(resolve => {
+    timeoutToken = setTimer(resolve, timeoutMs);
+  });
+  const readiness = Promise.resolve().then(() => getReadiness?.()).catch(() => undefined);
+  try {
+    await Promise.race([readiness, timeout]);
+  } finally {
+    if (timeoutToken !== undefined) clearTimer(timeoutToken);
+  }
+}
+
 export function timelineRowsSignature(rows = []) {
   return rows.map(row => row.key || timelineRowKey(row)).join('\u0000');
 }
