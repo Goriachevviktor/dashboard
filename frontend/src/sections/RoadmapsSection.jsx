@@ -3,6 +3,7 @@ import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
 import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
+import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import {
   applyDependencySchedule,
@@ -13,6 +14,7 @@ import {
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
+import { timelineRowCenter, timelineRowKey } from '../utils/timelineRowLayout.js';
 import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
 import {
   availableTasksForLink,
@@ -2004,7 +2006,7 @@ function GanttBar({
   const ownerMember = getMemberById(members, b.owner);
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
-    <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
+    <div style={{ height: "100%", minHeight: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
       <div
         onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
@@ -2097,23 +2099,23 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     && today >= parseIsoDate(timeline.startDate)
     && today <= addDays(parseIsoDate(timeline.endDate), 1);
 
-  const rows = [];
-  rm.lanes.forEach(lane => {
-    const laneBars = rm.bars.filter(b => b.lane === lane.id);
-    rows.push({ type: "lane", lane });
-    laneBars.forEach(b => rows.push({ type: "bar", b: { ...b, timeline }, idx: rm.bars.indexOf(b) }));
-  });
-
-  let offsetTop = 0;
-  const positionedRows = rows.map(row => {
-    const top = offsetTop;
-    offsetTop += row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT;
-    return { ...row, top };
-  });
-  const gridHeight = positionedRows.length ? offsetTop : 120;
+  const rows = useMemo(() => {
+    const ordered = [];
+    rm.lanes.forEach(lane => {
+      const laneRow = { type: "lane", lane };
+      ordered.push({ ...laneRow, key: timelineRowKey(laneRow) });
+      rm.bars.forEach((b, idx) => {
+        if (b.lane !== lane.id) return;
+        const barRow = { type: "bar", b: { ...b, timeline }, idx };
+        ordered.push({ ...barRow, key: timelineRowKey(barRow) });
+      });
+    });
+    return ordered;
+  }, [rm.bars, rm.lanes, timeline]);
+  const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
   const chartWidth = Math.max(720, timeline.months.length * 110);
   const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
-  const hoveredBar = hover == null ? null : positionedRows.find(row => row.type === "bar" && row.idx === hover)?.b || null;
+  const hoveredBar = hover == null ? null : rows.find(row => row.type === "bar" && row.idx === hover)?.b || null;
   const focusTaskId = hoveredBar?.id || linkSourceId || "";
   const highlightedTaskIds = useMemo(() => {
     if (!focusTaskId) return new Set();
@@ -2125,14 +2127,14 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   }, [dependencyState.predecessorsById, dependencyState.successorsById, focusTaskId]);
   const rowByTaskId = useMemo(() => {
     const map = new Map();
-    positionedRows.forEach(row => {
+    layout.forEach(row => {
       if (row.type === "bar" && row.b?.id) map.set(row.b.id, row);
     });
     return map;
-  }, [positionedRows]);
+  }, [layout]);
   const dependencyDebugEdges = useMemo(() => buildDependencyDebugEdges(rm.bars), [rm.bars]);
   const dependencyLines = useMemo(() => (
-    positionedRows
+    layout
       .filter(row => row.type === "bar")
       .flatMap(row => {
         const predecessors = dependencyState.predecessorsById.get(row.b.id) || [];
@@ -2143,9 +2145,8 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             predecessorEndPct: percentFromTimelineDate(predecessorRow.b.endDate, timeline, true),
             targetStartPct: percentFromTimelineDate(row.b.startDate, timeline),
             chartWidth,
-            predecessorTop: predecessorRow.top,
-            targetTop: row.top,
-            rowHeight: TIMELINE_TASK_ROW_HEIGHT,
+            predecessorCenterY: timelineRowCenter(predecessorRow),
+            targetCenterY: timelineRowCenter(row),
           });
           return {
             id: `${predecessorId}->${row.b.id}`,
@@ -2156,7 +2157,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           };
         }).filter(Boolean);
       })
-  ), [chartWidth, dependencyState.predecessorsById, highlightedTaskIds, positionedRows, rowByTaskId, timeline]);
+  ), [chartWidth, dependencyState.predecessorsById, highlightedTaskIds, layout, rowByTaskId, timeline]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2342,32 +2343,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         </div>
 
         {/* Тело */}
-        <div style={{ display: "flex" }}>
-          {/* Левый сайдбар */}
-          <div style={{
-            width: sideW,
-            flexShrink: 0,
-            borderRight: "1px solid rgba(15,23,42,.06)",
-            position: "sticky",
-            left: 0,
-            zIndex: 6,
-            background: "#fff",
-            boxShadow: "8px 0 16px rgba(15,23,42,.04)",
-          }}>
-            {positionedRows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "rgba(118,118,128,.04)", fontSize: 12, fontWeight: 700, color: "#1d1d1f" }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />
-                {r.lane.name}
-              </div>
-            ) : (
-              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: highlightedTaskIds.has(r.b.id) ? "#1d1d1f" : "#3a3a3c", fontWeight: highlightedTaskIds.has(r.b.id) ? 600 : 400, whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
-                {r.b.title}
-              </div>
-            ))}
-          </div>
-
-          {/* Сетка Gantt */}
-          <div ref={gridRef} style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: gridHeight, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
+        <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: totalHeight, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
+          {/* Сетка и оверлеи Gantt */}
+          <div ref={gridRef} style={{ position: "absolute", top: 0, left: sideW, width: `calc(100% - ${sideW}px)`, height: totalHeight, pointerEvents: "none" }}>
             {/* Вертикальные линии */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
               {timeline.months.map((month, i) => (
@@ -2391,9 +2369,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             )}
             {dependencyLines.length > 0 && (
               <svg
-                viewBox={`0 0 ${chartWidth} ${gridHeight}`}
+                viewBox={`0 0 ${chartWidth} ${totalHeight}`}
                 preserveAspectRatio="none"
-                style={{ position: "absolute", inset: 0, width: "100%", height: gridHeight, pointerEvents: "none", zIndex: 2 }}
+                style={{ position: "absolute", inset: 0, width: "100%", height: totalHeight, pointerEvents: "none", zIndex: 2 }}
               >
                 {dependencyLines.map(line => (
                   <path
@@ -2421,7 +2399,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     position: "absolute", top: 0, bottom: 0, zIndex: 3,
                     left: `${milestonePct}%`, transform: "translateX(-50%)",
                     display: "flex", flexDirection: "column", alignItems: "center",
-                    pointerEvents: "none",
+                    pointerEvents: "none", height: totalHeight,
                   }}>
                   <span
                     onPointerDown={event => startMilestoneDrag(event, m, i, milestonePct)}
@@ -2437,36 +2415,47 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 </div>
               );
             })}
-            {/* Строки */}
-            {positionedRows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "rgba(118,118,128,.04)" }} />
-            ) : (
-              <GanttBar
-                key={i}
-                b={r.b}
-                idx={r.idx}
-                hover={hover}
-                setHover={setHover}
-                onBarClick={onBarClick}
-                onBarPointerStart={startBarPointerAction}
-                onBarLinkClick={onLinkTaskSelect}
-                members={members}
-                previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null}
-                previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null}
-                isDragging={barDrag?.idx === r.idx}
-                linkMode={linkMode}
-                isLinked={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0 || (dependencyState.successorsById.get(r.b.id) || []).length > 0}
-                hasIncomingLink={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0}
-                hasOutgoingLink={(dependencyState.successorsById.get(r.b.id) || []).length > 0}
-                isHighlighted={highlightedTaskIds.has(r.b.id)}
-              />
-            ))}
           </div>
+
+          {/* Парные строки: одна grid-дорожка для подписи и диаграммы */}
+          {rows.map(r => (
+            <div key={r.key} style={{ display: "contents" }}>
+              <div style={{
+                minHeight: r.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT,
+                padding: r.type === "lane" ? "0 20px" : "7px 20px 7px 28px",
+                display: "flex", alignItems: "center", gap: 8,
+                borderRight: "1px solid rgba(15,23,42,.06)", position: "sticky", left: 0, zIndex: 6,
+                width: sideW, background: r.type === "lane" ? "rgba(118,118,128,.04)" : "#fff",
+                boxShadow: "8px 0 16px rgba(15,23,42,.04)", fontSize: r.type === "lane" ? 12 : 13,
+                lineHeight: 1.25, fontWeight: r.type === "lane" || highlightedTaskIds.has(r.b?.id) ? 700 : 400,
+                color: r.type === "lane" || highlightedTaskIds.has(r.b?.id) ? "#1d1d1f" : "#3a3a3c",
+                whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere",
+              }} title={r.type === "bar" ? r.b.title : undefined}>
+                {r.type === "lane" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />}
+                {r.type === "lane" ? r.lane.name : r.b.title}
+              </div>
+              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT, position: "relative", background: r.type === "lane" ? "rgba(118,118,128,.04)" : undefined }}>
+                {r.type === "bar" && (
+                  <GanttBar
+                    b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick}
+                    onBarPointerStart={startBarPointerAction} onBarLinkClick={onLinkTaskSelect} members={members}
+                    previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null}
+                    previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null}
+                    isDragging={barDrag?.idx === r.idx} linkMode={linkMode}
+                    isLinked={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0 || (dependencyState.successorsById.get(r.b.id) || []).length > 0}
+                    hasIncomingLink={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0}
+                    hasOutgoingLink={(dependencyState.successorsById.get(r.b.id) || []).length > 0}
+                    isHighlighted={highlightedTaskIds.has(r.b.id)}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Empty state — нет дорожек */}
-      {positionedRows.length === 0 && (
+      {rows.length === 0 && (
         <div style={{ padding: "32px 24px", textAlign: "center", color: "#a1a1a6", fontSize: 13 }}>
           Нет дорожек. Нажмите «Редактировать» карту и добавьте направления.
         </div>

@@ -39,6 +39,15 @@ test('measured layout keeps ordered unequal heights and fills missing measuremen
   assert.equal(timelineRowCenter(layout[1]), 101);
 });
 
+test('measured top values are normalized into contiguous shared rows', () => {
+  const layout = normalizeMeasuredTimelineLayout(rows, [
+    { key: 'lane:structure', top: 12, height: 40.2 },
+    { key: 'task:one', top: 52.2, height: 73.6 },
+    { key: 'task:two', top: 125.8, height: 54.1 },
+  ]);
+  assert.deepEqual(layout.map(item => [item.top, item.height]), [[0, 40.2], [40.2, 73.6], [113.8, 54.1]]);
+});
+
 test('layout equality compares ordered geometry and ignores new object identity', () => {
   const first = buildFallbackTimelineLayout(rows);
   const same = first.map(item => ({ ...item }));
