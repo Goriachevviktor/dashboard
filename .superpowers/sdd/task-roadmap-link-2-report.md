@@ -84,3 +84,17 @@ The first single-flight implementation exposed an additional expected behavioral
 
 - The normalization repair path deliberately persists each roadmap independently so one failed repair cannot prevent other roadmaps from being repaired or displayed.
 - UI renderer infrastructure remains unavailable; async UI behavior is implemented with the tested single-flight primitive and verified additionally by lint and production build.
+
+## Modal race re-review fix
+
+- `BarFormModal` now routes save, unlink, and delete through one shared single-flight mutation guard.
+- While a mutation is pending, a disabled fieldset blocks every editable control plus unlink, delete, cancel, and submit, preventing edit/close races.
+- Unlink and delete now await their persistence callbacks and close only after a truthy saved-roadmap result. Failed writes leave the modal open and restore controls for retry.
+- `handleUnlinkBar` and `handleDeleteBar` now return the saved roadmap or `null` consistently through `updateOpenRoadmap`.
+
+TDD evidence: added a rejection/retry contract for the shared single-flight helper. It passed immediately because the previously corrected helper already cleared its guard on both resolve and reject; this test records the modal retry contract explicitly.
+
+Verification:
+
+- `node --test src/utils/taskRoadmapLinks.test.js src/sections/roadmapState.test.js` — 18/18 passed.
+- `npx eslint src/sections/RoadmapsSection.jsx src/utils/taskRoadmapLinks.js src/utils/taskRoadmapLinks.test.js` — exit 0, no errors.

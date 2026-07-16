@@ -1118,6 +1118,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
   const [candidatePredecessorId, setCandidatePredecessorId] = useState("");
   const [error,    setError]    = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const mutationFlight = useRef(createSingleFlight());
 
   const predecessorOptions = useMemo(() => (
     (Array.isArray(bars) ? bars : [])
@@ -1156,6 +1157,22 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
     setMemberIds(list => list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
   }
 
+  async function runMutation(operation) {
+    return mutationFlight.current.run(async () => {
+      setSubmitting(true);
+      try {
+        const saved = await operation();
+        if (saved) onClose();
+        return saved;
+      } catch (mutationError) {
+        setError(mutationError?.message || "Не удалось сохранить изменения");
+        return null;
+      } finally {
+        setSubmitting(false);
+      }
+    });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     const start = parseIsoDate(startDate);
@@ -1168,10 +1185,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
       setError("Дата окончания должна быть позже даты начала");
       return;
     }
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const saved = await onSave({
+    await runMutation(() => onSave({
         id: initBar?.id,
         title,
         lane,
@@ -1182,11 +1196,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
         owner,
         memberIds: sanitizeMemberIds(memberIds, owner),
         predecessors: sanitizePredecessorIds(predecessors, initBar?.id),
-      });
-      if (saved) onClose();
-    } finally {
-      setSubmitting(false);
-    }
+      }));
   }
 
   const inputStyle = {
@@ -1209,6 +1219,8 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
         <div style={{ fontSize: 18, fontWeight: 800, color: "#1d1d1f", letterSpacing: -.4, marginBottom: 4 }}>
           {isEdit ? "Редактировать задачу" : "Новая задача"}
         </div>
+
+        <fieldset disabled={submitting} style={{ display: "contents" }}>
 
         {linkedTask && <div style={{ fontSize: 12, fontWeight: 700, color: "#007aff" }}>Связана с обычной задачей</div>}
 
@@ -1396,13 +1408,13 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
         <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 4 }}>
           <div>
             {linkedTask && (
-              <button type="button" onClick={() => { onUnlink?.(); onClose(); }} style={{
+              <button type="button" onClick={() => runMutation(() => onUnlink?.())} style={{
                 padding: "8px 18px", borderRadius: 999, border: "none", marginRight: 8,
                 background: "rgba(0,122,255,.08)", color: "#007aff", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>Отвязать</button>
             )}
             {isEdit && (
-              <button type="button" onClick={() => { onDelete(); onClose(); }} style={{
+              <button type="button" onClick={() => runMutation(onDelete)} style={{
                 padding: "8px 18px", borderRadius: 999, border: "none",
                 background: "rgba(118,118,128,.08)", color: "#e03131", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>Удалить</button>
@@ -1420,6 +1432,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
             }}>{submitting ? "Сохраняем…" : "Сохранить"}</button>
           </div>
         </div>
+        </fieldset>
       </form>
     </div>
   );
@@ -3651,7 +3664,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
   }
 
   async function handleUnlinkBar(idx) {
-    await updateOpenRoadmap(roadmap => ({
+    return updateOpenRoadmap(roadmap => ({
       ...roadmap,
       bars: roadmap.bars.map((bar, index) => {
         if (index !== idx) return bar;
@@ -3661,7 +3674,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
   }
 
   async function handleDeleteBar(idx) {
-    await updateOpenRoadmap(roadmap => {
+    return updateOpenRoadmap(roadmap => {
       const deletedTaskId = roadmap.bars[idx]?.id;
       return { ...roadmap, bars: removeTaskDependencies(roadmap.bars.filter((_, index) => index !== idx), deletedTaskId) };
     });

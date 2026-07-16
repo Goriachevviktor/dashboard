@@ -139,6 +139,14 @@ test('single-flight runner shares an in-flight write and permits a later write',
   assert.equal(calls, 2);
 });
 
+test('single-flight runner clears its guard after rejection so the user can retry', async () => {
+  const gate = taskRoadmapLinks.createSingleFlight();
+  await assert.rejects(() => gate.run(async () => { throw new Error('save failed'); }), /save failed/);
+  assert.equal(gate.pending, false);
+  assert.equal(await gate.run(async () => 'saved'), 'saved');
+  assert.equal(gate.pending, false);
+});
+
 test('repaired roadmaps persist independently and report failures safely', async () => {
   assert.equal(typeof taskRoadmapLinks.persistRoadmapRepairs, 'function');
   const roadmaps = [{ id: 'r1' }, { id: 'r2' }];
