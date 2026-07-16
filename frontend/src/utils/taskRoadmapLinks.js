@@ -44,12 +44,18 @@ export function resolveLinkedBar(bar, task) {
 
 export function unlinkTaskBar(bar, task) {
   const snapshot = task ? snapshotLinkedTask(task) : bar.linkedTaskSnapshot;
-  const state = snapshot ? taskColumnToRoadmapState(snapshot.column) : {};
+  const validTitle = typeof snapshot?.title === 'string' && snapshot.title.trim() !== '';
+  const validDue = typeof snapshot?.due === 'string' && snapshot.due.trim() !== '' && snapshot.due !== '—';
+  const validColumn = typeof snapshot?.column === 'string' && Object.hasOwn(COLUMN_TO_STATE, snapshot.column);
+  const snapshotOwner = snapshot?.assigneeId ?? snapshot?.ownerId;
+  const validOwner = (typeof snapshotOwner === 'string' && snapshotOwner.trim() !== '') || (typeof snapshotOwner === 'number' && Number.isFinite(snapshotOwner));
+  const state = validColumn ? taskColumnToRoadmapState(snapshot.column) : {};
   const unlinked = {
     ...bar,
-    ...(snapshot?.title !== undefined ? { title: snapshot.title } : {}),
-    ...(snapshot?.due && snapshot.due !== '—' ? { endDate: snapshot.due } : {}),
-    ...(snapshot ? { owner: snapshot.assigneeId ?? snapshot.ownerId, ...state } : {}),
+    ...(validTitle ? { title: snapshot.title } : {}),
+    ...(validDue ? { endDate: snapshot.due } : {}),
+    ...(validOwner ? { owner: snapshotOwner } : {}),
+    ...state,
     ...(bar.lane === undefined && bar.laneId !== undefined ? { lane: bar.laneId } : {}),
   };
   delete unlinked.linkedTaskId;
@@ -114,17 +120,22 @@ export function createSingleFlight() {
   };
 }
 
-export async function persistRoadmapRepairs({ roadmaps, changedRoadmapIds, patchRoadmap, onError }) {
+export async function persistRoadmapRepairs({ roadmaps, originalRoadmaps = roadmaps, changedRoadmapIds, patchRoadmap, onError }) {
   const changed = new Set(changedRoadmapIds);
-  const results = await Promise.all(roadmaps.filter(roadmap => changed.has(roadmap.id)).map(async roadmap => {
+  const failedRoadmapIds = [];
+  const savedById = new Map();
+  await Promise.all(roadmaps.filter(roadmap => changed.has(roadmap.id)).map(async roadmap => {
     try {
-      return await patchRoadmap(roadmap.id, roadmap);
+      savedById.set(roadmap.id, await patchRoadmap(roadmap.id, roadmap));
     } catch (error) {
+      failedRoadmapIds.push(roadmap.id);
       onError?.(error);
-      return null;
     }
   }));
-  return results.filter(Boolean);
+  return {
+    roadmaps: originalRoadmaps.map(roadmap => savedById.get(roadmap.id) || roadmap),
+    failedRoadmapIds,
+  };
 }
 
 export function buildLinkedTaskPatch(previousBar, nextBar) {

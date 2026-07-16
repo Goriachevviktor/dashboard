@@ -103,6 +103,7 @@ If an ordinary task no longer exists, normalization converts the linked bar to a
 
 - `App.jsx` passes `dashboardData.tasks` into `RoadmapsSection`.
 - After a linked roadmap transaction successfully writes both APIs, `RoadmapsSection` publishes the saved ordinary task through `onTaskUpdated`; `App.jsx` immutably replaces that task in `dashboardData.tasks`, so Tasks and Roadmaps use the same live values without a reload.
+- Successful ordinary-task creates, patches, and deletes from `TasksSection` and `TaskArchiveSection` publish one shared mutation to `App.jsx`; App immutably upserts or removes the task only after the API operation succeeds. This keeps later Roadmaps mounts synchronized and lets task deletion trigger missing-task normalization without a page reload.
 - `RoadmapsSection.jsx` owns link uniqueness, task lookup, normalization, API patching, unlinking, and persistence through the existing roadmap API.
 - `BarFormModal` receives the ordinary-task lookup and exposes linked-task status plus unlinking.
 - A focused utility module owns pure mapping, resolution, snapshot, uniqueness, and unlink helpers so the behavior can be unit tested without rendering the large roadmap component.
@@ -112,6 +113,7 @@ If an ordinary task no longer exists, normalization converts the linked bar to a
 
 - Existing stored roadmaps require no migration.
 - Invalid or duplicate `linkedTaskId` values are resolved deterministically: the first roadmap/bar in stored order keeps the link; later duplicates become independent bars from their snapshots.
+- Snapshot fallback is field-safe: only non-empty string title/due values, supported task columns, and valid scalar owner identifiers overlay the existing bar. Empty, wrong-type, unsupported, or partially corrupt snapshot fields preserve the bar's current valid values.
 - Missing due dates do not erase a roadmap bar's existing `endDate` until the user explicitly sets a task due date from the roadmap.
 - API failure leaves both the local roadmap and ordinary task display unchanged.
 - Corrupt snapshots are ignored and the existing bar fields are used.

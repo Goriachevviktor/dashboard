@@ -728,7 +728,7 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
 
 // ---- TASKS SECTION ----
 
-function TasksSection({ initialTasks = [], team = [], api, onError, currentUser = null, roadmapLinksByTaskId = {} }) {
+function TasksSection({ initialTasks = [], team = [], api, onError, currentUser = null, roadmapLinksByTaskId = {}, onTaskMutation }) {
   const { isCompact, isMobile } = useViewportFlags();
   const [confirmDelete, confirmDialog] = useConfirmDialog();
   const [tasks, setTasks] = useState(initialTasks);
@@ -767,23 +767,25 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
     return moveTask(taskId, "Архив");
   }
 
-  async function changeAssignee(taskId, newId) {
+  async function updateTask(taskId, payload) {
     try {
-      const updated = await api.patchTask(taskId, { assigneeId: newId });
+      const updated = await api.patchTask(taskId, payload);
       setTasks(ts => ts.map(t => t.id === taskId ? updated : t));
+      onTaskMutation?.({ type: 'upsert', task: updated });
+      return updated;
     } catch (error) {
       onError(error);
+      return null;
     }
   }
 
+  async function changeAssignee(taskId, newId) {
+    return updateTask(taskId, { assigneeId: newId });
+  }
+
   async function moveTask(taskId, newCol) {
-    try {
-      const targetColumn = normalizeTaskColumn(newCol);
-      const updated = await api.patchTask(taskId, { column: targetColumn });
-      setTasks(ts => ts.map(t => t.id === taskId ? updated : t));
-    } catch (error) {
-      onError(error);
-    }
+    const targetColumn = normalizeTaskColumn(newCol);
+    return updateTask(taskId, { column: targetColumn });
   }
 
   async function addTask(data) {
@@ -791,19 +793,15 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
       const payload = { ...data, column: normalizeTaskColumn(data.column) };
       const created = await api.createTask(payload);
       setTasks(ts => [...ts, created]);
+      onTaskMutation?.({ type: 'upsert', task: created });
     } catch (error) {
       onError(error);
     }
   }
 
   async function saveTask(updated) {
-    try {
-      const payload = { ...updated, column: normalizeTaskColumn(updated.column) };
-      const saved = await api.patchTask(updated.id, payload);
-      setTasks(ts => ts.map(t => t.id === saved.id ? saved : t));
-    } catch (error) {
-      onError(error);
-    }
+    const payload = { ...updated, column: normalizeTaskColumn(updated.column) };
+    return updateTask(updated.id, payload);
   }
   async function deleteTask(taskId) {
     const task = tasks.find(item => item.id === taskId);
@@ -817,6 +815,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
     try {
       await api.deleteTask(taskId);
       setTasks(ts => ts.filter(t => t.id !== taskId));
+      onTaskMutation?.({ type: 'remove', taskId });
       if (editTask?.id === taskId) setEditTask(null);
     } catch (error) {
       onError(error);

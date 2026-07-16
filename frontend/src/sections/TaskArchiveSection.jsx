@@ -3,7 +3,7 @@ import StatCard from '../components/common/StatCard.jsx';
 import { useViewportFlags } from '../utils.js';
 import { TaskDetailModal } from './TasksSection.jsx';
 
-function TaskArchiveSection({ initialTasks = [], team = [], api, onError, currentUser = null, roadmapLinksByTaskId = {} }) {
+function TaskArchiveSection({ initialTasks = [], team = [], api, onError, currentUser = null, roadmapLinksByTaskId = {}, onTaskMutation }) {
   const { isMobile } = useViewportFlags();
   const [tasks, setTasks] = useState(initialTasks);
   const [editTask, setEditTask] = useState(null);
@@ -13,6 +13,7 @@ function TaskArchiveSection({ initialTasks = [], team = [], api, onError, curren
     try {
       const saved = await api.patchTask(taskId, payload);
       setTasks(items => items.map(item => item.id === saved.id ? saved : item));
+      onTaskMutation?.({ type: 'upsert', task: saved });
       return saved;
     } catch (error) {
       onError(error);

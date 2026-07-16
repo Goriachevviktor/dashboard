@@ -111,6 +111,33 @@ GREEN: focused helper contracts now prove:
 - `npx eslint src/App.jsx src/sections/RoadmapsSection.jsx src/utils/taskRoadmapLinks.js src/utils/taskRoadmapLinks.test.js` — exit 0, no errors.
 - `npm run build` — exit 0; the existing large-chunk warning remains informational.
 
+## Final review fix wave: bidirectional cache, safe snapshots, repair outcomes
+
+### Shared ordinary-task cache
+
+`App` now owns one stable `onTaskMutation` interface backed by an immutable `applyTaskCacheMutation` helper. Successful create/patch/delete operations from `TasksSection`, plus successful archive patches, publish exactly once after their API call resolves. Assignee, column/drag/archive, and modal saves share the central `updateTask` path. API failures publish nothing. Linked roadmap writes continue to use the post-transaction `onTaskUpdated` adapter over the same App cache.
+
+RED: the new dashboard cache test failed because `applyTaskCacheMutation` was absent. GREEN: upsert-existing, upsert-created, remove, input immutability, and string-normalized ids pass.
+
+### Corrupt snapshot fallback
+
+`unlinkTaskBar` now overlays only non-empty string title/due fields, supported task columns, and valid scalar owner identifiers. Empty objects, wrong types, unsupported columns, and partial snapshots preserve existing valid bar fields.
+
+RED: the corrupt-snapshot test showed an empty snapshot overwrote `owner` with `undefined`. GREEN: empty, wrong-type, partial-corrupt, and valid-partial snapshot cases pass.
+
+### Partial normalization repair failure
+
+`persistRoadmapRepairs` now returns a full ordered roadmap result plus `failedRoadmapIds`: successful repairs use the server response, while failed repairs retain the original listed server roadmap. `RoadmapsSection` renders task-derived normalization from that merged base without retrying, so the UI remains safe while failed persistence is not represented as a successful server repair.
+
+RED: the partial-failure contract failed because the old helper returned only successful responses and discarded failed originals. GREEN: the merged success/original result and failure reporting pass.
+
+### Final verification
+
+- `node --test src/utils/dashboardTasks.test.js src/utils/taskRoadmapLinks.test.js src/sections/roadmapState.test.js` — 26/26 passed.
+- Touched-file ESLint — exit 0, no errors.
+- Production build — exit 0; existing large-chunk warning only.
+- `git diff --check` — exit 0.
+
 ## Review follow-up: contain task publication failures
 
 The completed API transaction is now independent from the optional UI publication callback. If `onTaskUpdated` throws after both writes succeed, `persistLinkedBarChange` still returns the saved roadmap, allowing the caller to update local roadmap state and close the modal normally.

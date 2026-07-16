@@ -52,6 +52,28 @@ test('normalization keeps first duplicate and converts later duplicate and missi
   assert.equal(normalized[1].bars[1].title, 'Deleted');
 });
 
+test('corrupt linked snapshots preserve existing roadmap bar values when unlinked', () => {
+  const bar = { id: 'a', linkedTaskId: 7, title: 'Keep', endDate: '2026-08-01', owner: 4, status: 'progress', progress: 30 };
+  for (const snapshot of [{}, { title: 9, due: {}, column: 'Unknown', assigneeId: {} }, { title: 'Valid', due: null, column: 7, ownerId: null }]) {
+    const unlinked = unlinkTaskBar({ ...bar, linkedTaskSnapshot: snapshot });
+    assert.equal(unlinked.title, typeof snapshot.title === 'string' ? snapshot.title : 'Keep');
+    assert.equal(unlinked.endDate, '2026-08-01');
+    assert.equal(unlinked.owner, 4);
+    assert.equal(unlinked.status, 'progress');
+    assert.equal(unlinked.progress, 30);
+  }
+});
+
+test('valid partial linked snapshots overlay only their supported fields', () => {
+  const bar = { id: 'a', linkedTaskId: 7, title: 'Keep', endDate: '2026-08-01', owner: 4, status: 'planned', progress: 0 };
+  const unlinked = unlinkTaskBar({ ...bar, linkedTaskSnapshot: { due: '2026-08-12', column: 'Готов', assigneeId: 8 } });
+  assert.equal(unlinked.title, 'Keep');
+  assert.equal(unlinked.endDate, '2026-08-12');
+  assert.equal(unlinked.owner, 8);
+  assert.equal(unlinked.status, 'done');
+  assert.equal(unlinked.progress, 100);
+});
+
 test('availability, unlink, patches, and index preserve one-task-one-roadmap', () => {
   const roadmaps = [{ id: 'r1', title: 'One', bars: [{ id: 'a', linkedTaskId: 7 }] }];
   const tasks = [{ id: 7 }, { id: 8 }];
@@ -229,7 +251,7 @@ test('repaired roadmaps persist independently and report failures safely', async
   assert.equal(typeof taskRoadmapLinks.persistRoadmapRepairs, 'function');
   const roadmaps = [{ id: 'r1' }, { id: 'r2' }];
   const errors = [];
-  const saved = await taskRoadmapLinks.persistRoadmapRepairs({
+  const result = await taskRoadmapLinks.persistRoadmapRepairs({
     roadmaps,
     changedRoadmapIds: ['r1', 'r2'],
     patchRoadmap: async (id, roadmap) => {
@@ -238,6 +260,7 @@ test('repaired roadmaps persist independently and report failures safely', async
     },
     onError: error => errors.push(error.message),
   });
-  assert.deepEqual(saved, [{ id: 'r1', saved: true }]);
+  assert.deepEqual(result.roadmaps, [{ id: 'r1', saved: true }, { id: 'r2' }]);
+  assert.deepEqual(result.failedRoadmapIds, ['r2']);
   assert.deepEqual(errors, ['failed repair']);
 });

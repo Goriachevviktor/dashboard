@@ -14,7 +14,7 @@ import AmbpSection from './sections/AmbpSection.jsx';
 import PlanSection from './sections/PlanSection.jsx';
 import UsersSection from './sections/UsersSection.jsx';
 import RoadmapsSection from './sections/RoadmapsSection.jsx';
-import { replaceTaskById } from './utils/dashboardTasks.js';
+import { applyTaskCacheMutation } from './utils/dashboardTasks.js';
 import MindMapSection from './sections/MindMapSection.jsx';
 import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
 import DashboardSkeleton from './components/common/Skeleton.jsx';
@@ -24,8 +24,8 @@ import { loadRoadmapLinkIndex } from './utils/taskRoadmapLinks.js';
 const ACTIVE_SECTION_KEY = "dashboard_active_section_v1";
 
 const SECTION_COMPONENTS = {
-  tasks:   ({ data, api, onError, currentUser, roadmapLinks }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} />,
-  archive: ({ data, api, onError, currentUser, roadmapLinks }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} />,
+  tasks:   ({ data, api, onError, currentUser, roadmapLinks, onTaskMutation }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} onTaskMutation={onTaskMutation} />,
+  archive: ({ data, api, onError, currentUser, roadmapLinks, onTaskMutation }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} onTaskMutation={onTaskMutation} />,
   events:  ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   roadmaps:({ data, api, currentUser, onError, onRoadmapLinksChange, onTaskUpdated }) => <RoadmapsSection tasks={data.tasks} team={data.team} api={api} currentUser={currentUser} onError={onError} onLinkIndexChange={onRoadmapLinksChange} onTaskUpdated={onTaskUpdated} />,
   mindmap: ({ api, onError }) => <MindMapSection api={api} onError={onError} />,
@@ -77,12 +77,16 @@ export default function App() {
     window.setTimeout(() => setApiError(""), 5000);
   }, []);
 
-  const onTaskUpdated = useCallback((savedTask) => {
+  const onTaskMutation = useCallback((mutation) => {
     setDashboardData(current => current ? {
       ...current,
-      tasks: replaceTaskById(current.tasks, savedTask),
+      tasks: applyTaskCacheMutation(current.tasks, mutation),
     } : current);
   }, []);
+
+  const onTaskUpdated = useCallback((savedTask) => {
+    onTaskMutation({ type: 'upsert', task: savedTask });
+  }, [onTaskMutation]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -369,7 +373,7 @@ export default function App() {
             <DashboardSkeleton />
           ) : (
             <ErrorBoundary key={`${section.id}:${dashboardDataRevision}`}>
-              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId, onTaskUpdated })}
+              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId, onTaskUpdated, onTaskMutation })}
             </ErrorBoundary>
           )}
         </div>

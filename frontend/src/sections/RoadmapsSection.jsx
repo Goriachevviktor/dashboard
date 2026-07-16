@@ -19,6 +19,7 @@ import {
   buildRoadmapLinkIndex,
   canLinkTaskToRoadmaps,
   createSingleFlight,
+  normalizeTaskRoadmapLinks,
   normalizeTaskRoadmapLinksWithChanges,
   persistLinkedBarChange,
   persistRoadmapRepairs,
@@ -3536,12 +3537,16 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
         const normalizedLinks = normalizeTaskRoadmapLinksWithChanges(resolvedRoadmaps, tasks);
         const normalizedRoadmaps = normalizeRoadmaps(normalizedLinks.roadmaps, recalc);
         if (!cancelled) setRoadmaps(normalizedRoadmaps);
-        await persistRoadmapRepairs({
+        const repairResult = await persistRoadmapRepairs({
           roadmaps: normalizedRoadmaps,
+          originalRoadmaps: resolvedRoadmaps,
           changedRoadmapIds: normalizedLinks.changedRoadmapIds,
           patchRoadmap: (id, roadmap) => api.patchRoadmap(id, roadmap),
           onError: error => { if (!cancelled) onError?.(error); },
         });
+        if (!cancelled) {
+          setRoadmaps(normalizeRoadmaps(normalizeTaskRoadmapLinks(repairResult.roadmaps, tasks), recalc));
+        }
       } catch (error) {
         if (!cancelled) {
           setLoadError(error?.message || "Не удалось загрузить дорожные карты");
