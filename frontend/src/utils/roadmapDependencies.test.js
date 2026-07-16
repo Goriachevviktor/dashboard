@@ -8,6 +8,7 @@ import {
   applyDependencySchedule,
   computeDependencyLineLayout,
   dependencyPathData,
+  resolveRenderedTimelineWidth,
   buildDependencyDebugEdges,
 } from "./roadmapDependencies.js";
 
@@ -132,6 +133,10 @@ test("dependencyPathData keeps both horizontal connector shoulders", () => {
     dependencyPathData({ startX: 496, startY: 27, middleX: 516, endY: 81, endX: 500 }),
     "M 496 27 H 516 V 81 H 500",
   );
+});
+
+test("resolveRenderedTimelineWidth uses a measured grid wider than the minimum", () => {
+  assert.equal(resolveRenderedTimelineWidth(1280, 900), 1280);
 });
 
 

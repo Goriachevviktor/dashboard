@@ -12,6 +12,7 @@ import {
   computeDependencyLineLayout,
   dependencyPathData,
   ensureRoadmapTaskIds,
+  resolveRenderedTimelineWidth,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
@@ -1988,6 +1989,28 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
 
 // ── Timeline (Gantt) ───────────────────────────────────────────────────────
 
+function useRenderedTimelineWidth(gridRef, minimumWidth) {
+  const [renderedWidth, setRenderedWidth] = useState(minimumWidth);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return undefined;
+    const updateWidth = () => {
+      setRenderedWidth(resolveRenderedTimelineWidth(grid.getBoundingClientRect().width, minimumWidth));
+    };
+    updateWidth();
+    if (!window.ResizeObserver) {
+      window.addEventListener("resize", updateWidth);
+      return () => window.removeEventListener("resize", updateWidth);
+    }
+    const observer = new window.ResizeObserver(updateWidth);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [gridRef, minimumWidth]);
+
+  return renderedWidth;
+}
+
 function GanttBar({
   b,
   hover,
@@ -2123,6 +2146,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   }, [rm.bars, rm.lanes, timeline]);
   const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
   const chartWidth = Math.max(720, timeline.months.length * 110);
+  const renderedChartWidth = useRenderedTimelineWidth(gridRef, chartWidth);
   const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
   const hoveredBar = hover == null ? null : rows.find(row => row.type === "bar" && row.idx === hover)?.b || null;
   const focusTaskId = hoveredBar?.id || linkSourceId || "";
@@ -2153,7 +2177,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           const geometry = computeDependencyLineLayout({
             predecessorEndPct: percentFromTimelineDate(predecessorRow.b.endDate, timeline, true),
             targetStartPct: percentFromTimelineDate(row.b.startDate, timeline),
-            chartWidth,
+            chartWidth: renderedChartWidth,
             predecessorCenterY: timelineRowCenter(predecessorRow),
             targetCenterY: timelineRowCenter(row),
             predecessorAnchorOffsetX: -4,
@@ -2169,7 +2193,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           };
         }).filter(Boolean);
       })
-  ), [chartWidth, dependencyState.predecessorsById, highlightedTaskIds, layout, rowByTaskId, timeline]);
+  ), [dependencyState.predecessorsById, highlightedTaskIds, layout, renderedChartWidth, rowByTaskId, timeline]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2381,7 +2405,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             )}
             {dependencyLines.length > 0 && (
               <svg
-                viewBox={`0 0 ${chartWidth} ${totalHeight}`}
+                viewBox={`0 0 ${renderedChartWidth} ${totalHeight}`}
                 preserveAspectRatio="none"
                 style={{ position: "absolute", inset: 0, width: "100%", height: totalHeight, pointerEvents: "none", zIndex: TIMELINE_DEPENDENCY_LAYER }}
               >

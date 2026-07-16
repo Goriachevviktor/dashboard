@@ -117,6 +117,10 @@ export function dependencyPathData({ startX, startY, middleX, endY, endX }) {
   return `M ${startX} ${startY} H ${middleX} V ${endY} H ${endX}`;
 }
 
+export function resolveRenderedTimelineWidth(measuredWidth, minimumWidth) {
+  return Number.isFinite(measuredWidth) && measuredWidth > 0 ? measuredWidth : minimumWidth;
+}
+
 function topologicalOrder(bars = []) {
   const { taskById, predecessorsById, successorsById } = buildDependencyState(bars);
   const inDegree = new Map();
