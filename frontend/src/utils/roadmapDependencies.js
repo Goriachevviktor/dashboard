@@ -103,9 +103,19 @@ export function computeDependencyLineLayout({
   const startX = chartWidth * predecessorEndPct / 100 + predecessorAnchorOffsetX;
   const endX = chartWidth * targetStartPct / 100 + targetAnchorOffsetX;
   const direction = endX >= startX ? 1 : -1;
-  const middleX = direction > 0
+  const preferredMiddleX = direction > 0
     ? Math.max(startX, endX) + minimumShoulder
     : Math.min(startX, endX) - minimumShoulder;
+  const oppositeMiddleX = direction > 0
+    ? Math.min(startX, endX) - minimumShoulder
+    : Math.max(startX, endX) + minimumShoulder;
+  const oppositeIsValid = oppositeMiddleX >= 0
+    && oppositeMiddleX <= chartWidth
+    && Math.abs(oppositeMiddleX - startX) >= minimumShoulder
+    && Math.abs(oppositeMiddleX - endX) >= minimumShoulder;
+  const middleX = (preferredMiddleX < 0 || preferredMiddleX > chartWidth) && oppositeIsValid
+    ? oppositeMiddleX
+    : preferredMiddleX;
   return {
     startX,
     endX,

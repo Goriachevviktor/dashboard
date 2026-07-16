@@ -159,24 +159,44 @@ test("reverse dependency routes left with a shoulder beyond both anchors", () =>
   assert.equal(dependencyPathData(line), "M 796 27 H 184 V 81 H 200");
 });
 
-test("boundary routes require visible SVG overflow", () => {
-  const rightEdge = computeDependencyLineLayout({
-    predecessorEndPct: 100,
+test("boundary routes use an opposite in-chart elbow with full shoulders", () => {
+  const forwardNearRight = computeDependencyLineLayout({
+    predecessorEndPct: 80,
     targetStartPct: 100,
     chartWidth: 1000,
     predecessorCenterY: 27,
     targetCenterY: 81,
   });
-  const leftEdge = computeDependencyLineLayout({
+  const reverseNearLeft = computeDependencyLineLayout({
     predecessorEndPct: 20,
     targetStartPct: 0,
     chartWidth: 1000,
     predecessorCenterY: 81,
     targetCenterY: 27,
   });
-  assert.ok(rightEdge.middleX > 1000);
-  assert.ok(leftEdge.middleX < 0);
+  assert.equal(forwardNearRight.middleX, 780);
+  assert.ok(forwardNearRight.startX - forwardNearRight.middleX >= 16);
+  assert.ok(forwardNearRight.endX - forwardNearRight.middleX >= 16);
+  assert.equal(dependencyPathData(forwardNearRight), "M 796 27 H 780 V 81 H 1000");
+  assert.equal(reverseNearLeft.middleX, 212);
+  assert.ok(reverseNearLeft.middleX - reverseNearLeft.startX >= 16);
+  assert.ok(reverseNearLeft.middleX - reverseNearLeft.endX >= 16);
+  assert.equal(dependencyPathData(reverseNearLeft), "M 196 81 H 212 V 27 H 0");
   assert.equal(DEPENDENCY_SVG_OVERFLOW, "visible");
+});
+
+test("full-width anchors keep the deterministic preferred route when neither elbow fits", () => {
+  const line = computeDependencyLineLayout({
+    predecessorEndPct: 0,
+    targetStartPct: 100,
+    chartWidth: 1000,
+    predecessorCenterY: 27,
+    targetCenterY: 81,
+  });
+  assert.equal(line.startX, -4);
+  assert.equal(line.endX, 1000);
+  assert.equal(line.middleX, 1016);
+  assert.equal(dependencyPathData(line), "M -4 27 H 1016 V 81 H 1000");
 });
 
 
