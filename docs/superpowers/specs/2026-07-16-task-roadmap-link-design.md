@@ -83,9 +83,9 @@ Saving calls `api.patchTask(linkedTaskId, patch)` for ordinary-task-owned values
 
 The inverse status mapping is:
 
-- `planned` or 0% → `Беклог`;
-- `progress` or 1–99% → `В работе`;
-- `done` or 100% → `Готов`.
+- first, `done` or progress ≥100% → `Готов`;
+- otherwise, `progress` or progress >0% → `В работе`;
+- otherwise → `Беклог`.
 
 If the task API update fails, the roadmap change is not committed and the existing global error presentation is used.
 
@@ -102,6 +102,7 @@ If an ordinary task no longer exists, normalization converts the linked bar to a
 ## Components and Data Flow
 
 - `App.jsx` passes `dashboardData.tasks` into `RoadmapsSection`.
+- After a linked roadmap transaction successfully writes both APIs, `RoadmapsSection` publishes the saved ordinary task through `onTaskUpdated`; `App.jsx` immutably replaces that task in `dashboardData.tasks`, so Tasks and Roadmaps use the same live values without a reload.
 - `RoadmapsSection.jsx` owns link uniqueness, task lookup, normalization, API patching, unlinking, and persistence through the existing roadmap API.
 - `BarFormModal` receives the ordinary-task lookup and exposes linked-task status plus unlinking.
 - A focused utility module owns pure mapping, resolution, snapshot, uniqueness, and unlink helpers so the behavior can be unit tested without rendering the large roadmap component.

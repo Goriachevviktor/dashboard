@@ -110,3 +110,32 @@ GREEN: focused helper contracts now prove:
 - `node --test src/utils/taskRoadmapLinks.test.js src/sections/roadmapState.test.js` — 21/21 passed.
 - `npx eslint src/App.jsx src/sections/RoadmapsSection.jsx src/utils/taskRoadmapLinks.js src/utils/taskRoadmapLinks.test.js` — exit 0, no errors.
 - `npm run build` — exit 0; the existing large-chunk warning remains informational.
+
+## Controller browser smoke update
+
+The earlier `BLOCKED` browser entry above describes the first agent environment only and is superseded by this controller result.
+
+### Confirmed manually
+
+- Signed in through the in-app browser with a temporary local account.
+- Created an ordinary task and a roadmap, then linked the task to the roadmap.
+- Verified the linked title, owner, and status on the roadmap.
+- Verified the roadmap badge in the ordinary-task modal.
+- Changed status and due date from the roadmap modal; the roadmap displayed 50% progress.
+
+### Defect found and fixed
+
+The smoke pass exposed stale `App` task cache after the server task and roadmap had both been saved. Commit `f1137a8` (`fix: refresh tasks after linked roadmap edits`) adds post-transaction `onTaskUpdated` propagation into `dashboardData.tasks`. Its focused verification passed 21/21 tests, and reviewer approval was recorded.
+
+The browser disconnected before a post-fix live retest, so the fix is automated-test verified but not manually reconfirmed in the browser.
+
+### Still unverified manually
+
+- end-edge drag and due-date propagation;
+- unlink and ordinary-task retention;
+- relink/delete and ordinary-task retention;
+- refresh persistence;
+- independent roadmap item create/edit/drag/export;
+- final console-error inspection.
+
+These scenarios remain unverified rather than failed. The temporary local user and all smoke-created data were cleaned up; the cleanup check returned zero remaining rows.
