@@ -94,11 +94,16 @@ export function computeDependencyLineLayout({
   chartWidth,
   predecessorCenterY,
   targetCenterY,
+  predecessorAnchorOffsetX = -4,
+  targetAnchorOffsetX = 0,
+  minimumShoulder = 16,
 }) {
-  const startX = chartWidth * predecessorEndPct / 100;
-  const endX = chartWidth * targetStartPct / 100;
+  const startX = chartWidth * predecessorEndPct / 100 + predecessorAnchorOffsetX;
+  const endX = chartWidth * targetStartPct / 100 + targetAnchorOffsetX;
   const direction = endX >= startX ? 1 : -1;
-  const middleX = startX + direction * Math.min(24, Math.max(10, Math.abs(endX - startX) / 2));
+  const middleX = direction > 0
+    ? Math.max(startX, endX) + minimumShoulder
+    : Math.min(startX, endX) - minimumShoulder;
   return {
     startX,
     endX,

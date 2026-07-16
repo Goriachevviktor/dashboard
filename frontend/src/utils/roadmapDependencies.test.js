@@ -72,7 +72,7 @@ test("computeDependencyLineLayout ends on target bullet anchor", () => {
     predecessorCenterY: 37,
     targetCenterY: 107,
   });
-  assert.equal(line.startX, 200);
+  assert.equal(line.startX, 196);
   assert.equal(line.endX, 500);
   assert.equal(line.startY, 37);
   assert.equal(line.endY, 107);
@@ -85,11 +85,45 @@ test("computeDependencyLineLayout uses explicit centers for unequal rows", () =>
     chartWidth: 1000,
     predecessorCenterY: 83,
     targetCenterY: 177,
+    predecessorAnchorOffsetX: 0,
+    targetAnchorOffsetX: 0,
   });
   assert.equal(line.startY, 83);
   assert.equal(line.endY, 177);
   assert.equal(line.startX, 250);
   assert.equal(line.endX, 600);
+});
+
+test("computeDependencyLineLayout anchors to rendered bullet centers", () => {
+  const line = computeDependencyLineLayout({
+    predecessorEndPct: 20,
+    targetStartPct: 50,
+    chartWidth: 1000,
+    predecessorCenterY: 37,
+    targetCenterY: 107,
+    predecessorAnchorOffsetX: -4,
+    targetAnchorOffsetX: 0,
+  });
+  assert.equal(line.startX, 196);
+  assert.equal(line.endX, 500);
+  assert.equal(line.startY, 37);
+  assert.equal(line.endY, 107);
+});
+
+test("computeDependencyLineLayout keeps a visible shoulder for adjacent anchors", () => {
+  const line = computeDependencyLineLayout({
+    predecessorEndPct: 50,
+    targetStartPct: 50,
+    chartWidth: 1000,
+    predecessorCenterY: 27,
+    targetCenterY: 81,
+    predecessorAnchorOffsetX: -4,
+    targetAnchorOffsetX: 0,
+    minimumShoulder: 16,
+  });
+  assert.equal(line.startX, 496);
+  assert.equal(line.endX, 500);
+  assert.equal(line.middleX, 516);
 });
 
 
