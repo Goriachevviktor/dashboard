@@ -179,7 +179,7 @@ Apply them as follows:
 
 - task bars use `TIMELINE_BAR_LAYER` (highlighted bars may remain below the connector layer);
 - dependency SVG uses `TIMELINE_DEPENDENCY_LAYER`;
-- incoming and outgoing bullet spans use `TIMELINE_CONNECTOR_LAYER`;
+- incoming and outgoing bullet spans use `TIMELINE_CONNECTOR_LAYER`; render them as siblings of the positioned bar when necessary so the bar's stacking context cannot trap them below the dependency SVG;
 - dependency SVG remains `pointerEvents: "none"`;
 - grid/date guides stay below bars.
 
