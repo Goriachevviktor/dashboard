@@ -14,6 +14,7 @@ import AmbpSection from './sections/AmbpSection.jsx';
 import PlanSection from './sections/PlanSection.jsx';
 import UsersSection from './sections/UsersSection.jsx';
 import RoadmapsSection from './sections/RoadmapsSection.jsx';
+import { replaceTaskById } from './utils/dashboardTasks.js';
 import MindMapSection from './sections/MindMapSection.jsx';
 import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
 import DashboardSkeleton from './components/common/Skeleton.jsx';
@@ -79,7 +80,7 @@ export default function App() {
   const onTaskUpdated = useCallback((savedTask) => {
     setDashboardData(current => current ? {
       ...current,
-      tasks: current.tasks.map(task => String(task.id) === String(savedTask.id) ? savedTask : task),
+      tasks: replaceTaskById(current.tasks, savedTask),
     } : current);
   }, []);
 

@@ -167,6 +167,12 @@ export async function persistLinkedBarChange({ api, roadmap, previousBar, nextBa
     bars: roadmap.bars.map(bar => bar.id === previousBar.id ? refreshedBar : bar),
   };
   const savedRoadmap = await api.patchRoadmap(roadmap.id, nextRoadmap);
-  if (savedTask) onTaskUpdated?.(savedTask);
+  if (savedTask && onTaskUpdated) {
+    try {
+      onTaskUpdated(savedTask);
+    } catch {
+      // Persistence is already complete; a UI publication failure must not roll it back.
+    }
+  }
   return savedRoadmap;
 }

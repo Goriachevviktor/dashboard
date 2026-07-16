@@ -111,6 +111,19 @@ GREEN: focused helper contracts now prove:
 - `npx eslint src/App.jsx src/sections/RoadmapsSection.jsx src/utils/taskRoadmapLinks.js src/utils/taskRoadmapLinks.test.js` — exit 0, no errors.
 - `npm run build` — exit 0; the existing large-chunk warning remains informational.
 
+## Review follow-up: contain task publication failures
+
+The completed API transaction is now independent from the optional UI publication callback. If `onTaskUpdated` throws after both writes succeed, `persistLinkedBarChange` still returns the saved roadmap, allowing the caller to update local roadmap state and close the modal normally.
+
+`App` now uses the tested pure `replaceTaskById` helper. It creates a new task array, replaces IDs consistently across string/number representations, and preserves unrelated task object references.
+
+### TDD and verification evidence
+
+- RED: callback-throws regression rejected with `render callback failed`; the replacement-helper test failed because its module did not yet exist.
+- GREEN: `node --test src/utils/taskRoadmapLinks.test.js src/utils/dashboardTasks.test.js src/sections/roadmapState.test.js` — 23/23 passed.
+- Focused ESLint — exit 0, no errors or warnings.
+- `npm run build` — exit 0; Vite transformed 203 modules. The existing large-chunk warning remains informational.
+
 ## Controller browser smoke update
 
 The earlier `BLOCKED` browser entry above describes the first agent environment only and is superseded by this controller result.

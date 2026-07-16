@@ -163,6 +163,25 @@ test('linked roadmap writes do not publish for start-only changes or failed tran
   assert.deepEqual(published, []);
 });
 
+test('linked roadmap writes still return the saved roadmap when task publication throws', async () => {
+  const task = { id: 7, title: 'A', due: '2026-07-22', column: 'Беклог' };
+  const previousBar = { id: 'a', linkedTaskId: 7, endDate: '2026-07-20', status: 'planned', progress: 0, linkedTaskSnapshot: { ...task, due: '2026-07-20' } };
+  const savedRoadmap = { id: 'r1', bars: [{ ...previousBar, endDate: '2026-07-22' }] };
+
+  const saved = await taskRoadmapLinks.persistLinkedBarChange({
+    api: {
+      patchTask: async () => task,
+      patchRoadmap: async () => savedRoadmap,
+    },
+    roadmap: { id: 'r1', bars: [previousBar] },
+    previousBar,
+    nextBar: { ...previousBar, endDate: '2026-07-22' },
+    onTaskUpdated: () => { throw new Error('render callback failed'); },
+  });
+
+  assert.equal(saved, savedRoadmap);
+});
+
 test('normalization reports repaired roadmaps and removes legacy field aliases', () => {
   assert.equal(typeof taskRoadmapLinks.normalizeTaskRoadmapLinksWithChanges, 'function');
   const roadmaps = [{ id: 'r1', bars: [{ id: 'a', linkedTaskId: 7, laneId: 'legacy', ownerId: 9 }] }];
