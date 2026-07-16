@@ -11,6 +11,7 @@ import {
   updateObservedTimelineNode,
   timelineLayoutsEqual,
   timelineRowCenter,
+  timelineRowKey,
 } from './timelineRowLayout.js';
 
 const rows = [
@@ -18,6 +19,11 @@ const rows = [
   { key: 'task:one', type: 'bar', taskId: 'one' },
   { key: 'task:two', type: 'bar', taskId: 'two' },
 ];
+
+test('row keys remain stable for print and browser layout', () => {
+  assert.equal(timelineRowKey({ type: 'lane', lane: { id: 'people' } }), 'lane:people');
+  assert.equal(timelineRowKey({ type: 'bar', b: { id: 'hire-lead' } }), 'task:hire-lead');
+});
 
 test('fallback layout uses the existing minimum row heights', () => {
   const layout = buildFallbackTimelineLayout(rows);

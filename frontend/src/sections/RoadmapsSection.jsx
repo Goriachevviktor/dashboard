@@ -3260,16 +3260,22 @@ function buildTimelinePrintHtml(roadmap, members) {
     rows.push({ type: "lane", lane });
     laneBars.forEach(b => rows.push({ type: "bar", b }));
   });
-  const sideW = 320;
+  const sideW = 340;
   const chartW = Math.max(900, timeline.months.length * 110);
   const totalW = sideW + chartW;
-  const gridHeight = rows.reduce((sum, row) => sum + (row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT), 0);
-  let offsetTop = 0;
-  const positionedRows = rows.map(row => {
-    const top = offsetTop;
-    offsetTop += row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT;
-    return { ...row, top };
-  });
+  const dependencyState = buildDependencyState(roadmap.bars);
+  const dependencyEdges = roadmap.bars.flatMap(bar => (
+    (dependencyState.predecessorsById.get(bar.id) || []).map(predecessorId => {
+      const predecessor = dependencyState.taskById.get(predecessorId);
+      return predecessor ? {
+        id: `${predecessorId}->${bar.id}`,
+        predecessorId,
+        taskId: bar.id,
+        startPct: percentFromTimelineDate(predecessor.endDate, timeline, true),
+        endPct: percentFromTimelineDate(bar.startDate, timeline),
+      } : null;
+    }).filter(Boolean)
+  ));
   const sm = STATUS_META[roadmap.status] || STATUS_META.archived;
   const ownerMember = getMemberById(members, roadmap.owner);
   const roadmapCoExecutors = sanitizeMemberIds(roadmap.memberIds, roadmap.owner).map(id => getMemberById(members, id)).filter(Boolean);
@@ -3306,12 +3312,16 @@ function buildTimelinePrintHtml(roadmap, members) {
           .quarter-title { font-size: 13px; font-weight: 700; padding: 10px 0 6px; text-align: center; color: #1d1d1f; }
           .quarter-months { display: grid; }
           .quarter-month { font-size: 11px; color: #a1a1a6; text-align: center; padding-bottom: 8px; }
-          .timeline-body { display: flex; position: relative; }
-          .side-body { width: ${sideW}px; flex-shrink: 0; border-right: 1px solid rgba(15,23,42,.06); background: #fff; position: relative; z-index: 2; }
-          .lane-row { display: flex; align-items: center; gap: 8px; height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
+          .timeline-body { position: relative; width: ${totalW}px; }
+          .timeline-pair { display: grid; grid-template-columns: 340px ${chartW}px; align-items: stretch; position: relative; }
+          .timeline-label { border-right: 1px solid rgba(15,23,42,.06); background: #fff; position: relative; z-index: 2; box-sizing: border-box; white-space: normal; }
+          .lane-label { display: flex; align-items: center; gap: 8px; min-height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
           .lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
           .task-label { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #3a3a3c; overflow-wrap: anywhere; }
-          .chart { width: ${chartW}px; position: relative; height: ${Math.max(120, gridHeight)}px; }
+          .timeline-chart-row { position: relative; min-width: 0; }
+          .lane-chart { min-height: ${TIMELINE_LANE_ROW_HEIGHT}px; background: rgba(118,118,128,.04); }
+          .task-chart { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; }
+          .timeline-overlays { position: absolute; left: ${sideW}px; top: 0; width: ${chartW}px; height: 100%; pointer-events: none; z-index: 1; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
           .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
           .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
@@ -3319,8 +3329,8 @@ function buildTimelinePrintHtml(roadmap, members) {
           .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
           .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
           .milestone-line { position: absolute; top: 20px; bottom: 0; width: 1px; }
-          .gantt-row { position: absolute; left: 0; right: 0; }
-          .gantt-bar { position: absolute; height: 30px; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; }
+          .dependency-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+          .gantt-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 30px; box-sizing: border-box; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; }
           .gantt-progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.22); }
           .gantt-title { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
           .gantt-owner { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; position: relative; z-index: 1; }
@@ -3377,17 +3387,14 @@ function buildTimelinePrintHtml(roadmap, members) {
                 `).join("")}
               </div>
             </div>
-            <div class="timeline-body">
-              <div class="side-body">
-                ${positionedRows.map(row => row.type === "lane"
-                  ? `<div class="lane-row"><span class="lane-dot" style="background:${escapeHtml(row.lane.color)}"></span>${escapeHtml(row.lane.name)}</div>`
-                  : `<div class="task-label">${escapeHtml(row.b.title)}</div>`
-                ).join("")}
-              </div>
-              <div class="chart">
+            <div id="timeline-body" class="timeline-body">
+              <div class="timeline-overlays">
                 ${timeline.months.map(month => `<span class="month-line" style="left:${month.leftPct}%;background:${month.month % 3 === 0 ? "rgba(15,23,42,.08)" : "rgba(118,118,128,.06)"}"></span>`).join("")}
                 <span class="month-line" style="left:100%;background:rgba(15,23,42,.08)"></span>
                 ${showToday ? `<div class="today-line" style="left:${todayPct}%"><span class="today-badge">сегодня</span></div>` : ""}
+                ${dependencyEdges.length ? `<svg class="dependency-overlay" aria-hidden="true">
+                  ${dependencyEdges.map(edge => `<path data-source-id="${escapeHtml(edge.predecessorId)}" data-target-id="${escapeHtml(edge.taskId)}" data-start-pct="${edge.startPct}" data-end-pct="${edge.endPct}" fill="none" stroke="#a1a1a6" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>`).join("")}
+                </svg>` : ""}
                 ${(roadmap.milestones || []).map(item => {
                   const color = item.color || DEFAULT_MILESTONE_COLOR;
                   const pct = percentFromTimelineDate(item.date, timeline);
@@ -3397,25 +3404,30 @@ function buildTimelinePrintHtml(roadmap, members) {
                     <span class="milestone-line" style="background:repeating-linear-gradient(180deg, ${escapeHtml(color)}66 0 4px, transparent 4px 8px)"></span>
                   </div>`;
                 }).join("")}
-                ${positionedRows.map(row => {
-                  if (row.type !== "bar") return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_LANE_ROW_HEIGHT}px;background:rgba(118,118,128,.04)"></div>`;
+              </div>
+              ${rows.map(row => {
+                  const key = timelineRowKey(row);
+                  if (row.type !== "bar") return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}">
+                    <div class="timeline-label lane-label"><span class="lane-dot" style="background:${escapeHtml(row.lane.color)}"></span>${escapeHtml(row.lane.name)}</div>
+                    <div class="timeline-chart-row lane-chart"></div>
+                  </div>`;
                   const c = BAR_COL[row.b.status] || BAR_COL.planned;
                   const left = percentFromTimelineDate(row.b.startDate, timeline);
                   const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
                   const owner = getMemberById(members, row.b.owner);
                   const coExecutors = sanitizeMemberIds(row.b.memberIds, row.b.owner).map(id => getMemberById(members, id)).filter(Boolean);
-                  return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_TASK_ROW_HEIGHT}px">
-                    <div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
+                  return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}" data-task-id="${escapeHtml(row.b.id)}">
+                    <div class="timeline-label task-label">${escapeHtml(row.b.title)}</div>
+                    <div class="timeline-chart-row task-chart"><div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
                       ${row.b.status === "progress" ? `<span class="gantt-progress" style="width:${escapeHtml(String(row.b.progress || 0))}%"></span>` : ""}
                       <span class="gantt-title">${escapeHtml(row.b.title)}</span>
                       <span class="gantt-owner">
                         ${owner ? `<span class="avatar" style="width:20px;height:20px;background:${escapeHtml(owner.color)};font-size:9px">${escapeHtml(owner.initials)}</span>` : ""}
                         ${coExecutors.slice(0, 2).map(item => item ? `<span class="avatar" style="width:18px;height:18px;background:${escapeHtml(item.color)};font-size:8px">${escapeHtml(item.initials)}</span>` : "").join("")}
                       </span>
-                    </div>
+                    </div></div>
                   </div>`;
                 }).join("")}
-              </div>
             </div>
             <div class="legend">
               <span class="legend-item"><span class="legend-box" style="background:#34c759"></span>Завершено</span>
@@ -3425,6 +3437,42 @@ function buildTimelinePrintHtml(roadmap, members) {
             </div>
           </div>
         </div>
+        <script>
+          function layoutTimelineOverlays() {
+            const body = document.getElementById('timeline-body');
+            const overlays = body && body.querySelector('.timeline-overlays');
+            if (!body || !overlays) return;
+            const bodyRect = body.getBoundingClientRect();
+            const height = Math.max(1, bodyRect.height);
+            overlays.style.height = height + 'px';
+            overlays.querySelectorAll('.today-line, .milestone, .month-line').forEach(guide => { guide.style.height = height + 'px'; });
+            const svg = overlays.querySelector('.dependency-overlay');
+            if (!svg) return;
+            const chartWidth = overlays.getBoundingClientRect().width;
+            svg.setAttribute('viewBox', '0 0 ' + chartWidth + ' ' + height);
+            svg.setAttribute('width', chartWidth);
+            svg.setAttribute('height', height);
+            const centers = new Map(Array.from(body.querySelectorAll('[data-task-id]')).map(row => {
+              const rect = row.getBoundingClientRect();
+              return [row.dataset.taskId, rect.top - bodyRect.top + rect.height / 2];
+            }));
+            svg.querySelectorAll('path[data-source-id]').forEach(path => {
+              const startY = centers.get(path.dataset.sourceId);
+              const endY = centers.get(path.dataset.targetId);
+              if (startY == null || endY == null) return;
+              const startX = chartWidth * Number(path.dataset.startPct) / 100;
+              const endX = chartWidth * Number(path.dataset.endPct) / 100;
+              const direction = endX >= startX ? 1 : -1;
+              const middleX = startX + direction * Math.min(24, Math.max(10, Math.abs(endX - startX) / 2));
+              path.setAttribute('d', 'M ' + startX + ' ' + startY + ' H ' + middleX + ' V ' + endY + ' H ' + endX);
+            });
+          }
+          window.__timelineReady = (async () => {
+            if (document.fonts && document.fonts.ready) await document.fonts.ready;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            layoutTimelineOverlays();
+          })();
+        </script>
       </body>
     </html>
   `;
@@ -3447,20 +3495,22 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     }, 300);
   };
 
-  iframe.onload = () => {
+  iframe.onload = async () => {
     const frameWindow = iframe.contentWindow;
     if (!frameWindow) {
       cleanup();
       return;
     }
     frameWindow.focus();
-    window.setTimeout(() => {
-      try {
-        frameWindow.print();
-      } finally {
-        cleanup();
-      }
-    }, 250);
+    try {
+      await Promise.race([
+        Promise.resolve(frameWindow.__timelineReady),
+        new Promise(resolve => window.setTimeout(resolve, 1500)),
+      ]);
+      frameWindow.print();
+    } finally {
+      cleanup();
+    }
   };
 
   window.document.body.appendChild(iframe);
