@@ -64,3 +64,16 @@ export function updateObservedTimelineNode({ nodes, observer, key, node, schedul
   }
   schedule?.();
 }
+
+export function clearTimelineFrame(frameRef, cancelFrame) {
+  const token = frameRef.current;
+  if (token && typeof cancelFrame === 'function') cancelFrame(token);
+  frameRef.current = 0;
+}
+
+export function pruneTimelineRowCallbacks(callbacks, rows = []) {
+  const liveKeys = new Set(rows.map(row => row.key || timelineRowKey(row)));
+  callbacks.forEach((_, key) => {
+    if (!liveKeys.has(key)) callbacks.delete(key);
+  });
+}

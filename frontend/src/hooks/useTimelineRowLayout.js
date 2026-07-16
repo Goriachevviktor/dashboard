@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  clearTimelineFrame,
   normalizeMeasuredTimelineLayout,
+  pruneTimelineRowCallbacks,
   reconcileTimelineLayoutRows,
   timelineLayoutsEqual,
   updateObservedTimelineNode,
@@ -31,6 +33,7 @@ export function useTimelineRowLayout(rows) {
   }, []);
 
   useEffect(() => {
+    pruneTimelineRowCallbacks(callbacksRef.current, rows);
     const measure = () => {
       frameRef.current = 0;
       const bodyTop = bodyRef.current?.getBoundingClientRect().top || 0;
@@ -63,7 +66,7 @@ export function useTimelineRowLayout(rows) {
       if (observerRef.current === observer) observerRef.current = null;
       if (scheduleRef.current === schedule) scheduleRef.current = null;
       window.removeEventListener('resize', schedule);
-      if (frameRef.current && typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frameRef.current);
+      clearTimelineFrame(frameRef, window.cancelAnimationFrame?.bind(window));
     };
   }, [rows]);
 

@@ -4,7 +4,9 @@ import {
   TIMELINE_LANE_MIN_HEIGHT,
   TIMELINE_TASK_MIN_HEIGHT,
   buildFallbackTimelineLayout,
+  clearTimelineFrame,
   normalizeMeasuredTimelineLayout,
+  pruneTimelineRowCallbacks,
   reconcileTimelineLayoutRows,
   updateObservedTimelineNode,
   timelineLayoutsEqual,
@@ -68,6 +70,35 @@ test('observed row node lifecycle unobserves replacements and schedules measurem
     ['unobserve', replacement], ['schedule'],
   ]);
   assert.equal(nodes.has('task:one'), false);
+});
+
+test('frame cleanup clears a pending token even without a cancel function', () => {
+  const frameRef = { current: 27 };
+  clearTimelineFrame(frameRef);
+  assert.equal(frameRef.current, 0);
+
+  const cancelled = [];
+  frameRef.current = 42;
+  clearTimelineFrame(frameRef, token => cancelled.push(token));
+  assert.deepEqual(cancelled, [42]);
+  assert.equal(frameRef.current, 0);
+});
+
+test('callback pruning removes stale keys without replacing live callbacks', () => {
+  const laneCallback = () => {};
+  const liveTaskCallback = () => {};
+  const removedTaskCallback = () => {};
+  const callbacks = new Map([
+    ['lane:structure', laneCallback],
+    ['task:one', liveTaskCallback],
+    ['task:removed', removedTaskCallback],
+  ]);
+
+  pruneTimelineRowCallbacks(callbacks, [rows[0], rows[1]]);
+
+  assert.deepEqual([...callbacks.keys()], ['lane:structure', 'task:one']);
+  assert.equal(callbacks.get('lane:structure'), laneCallback);
+  assert.equal(callbacks.get('task:one'), liveTaskCallback);
 });
 
 test('measured layout keeps ordered unequal heights and fills missing measurements', () => {
