@@ -14,6 +14,15 @@ import {
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
 import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
+import {
+  availableTasksForLink,
+  buildRoadmapLinkIndex,
+  normalizeTaskRoadmapLinks,
+  persistLinkedBarChange,
+  resolveLinkedBar,
+  snapshotLinkedTask,
+  unlinkTaskBar,
+} from '../utils/taskRoadmapLinks.js';
 import { COLORS, FONT_STACK, ROADMAP_BAR_COL, ROADMAP_MILESTONE_COLORS, ROADMAP_STATUS_COLOR, segmentedWrapStyle, segmentedItemStyle } from '../theme.js';
 
 const OWNERS = {
@@ -1091,7 +1100,7 @@ const STATUS_OPTIONS = [
   { value: "done",     label: "Завершено" },
 ];
 
-function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId, onClose, onSave, onDelete }) {
+function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId, linkedTask, onUnlink, onClose, onSave, onDelete }) {
   const isEdit = Boolean(initBar);
   const taskId = initBar?.id || "";
   const [title,    setTitle]    = useState(initBar?.title    || "");
@@ -1191,9 +1200,11 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
           {isEdit ? "Редактировать задачу" : "Новая задача"}
         </div>
 
+        {linkedTask && <div style={{ fontSize: 12, fontWeight: 700, color: "#007aff" }}>Связана с обычной задачей</div>}
+
         <div>
           <label style={labelStyle}>Название *</label>
-          <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} required autoFocus style={inputStyle} placeholder="Название задачи" />
+          <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} required autoFocus disabled={Boolean(linkedTask)} style={inputStyle} placeholder="Название задачи" />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -1248,7 +1259,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
 
         <div>
           <label style={labelStyle}>Владелец</label>
-          <select value={owner} onChange={e => { const nextOwner = e.target.value; setOwner(nextOwner); setMemberIds(list => sanitizeMemberIds(list, nextOwner)); }} style={{ ...inputStyle, cursor: "pointer" }}>
+          <select value={owner} disabled={Boolean(linkedTask)} onChange={e => { const nextOwner = e.target.value; setOwner(nextOwner); setMemberIds(list => sanitizeMemberIds(list, nextOwner)); }} style={{ ...inputStyle, cursor: "pointer" }}>
             {members.map(member => (
               <option key={member.key} value={member.key}>{member.name}</option>
             ))}
@@ -1374,6 +1385,12 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
 
         <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 4 }}>
           <div>
+            {linkedTask && (
+              <button type="button" onClick={() => { onUnlink?.(); onClose(); }} style={{
+                padding: "8px 18px", borderRadius: 999, border: "none", marginRight: 8,
+                background: "rgba(0,122,255,.08)", color: "#007aff", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}>Отвязать</button>
+            )}
             {isEdit && (
               <button type="button" onClick={() => { onDelete(); onClose(); }} style={{
                 padding: "8px 18px", borderRadius: 999, border: "none",
@@ -1394,6 +1411,30 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
           </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+function TaskLinkModal({ tasks, members, onClose, onLink }) {
+  const [query, setQuery] = useState("");
+  const filtered = tasks.filter(task => String(task.title || "").toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.30)", display: "grid", placeItems: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 560, maxHeight: "75vh", overflow: "auto", background: "#fff", borderRadius: 20, padding: 24, boxShadow: "0 32px 80px rgba(15,23,42,.18)" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 14 }}>Связать обычную задачу</div>
+        <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Поиск по названию" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #dbeafe", borderRadius: 10, marginBottom: 12 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map(task => {
+            const assignee = getMemberById(members, task.assigneeId || task.ownerId);
+            return <button key={task.id} type="button" onClick={() => onLink(task)} style={{ textAlign: "left", border: "1px solid #e8f2ff", borderRadius: 12, padding: 12, background: "#fff", cursor: "pointer" }}>
+              <div style={{ fontWeight: 700 }}>{task.title || "Без названия"}</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{task.column || "Беклог"} · {task.due || "—"} · {assignee?.name || "Не назначен"}</div>
+            </button>;
+          })}
+          {!filtered.length && <div style={{ color: "#64748b", padding: 12 }}>Доступных задач нет</div>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button type="button" onClick={onClose} style={{ border: "none", borderRadius: 999, padding: "8px 18px", cursor: "pointer" }}>Отмена</button></div>
+      </div>
     </div>
   );
 }
@@ -2637,11 +2678,12 @@ function LaneFormModal({ onClose, onSave }) {
   );
 }
 
-function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks }) {
+function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onUnlinkBar, onLinkOrdinaryTask, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks }) {
   const [tab, setTab]               = useState("timeline");
   const [barModal, setBarModal]     = useState(null); // null | "new" | { bar, idx }
   const [mileModal, setMileModal]   = useState(null); // null | "new" | { milestone, idx }
   const [laneModal, setLaneModal]   = useState(false);
+  const [taskLinkModal, setTaskLinkModal] = useState(false);
   const [linkMode, setLinkMode]     = useState(false);
   const [linkSourceId, setLinkSourceId] = useState("");
   const [linkMessage, setLinkMessage] = useState("");
@@ -2832,7 +2874,10 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить задачу
         </button>
+        <button onClick={() => setTaskLinkModal(true)} style={{ display: "inline-flex", alignItems: "center", padding: "8px 16px", borderRadius: 999, border: "none", color: "#007aff", cursor: "pointer", fontFamily: FONT_STACK, fontWeight: 600 }}>Связать обычную задачу</button>
       </div>
+
+      {taskLinkModal && <TaskLinkModal tasks={availableTasks} members={members} onClose={() => setTaskLinkModal(false)} onLink={async task => { await onLinkOrdinaryTask(task); setTaskLinkModal(false); }} />}
 
       {/* Модалка дорожки */}
       {laneModal && (
@@ -2860,6 +2905,8 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
           lanes={rm.lanes}
           members={members}
           defaultOwnerId={defaultOwnerId}
+          linkedTask={barModal !== "new" && barModal.bar.linkedTaskId != null ? taskById.get(String(barModal.bar.linkedTaskId)) : null}
+          onUnlink={barModal !== "new" ? () => onUnlinkBar(barModal.idx) : undefined}
           onClose={() => setBarModal(null)}
           onSave={data => onSaveBar(barModal === "new" ? null : barModal.idx, data)}
           onDelete={barModal !== "new" ? () => onDeleteBar(barModal.idx) : undefined}
@@ -2881,7 +2928,10 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
 function recalc(rm) {
   const baseYear = inferRoadmapBaseYear(rm);
   const barsWithIds = ensureRoadmapTaskIds(rm?.id || "roadmap", rm.bars || []);
-  const bars = applyDependencySchedule(barsWithIds.map(barItem => normalizeBarDates(barItem, baseYear)));
+  const bars = applyDependencySchedule(barsWithIds.map(barItem => normalizeBarDates({
+    ...barItem,
+    ...(barItem.linkedTaskId != null && barItem.ownerId != null ? { owner: memberKey(barItem.ownerId) } : {}),
+  }, baseYear)));
   const milestones = (rm.milestones || []).map(milestone => normalizeMilestoneDate(milestone, baseYear));
   const timeline = buildTimelineMeta({ ...rm, bars, milestones });
   const total = bars.length || 1;
@@ -3399,7 +3449,7 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     : buildRoadmapVisualPrintHtml(node, title);
 }
 
-export default function RoadmapsSection({ team = [], api, currentUser = null, onError }) {
+export default function RoadmapsSection({ tasks = [], team = [], api, currentUser = null, onError, onLinkIndexChange }) {
   const [confirmAction, confirmDialog] = useConfirmDialog();
   const [roadmaps, setRoadmaps] = useState([]);
   const [openId, setOpenId]     = useState(null);
@@ -3409,6 +3459,11 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
   const [loadError, setLoadError] = useState("");
   const members = useMemo(() => buildMemberRegistry(userDirectory.length ? userDirectory : team, currentUser), [userDirectory, team, currentUser]);
   const defaultOwnerId = memberKey(currentUser?.id || members[0]?.id || "viktor");
+  const taskById = useMemo(() => new Map(tasks.map(task => [String(task.id), task])), [tasks]);
+
+  useEffect(() => {
+    onLinkIndexChange?.(buildRoadmapLinkIndex(roadmaps));
+  }, [roadmaps, onLinkIndexChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3448,7 +3503,7 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
           listRoadmaps: () => api.listRoadmaps(),
           clearLegacy: () => window.localStorage.removeItem(LEGACY_ROADMAPS_KEY),
         });
-        if (!cancelled) setRoadmaps(normalizeRoadmaps(resolvedRoadmaps, recalc));
+        if (!cancelled) setRoadmaps(normalizeRoadmaps(normalizeTaskRoadmapLinks(resolvedRoadmaps, tasks), recalc));
       } catch (error) {
         if (!cancelled) {
           setLoadError(error?.message || "Не удалось загрузить дорожные карты");
@@ -3460,7 +3515,7 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
     }
     loadRoadmapsFromApi();
     return () => { cancelled = true; };
-  }, [api, currentUser, onError, team]);
+  }, [api, currentUser, onError, tasks, team]);
 
   const rm = openId ? roadmaps.find(r => r.id === openId) : null;
 
@@ -3529,12 +3584,56 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
   }
 
   async function handleSaveBar(idx, data) {
+    const current = roadmaps.find(roadmap => roadmap.id === openId);
+    const previousBar = idx === null ? null : current?.bars[idx];
+    if (current && previousBar?.linkedTaskId != null) {
+      const nextBar = { ...previousBar, ...data, id: previousBar.id, predecessors: sanitizePredecessorIds(data.predecessors, previousBar.id) };
+      try {
+        const saved = recalc(await persistLinkedBarChange({ api, roadmap: current, previousBar, nextBar }));
+        replaceRoadmap(saved);
+      } catch (error) {
+        onError?.(error);
+      }
+      return;
+    }
     await updateOpenRoadmap(roadmap => {
       const bars = idx === null
         ? [...roadmap.bars, { ...data, id: data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, data.id) }]
         : roadmap.bars.map((barItem, index) => index === idx ? { ...barItem, ...data, id: barItem.id || data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, barItem.id || data.id) } : barItem);
       return { ...roadmap, bars };
     });
+  }
+
+  async function handleLinkOrdinaryTask(task) {
+    const current = roadmaps.find(roadmap => roadmap.id === openId);
+    if (!current || !task) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const dueDate = task.due && task.due !== "—" ? task.due : null;
+    const startDate = dueDate && dueDate < today ? dueDate : today;
+    const base = {
+      id: createRoadmapTaskId(),
+      lane: current.lanes[0]?.id || "",
+      laneId: current.lanes[0]?.id || "",
+      owner: memberKey(task.assigneeId || task.ownerId || defaultOwnerId),
+      startDate,
+      endDate: dueDate || startDate,
+      predecessors: [],
+      linkedTaskId: task.id,
+      linkedTaskSnapshot: snapshotLinkedTask(task),
+    };
+    const resolved = resolveLinkedBar(base, task);
+    await persistRoadmap(recalc({ ...current, bars: [...current.bars, resolved] }));
+  }
+
+  async function handleUnlinkBar(idx) {
+    await updateOpenRoadmap(roadmap => ({
+      ...roadmap,
+      bars: roadmap.bars.map((bar, index) => {
+        if (index !== idx) return bar;
+        const unlinked = unlinkTaskBar(bar, taskById.get(String(bar.linkedTaskId)));
+        return { ...unlinked, ...(unlinked.ownerId != null ? { owner: memberKey(unlinked.ownerId) } : {}) };
+      }),
+    }));
   }
 
   async function handleDeleteBar(idx) {
@@ -3607,6 +3706,8 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
           rm={rm}
           members={members}
           defaultOwnerId={defaultOwnerId}
+          availableTasks={availableTasksForLink(roadmaps, tasks)}
+          taskById={taskById}
           onBack={() => setOpenId(null)}
           onEdit={() => setRmModal("edit")}
           onExportJson={() => downloadRoadmapExport(rm)}
@@ -3615,6 +3716,8 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
           onExportPdf={(node, activeTab) => openRoadmapPrintView(node, rm.title, rm, members, activeTab)}
           onSaveBar={handleSaveBar}
           onDeleteBar={handleDeleteBar}
+          onUnlinkBar={handleUnlinkBar}
+          onLinkOrdinaryTask={handleLinkOrdinaryTask}
           onSaveMilestone={handleSaveMilestone}
           onDeleteMilestone={handleDeleteMilestone}
           onSaveLane={handleSaveLane}

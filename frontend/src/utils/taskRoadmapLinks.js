@@ -97,3 +97,17 @@ export function buildRoadmapLinkIndex(roadmaps) {
   }
   return index;
 }
+
+export async function persistLinkedBarChange({ api, roadmap, previousBar, nextBar }) {
+  const taskPatch = buildLinkedTaskPatch(previousBar, nextBar);
+  let task = previousBar.linkedTaskSnapshot || { id: previousBar.linkedTaskId };
+  if (Object.keys(taskPatch).length) {
+    task = await api.patchTask(previousBar.linkedTaskId, taskPatch);
+  }
+  const refreshedBar = resolveLinkedBar(nextBar, task);
+  const nextRoadmap = {
+    ...roadmap,
+    bars: roadmap.bars.map(bar => bar.id === previousBar.id ? refreshedBar : bar),
+  };
+  return api.patchRoadmap(roadmap.id, nextRoadmap);
+}
