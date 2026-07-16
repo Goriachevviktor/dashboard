@@ -50,8 +50,8 @@ Column mapping is explicit:
 
 | Ordinary task column | Roadmap status | Progress |
 |---|---|---:|
-| `Беклог` | `todo` | 0% |
-| `В работе` | `active` | 50% |
+| `Беклог` | `planned` | 0% |
+| `В работе` | `progress` | 50% |
 | `Готов` | `done` | 100% |
 | `Архив` | `done` | 100% |
 
@@ -83,8 +83,8 @@ Saving calls `api.patchTask(linkedTaskId, patch)` for ordinary-task-owned values
 
 The inverse status mapping is:
 
-- `todo` or 0% → `Беклог`;
-- `active` or 1–99% → `В работе`;
+- `planned` or 0% → `Беклог`;
+- `progress` or 1–99% → `В работе`;
 - `done` or 100% → `Готов`.
 
 If the task API update fails, the roadmap change is not committed and the existing global error presentation is used.
