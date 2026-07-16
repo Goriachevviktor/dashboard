@@ -113,6 +113,10 @@ export function computeDependencyLineLayout({
   };
 }
 
+export function dependencyPathData({ startX, startY, middleX, endY, endX }) {
+  return `M ${startX} ${startY} H ${middleX} V ${endY} H ${endX}`;
+}
+
 function topologicalOrder(bars = []) {
   const { taskById, predecessorsById, successorsById } = buildDependencyState(bars);
   const inDegree = new Map();

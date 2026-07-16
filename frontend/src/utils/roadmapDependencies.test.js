@@ -7,6 +7,7 @@ import {
   wouldCreateDependencyCycle,
   applyDependencySchedule,
   computeDependencyLineLayout,
+  dependencyPathData,
   buildDependencyDebugEdges,
 } from "./roadmapDependencies.js";
 
@@ -124,6 +125,13 @@ test("computeDependencyLineLayout keeps a visible shoulder for adjacent anchors"
   assert.equal(line.startX, 496);
   assert.equal(line.endX, 500);
   assert.equal(line.middleX, 516);
+});
+
+test("dependencyPathData keeps both horizontal connector shoulders", () => {
+  assert.equal(
+    dependencyPathData({ startX: 496, startY: 27, middleX: 516, endY: 81, endX: 500 }),
+    "M 496 27 H 516 V 81 H 500",
+  );
 });
 
 

@@ -10,6 +10,7 @@ import {
   buildDependencyState,
   buildDependencyDebugEdges,
   computeDependencyLineLayout,
+  dependencyPathData,
   ensureRoadmapTaskIds,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
@@ -49,6 +50,9 @@ const MONTHS = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","
 const QUARTERS = ["Q1","Q2","Q3","Q4"];
 const DEFAULT_DATE_MIN = "2024-01-01";
 const DEFAULT_DATE_MAX = "2030-12-31";
+const TIMELINE_BAR_LAYER = 2;
+const TIMELINE_DEPENDENCY_LAYER = 4;
+const TIMELINE_CONNECTOR_LAYER = 5;
 
 const STATUS_META = {
   active:   { label: "Активна",   color: ROADMAP_STATUS_COLOR.active,   bg: "transparent" },
@@ -2023,7 +2027,7 @@ function GanttBar({
           padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
           boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
           transform: isHov ? "translateY(-1px)" : "none",
-          transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : 2,
+          transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
           minWidth: 8,
           userSelect: "none",
           touchAction: "none",
@@ -2051,40 +2055,42 @@ function GanttBar({
         {b.status === "progress" && (
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: b.progress + "%", background: "rgba(255,255,255,.22)", zIndex: 0 }} />
         )}
-        {hasIncomingLink && (
-          <span style={{
-            position: "absolute",
-            left: -4,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "#fff",
-            boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
-            zIndex: 1,
-          }} />
-        )}
-        {hasOutgoingLink && (
-          <span style={{
-            position: "absolute",
-            right: -8,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "#fff",
-            boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
-            zIndex: 1,
-          }} />
-        )}
         <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1, paddingLeft: hasIncomingLink ? 8 : 0 }}>{b.title}</span>
         <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
           <Avatar member={ownerMember} size={20} />
           <AvatarStack members={coExecutors} size={18} max={2} />
         </span>
       </div>
+      {hasIncomingLink && (
+        <span style={{
+          position: "absolute",
+          left: `calc(${left}% - 4px)`,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
+          zIndex: TIMELINE_CONNECTOR_LAYER,
+          pointerEvents: "none",
+        }} />
+      )}
+      {hasOutgoingLink && (
+        <span style={{
+          position: "absolute",
+          left: `calc(${left + width}% - 8px)`,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
+          zIndex: TIMELINE_CONNECTOR_LAYER,
+          pointerEvents: "none",
+        }} />
+      )}
     </div>
   );
 }
@@ -2150,6 +2156,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             chartWidth,
             predecessorCenterY: timelineRowCenter(predecessorRow),
             targetCenterY: timelineRowCenter(row),
+            predecessorAnchorOffsetX: -4,
+            targetAnchorOffsetX: 0,
+            minimumShoulder: 16,
           });
           return {
             id: `${predecessorId}->${row.b.id}`,
@@ -2374,12 +2383,12 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               <svg
                 viewBox={`0 0 ${chartWidth} ${totalHeight}`}
                 preserveAspectRatio="none"
-                style={{ position: "absolute", inset: 0, width: "100%", height: totalHeight, pointerEvents: "none", zIndex: 2 }}
+                style={{ position: "absolute", inset: 0, width: "100%", height: totalHeight, pointerEvents: "none", zIndex: TIMELINE_DEPENDENCY_LAYER }}
               >
                 {dependencyLines.map(line => (
                   <path
                     key={line.id}
-                    d={`M ${line.startX} ${line.startY} H ${line.middleX} V ${line.endY} H ${line.endX}`}
+                    d={dependencyPathData(line)}
                     fill="none"
                     stroke={line.active ? "#007aff" : "#a1a1a6"}
                     strokeWidth={1}
@@ -3324,7 +3333,7 @@ function buildTimelinePrintHtml(roadmap, members) {
           .timeline-chart-row { position: relative; min-width: 0; }
           .lane-chart { min-height: ${TIMELINE_LANE_MIN_HEIGHT}px; background: rgba(118,118,128,.04); }
           .task-chart { min-height: ${TIMELINE_TASK_MIN_HEIGHT}px; }
-          .timeline-overlays { position: absolute; left: ${sideW}px; top: 0; width: ${chartW}px; height: 100%; pointer-events: none; z-index: 1; }
+          .timeline-overlays { position: absolute; left: ${sideW}px; top: 0; width: ${chartW}px; height: 100%; pointer-events: none; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
           .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
           .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
@@ -3332,8 +3341,9 @@ function buildTimelinePrintHtml(roadmap, members) {
           .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
           .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
           .milestone-line { position: absolute; top: 20px; bottom: 0; width: 1px; }
-          .dependency-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-          .gantt-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 30px; box-sizing: border-box; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; }
+          .dependency-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: ${TIMELINE_DEPENDENCY_LAYER}; pointer-events: none; }
+          .gantt-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 30px; box-sizing: border-box; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; z-index: ${TIMELINE_BAR_LAYER}; }
+          .connector { position: absolute; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(37,99,235,.24); z-index: ${TIMELINE_CONNECTOR_LAYER}; pointer-events: none; }
           .gantt-progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.22); }
           .gantt-title { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
           .gantt-owner { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; position: relative; z-index: 1; }
@@ -3419,6 +3429,8 @@ function buildTimelinePrintHtml(roadmap, members) {
                   const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
                   const owner = getMemberById(members, row.b.owner);
                   const coExecutors = sanitizeMemberIds(row.b.memberIds, row.b.owner).map(id => getMemberById(members, id)).filter(Boolean);
+                  const hasIncomingLink = (dependencyState.predecessorsById.get(row.b.id) || []).length > 0;
+                  const hasOutgoingLink = (dependencyState.successorsById.get(row.b.id) || []).length > 0;
                   return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}" data-task-id="${escapeHtml(row.b.id)}">
                     <div class="timeline-label task-label">${escapeHtml(row.b.title)}</div>
                     <div class="timeline-chart-row task-chart"><div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
@@ -3428,7 +3440,10 @@ function buildTimelinePrintHtml(roadmap, members) {
                         ${owner ? `<span class="avatar" style="width:20px;height:20px;background:${escapeHtml(owner.color)};font-size:9px">${escapeHtml(owner.initials)}</span>` : ""}
                         ${coExecutors.slice(0, 2).map(item => item ? `<span class="avatar" style="width:18px;height:18px;background:${escapeHtml(item.color)};font-size:8px">${escapeHtml(item.initials)}</span>` : "").join("")}
                       </span>
-                    </div></div>
+                    </div>
+                    ${hasIncomingLink ? `<span class="connector" style="left:calc(${left}% - 4px)"></span>` : ""}
+                    ${hasOutgoingLink ? `<span class="connector" style="left:calc(${left + width}% - 8px)"></span>` : ""}
+                    </div>
                   </div>`;
                 }).join("")}
             </div>
@@ -3441,6 +3456,8 @@ function buildTimelinePrintHtml(roadmap, members) {
           </div>
         </div>
         <script>
+          const computeDependencyLineLayout = ${computeDependencyLineLayout.toString()};
+          const dependencyPathData = ${dependencyPathData.toString()};
           function layoutTimelineOverlays() {
             const body = document.getElementById('timeline-body');
             const overlays = body && body.querySelector('.timeline-overlays');
@@ -3463,11 +3480,17 @@ function buildTimelinePrintHtml(roadmap, members) {
               const startY = centers.get(path.dataset.sourceId);
               const endY = centers.get(path.dataset.targetId);
               if (startY == null || endY == null) return;
-              const startX = chartWidth * Number(path.dataset.startPct) / 100;
-              const endX = chartWidth * Number(path.dataset.endPct) / 100;
-              const direction = endX >= startX ? 1 : -1;
-              const middleX = startX + direction * Math.min(24, Math.max(10, Math.abs(endX - startX) / 2));
-              path.setAttribute('d', 'M ' + startX + ' ' + startY + ' H ' + middleX + ' V ' + endY + ' H ' + endX);
+              const geometry = computeDependencyLineLayout({
+                predecessorEndPct: Number(path.dataset.startPct),
+                targetStartPct: Number(path.dataset.endPct),
+                chartWidth,
+                predecessorCenterY: startY,
+                targetCenterY: endY,
+                predecessorAnchorOffsetX: -4,
+                targetAnchorOffsetX: 0,
+                minimumShoulder: 16,
+              });
+              path.setAttribute('d', dependencyPathData(geometry));
             });
           }
           window.__timelineReady = (async () => {
