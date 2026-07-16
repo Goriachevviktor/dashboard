@@ -119,6 +119,50 @@ test('linked roadmap writes stop before roadmap persistence when task patching f
   assert.equal(roadmapWrites, 0);
 });
 
+test('linked roadmap writes publish the saved task only after roadmap persistence succeeds', async () => {
+  const published = [];
+  const task = { id: 7, title: 'A', due: '2026-07-22', column: 'Беклог' };
+  const previousBar = { id: 'a', linkedTaskId: 7, endDate: '2026-07-20', status: 'planned', progress: 0, linkedTaskSnapshot: { ...task, due: '2026-07-20' } };
+  await taskRoadmapLinks.persistLinkedBarChange({
+    api: {
+      patchTask: async () => task,
+      patchRoadmap: async (_id, roadmap) => roadmap,
+    },
+    roadmap: { id: 'r1', bars: [previousBar] },
+    previousBar,
+    nextBar: { ...previousBar, endDate: '2026-07-22' },
+    onTaskUpdated: savedTask => published.push(savedTask),
+  });
+  assert.deepEqual(published, [task]);
+});
+
+test('linked roadmap writes do not publish for start-only changes or failed transactions', async () => {
+  const published = [];
+  const task = { id: 7, title: 'A', due: '2026-07-20', column: 'Беклог' };
+  const previousBar = { id: 'a', linkedTaskId: 7, startDate: '2026-07-10', endDate: '2026-07-20', status: 'planned', progress: 0, linkedTaskSnapshot: task };
+  await taskRoadmapLinks.persistLinkedBarChange({
+    api: {
+      patchTask: async () => { throw new Error('unexpected task patch'); },
+      patchRoadmap: async (_id, roadmap) => roadmap,
+    },
+    roadmap: { id: 'r1', bars: [previousBar] },
+    previousBar,
+    nextBar: { ...previousBar, startDate: '2026-07-11' },
+    onTaskUpdated: savedTask => published.push(savedTask),
+  });
+  await assert.rejects(() => taskRoadmapLinks.persistLinkedBarChange({
+    api: {
+      patchTask: async () => ({ ...task, due: '2026-07-22' }),
+      patchRoadmap: async () => { throw new Error('roadmap failed'); },
+    },
+    roadmap: { id: 'r1', bars: [previousBar] },
+    previousBar,
+    nextBar: { ...previousBar, endDate: '2026-07-22' },
+    onTaskUpdated: savedTask => published.push(savedTask),
+  }), /roadmap failed/);
+  assert.deepEqual(published, []);
+});
+
 test('normalization reports repaired roadmaps and removes legacy field aliases', () => {
   assert.equal(typeof taskRoadmapLinks.normalizeTaskRoadmapLinksWithChanges, 'function');
   const roadmaps = [{ id: 'r1', bars: [{ id: 'a', linkedTaskId: 7, laneId: 'legacy', ownerId: 9 }] }];

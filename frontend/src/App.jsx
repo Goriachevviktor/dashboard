@@ -26,7 +26,7 @@ const SECTION_COMPONENTS = {
   tasks:   ({ data, api, onError, currentUser, roadmapLinks }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} />,
   archive: ({ data, api, onError, currentUser, roadmapLinks }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} />,
   events:  ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
-  roadmaps:({ data, api, currentUser, onError, onRoadmapLinksChange }) => <RoadmapsSection tasks={data.tasks} team={data.team} api={api} currentUser={currentUser} onError={onError} onLinkIndexChange={onRoadmapLinksChange} />,
+  roadmaps:({ data, api, currentUser, onError, onRoadmapLinksChange, onTaskUpdated }) => <RoadmapsSection tasks={data.tasks} team={data.team} api={api} currentUser={currentUser} onError={onError} onLinkIndexChange={onRoadmapLinksChange} onTaskUpdated={onTaskUpdated} />,
   mindmap: ({ api, onError }) => <MindMapSection api={api} onError={onError} />,
   diagrams:() => <BlockDiagramSection />,
   syncs:   ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
@@ -74,6 +74,13 @@ export default function App() {
   const onError = useCallback((error) => {
     setApiError(error?.message || "Ошибка API");
     window.setTimeout(() => setApiError(""), 5000);
+  }, []);
+
+  const onTaskUpdated = useCallback((savedTask) => {
+    setDashboardData(current => current ? {
+      ...current,
+      tasks: current.tasks.map(task => String(task.id) === String(savedTask.id) ? savedTask : task),
+    } : current);
   }, []);
 
   useEffect(() => {
@@ -361,7 +368,7 @@ export default function App() {
             <DashboardSkeleton />
           ) : (
             <ErrorBoundary key={`${section.id}:${dashboardDataRevision}`}>
-              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId })}
+              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId, onTaskUpdated })}
             </ErrorBoundary>
           )}
         </div>

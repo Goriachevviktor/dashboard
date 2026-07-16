@@ -153,16 +153,20 @@ export async function loadRoadmapLinkIndex(api) {
   return buildRoadmapLinkIndex(await api.listRoadmaps());
 }
 
-export async function persistLinkedBarChange({ api, roadmap, previousBar, nextBar }) {
+export async function persistLinkedBarChange({ api, roadmap, previousBar, nextBar, onTaskUpdated }) {
   const taskPatch = buildLinkedTaskPatch(previousBar, nextBar);
   let task = previousBar.linkedTaskSnapshot || { id: previousBar.linkedTaskId };
+  let savedTask = null;
   if (Object.keys(taskPatch).length) {
-    task = await api.patchTask(previousBar.linkedTaskId, taskPatch);
+    savedTask = await api.patchTask(previousBar.linkedTaskId, taskPatch);
+    task = savedTask;
   }
   const refreshedBar = resolveLinkedBar(nextBar, task);
   const nextRoadmap = {
     ...roadmap,
     bars: roadmap.bars.map(bar => bar.id === previousBar.id ? refreshedBar : bar),
   };
-  return api.patchRoadmap(roadmap.id, nextRoadmap);
+  const savedRoadmap = await api.patchRoadmap(roadmap.id, nextRoadmap);
+  if (savedTask) onTaskUpdated?.(savedTask);
+  return savedRoadmap;
 }

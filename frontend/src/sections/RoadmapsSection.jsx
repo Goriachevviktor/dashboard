@@ -3479,7 +3479,7 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     : buildRoadmapVisualPrintHtml(node, title);
 }
 
-export default function RoadmapsSection({ tasks = [], team = [], api, currentUser = null, onError, onLinkIndexChange }) {
+export default function RoadmapsSection({ tasks = [], team = [], api, currentUser = null, onError, onLinkIndexChange, onTaskUpdated }) {
   const [confirmAction, confirmDialog] = useConfirmDialog();
   const [roadmaps, setRoadmaps] = useState([]);
   const [openId, setOpenId]     = useState(null);
@@ -3627,7 +3627,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
     if (current && previousBar?.linkedTaskId != null) {
       const nextBar = { ...previousBar, ...data, id: previousBar.id, predecessors: sanitizePredecessorIds(data.predecessors, previousBar.id) };
       try {
-        const saved = recalc(await persistLinkedBarChange({ api, roadmap: current, previousBar, nextBar }));
+        const saved = recalc(await persistLinkedBarChange({ api, roadmap: current, previousBar, nextBar, onTaskUpdated }));
         replaceRoadmap(saved);
         return saved;
       } catch (error) {
