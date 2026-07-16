@@ -3,7 +3,7 @@ import test from 'node:test';
 import * as taskRoadmapLinks from './taskRoadmapLinks.js';
 import {
   availableTasksForLink, buildLinkedTaskPatch, buildRoadmapLinkIndex,
-  normalizeTaskRoadmapLinks, resolveLinkedBar, roadmapStateToTaskColumn,
+  loadRoadmapLinkIndex, normalizeTaskRoadmapLinks, resolveLinkedBar, roadmapStateToTaskColumn,
   snapshotLinkedTask, taskColumnToRoadmapState, unlinkTaskBar,
 } from './taskRoadmapLinks.js';
 
@@ -62,6 +62,21 @@ test('availability, unlink, patches, and index preserve one-task-one-roadmap', (
     { endDate: '2026-07-21', status: 'progress', progress: 50 },
   ), { due: '2026-07-21', column: 'В работе' });
   assert.deepEqual(buildRoadmapLinkIndex(roadmaps)['7'], { roadmapId: 'r1', roadmapTitle: 'One', barId: 'a' });
+});
+
+test('loads listed roadmaps and builds their task link index', async () => {
+  let calls = 0;
+  const index = await loadRoadmapLinkIndex({
+    listRoadmaps: async () => {
+      calls += 1;
+      return [{ id: 'r1', title: 'Launch', bars: [{ id: 'bar-7', linkedTaskId: 7 }] }];
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.deepEqual(index, {
+    '7': { roadmapId: 'r1', roadmapTitle: 'Launch', barId: 'bar-7' },
+  });
 });
 
 test('linked roadmap writes patch the task before the roadmap and refresh the snapshot', async () => {

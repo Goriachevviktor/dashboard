@@ -149,6 +149,10 @@ export function buildRoadmapLinkIndex(roadmaps) {
   return index;
 }
 
+export async function loadRoadmapLinkIndex(api) {
+  return buildRoadmapLinkIndex(await api.listRoadmaps());
+}
+
 export async function persistLinkedBarChange({ api, roadmap, previousBar, nextBar }) {
   const taskPatch = buildLinkedTaskPatch(previousBar, nextBar);
   let task = previousBar.linkedTaskSnapshot || { id: previousBar.linkedTaskId };

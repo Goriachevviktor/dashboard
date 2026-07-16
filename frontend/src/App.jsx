@@ -18,6 +18,7 @@ import MindMapSection from './sections/MindMapSection.jsx';
 import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
 import DashboardSkeleton from './components/common/Skeleton.jsx';
 import ErrorBoundary from './components/common/ErrorBoundary.jsx';
+import { loadRoadmapLinkIndex } from './utils/taskRoadmapLinks.js';
 
 const ACTIVE_SECTION_KEY = "dashboard_active_section_v1";
 
@@ -142,6 +143,26 @@ export default function App() {
 
   const api = useMemo(() => buildApi(authRequest), [authRequest]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!accessToken || !currentUser) {
+      return () => { cancelled = true; };
+    }
+    async function loadRoadmapLinks() {
+      try {
+        const index = await loadRoadmapLinkIndex(api);
+        if (!cancelled) setRoadmapLinksByTaskId(index);
+      } catch (error) {
+        if (!cancelled) {
+          setRoadmapLinksByTaskId({});
+          onError(error);
+        }
+      }
+    }
+    void loadRoadmapLinks();
+    return () => { cancelled = true; };
+  }, [accessToken, api, currentUser, onError]);
+
   // Load dashboard data
   useEffect(() => {
     let cancelled = false;
@@ -205,12 +226,13 @@ export default function App() {
     setAccessToken(result.accessToken);
     setCurrentUser(result.user);
     setDashboardData(null);
+    setRoadmapLinksByTaskId({});
     setApiError("");
   }
 
   async function handleLogout() {
     try { await dashboardRequest("/auth/logout", { method: "POST" }); } catch { /* сессия могла уже истечь */ }
-    setAccessToken(""); setCurrentUser(null); setDashboardData(null);
+    setAccessToken(""); setCurrentUser(null); setDashboardData(null); setRoadmapLinksByTaskId({});
   }
 
   async function handleInstallClick() {
