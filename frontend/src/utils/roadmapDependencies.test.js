@@ -12,7 +12,24 @@ import {
   resolveRenderedTimelineWidth,
   buildDependencyDebugEdges,
   resolveDependencyAnchorPercents,
+  resolveDependencyEdgePercents,
 } from "./roadmapDependencies.js";
+
+test("dependency edge preview changes only the active endpoint", () => {
+  const targetActive = resolveDependencyEdgePercents({
+    predecessor: { startPct: 10, endPct: 20, taskIndex: 1 },
+    target: { startPct: 40, endPct: 55, taskIndex: 2 },
+    barDrag: { idx: 2, previewLeft: 48, previewWidth: 12 },
+  });
+  assert.deepEqual(targetActive, { predecessorEndPct: 20, targetStartPct: 48 });
+
+  const predecessorActive = resolveDependencyEdgePercents({
+    predecessor: { startPct: 10, endPct: 20, taskIndex: 1 },
+    target: { startPct: 40, endPct: 55, taskIndex: 2 },
+    barDrag: { idx: 1, previewLeft: 12, previewWidth: 14 },
+  });
+  assert.deepEqual(predecessorActive, { predecessorEndPct: 26, targetStartPct: 40 });
+});
 
 test("dependency anchors fall back to persisted percentages", () => {
   assert.deepEqual(resolveDependencyAnchorPercents({ startPct: 20, endPct: 35, taskIndex: 2, barDrag: null }), {

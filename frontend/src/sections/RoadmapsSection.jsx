@@ -13,6 +13,7 @@ import {
   DEPENDENCY_SVG_OVERFLOW,
   dependencyPathData,
   ensureRoadmapTaskIds,
+  resolveDependencyEdgePercents,
   resolveRenderedTimelineWidth,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
@@ -2175,9 +2176,21 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         return predecessors.map(predecessorId => {
           const predecessorRow = rowByTaskId.get(predecessorId);
           if (!predecessorRow) return null;
+          const edgePercents = resolveDependencyEdgePercents({
+            predecessor: {
+              startPct: percentFromTimelineDate(predecessorRow.b.startDate, timeline),
+              endPct: percentFromTimelineDate(predecessorRow.b.endDate, timeline, true),
+              taskIndex: predecessorRow.idx,
+            },
+            target: {
+              startPct: percentFromTimelineDate(row.b.startDate, timeline),
+              endPct: percentFromTimelineDate(row.b.endDate, timeline, true),
+              taskIndex: row.idx,
+            },
+            barDrag,
+          });
           const geometry = computeDependencyLineLayout({
-            predecessorEndPct: percentFromTimelineDate(predecessorRow.b.endDate, timeline, true),
-            targetStartPct: percentFromTimelineDate(row.b.startDate, timeline),
+            ...edgePercents,
             chartWidth: renderedChartWidth,
             predecessorCenterY: timelineRowCenter(predecessorRow),
             targetCenterY: timelineRowCenter(row),
@@ -2194,7 +2207,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           };
         }).filter(Boolean);
       })
-  ), [dependencyState.predecessorsById, highlightedTaskIds, layout, renderedChartWidth, rowByTaskId, timeline]);
+  ), [barDrag, dependencyState.predecessorsById, highlightedTaskIds, layout, renderedChartWidth, rowByTaskId, timeline]);
 
   const sideW = 340;
   const stickyTop = 0;

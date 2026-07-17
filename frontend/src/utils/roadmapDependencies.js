@@ -141,6 +141,15 @@ export function resolveDependencyAnchorPercents({ startPct, endPct, taskIndex, b
   };
 }
 
+export function resolveDependencyEdgePercents({ predecessor, target, barDrag }) {
+  const predecessorAnchors = resolveDependencyAnchorPercents({ ...predecessor, barDrag });
+  const targetAnchors = resolveDependencyAnchorPercents({ ...target, barDrag });
+  return {
+    predecessorEndPct: predecessorAnchors.endPct,
+    targetStartPct: targetAnchors.startPct,
+  };
+}
+
 function topologicalOrder(bars = []) {
   const { taskById, predecessorsById, successorsById } = buildDependencyState(bars);
   const inDegree = new Map();
