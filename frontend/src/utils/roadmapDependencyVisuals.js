@@ -55,17 +55,30 @@ export function dependencyPathData({ startX, startY, elbowX, endY, endX }) {
 export const QUIET_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
 export const ACTIVE_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1.75, opacity: 0.82, dashArray: "3 3" });
 
-export function resolveActiveDependencyTaskIds({ activeTaskId, predecessorsById, successorsById }) {
+export function resolveActiveDependencyVisualState({ activeTaskId, predecessorsById, successorsById }) {
   const normalizedActiveTaskId = activeTaskId == null ? "" : String(activeTaskId);
-  if (!normalizedActiveTaskId) return new Set();
-  return new Set([
-    normalizedActiveTaskId,
-    ...(predecessorsById?.get(normalizedActiveTaskId) || []).map(String),
-    ...(successorsById?.get(normalizedActiveTaskId) || []).map(String),
-  ]);
+  const activeEdgeIds = new Set();
+  const incomingPortTaskIds = new Set();
+  const outgoingPortTaskIds = new Set();
+  if (!normalizedActiveTaskId) return { activeEdgeIds, incomingPortTaskIds, outgoingPortTaskIds };
+
+  for (const predecessorId of predecessorsById?.get(normalizedActiveTaskId) || []) {
+    const normalizedPredecessorId = String(predecessorId);
+    activeEdgeIds.add(`${normalizedPredecessorId}:${normalizedActiveTaskId}`);
+    outgoingPortTaskIds.add(normalizedPredecessorId);
+    incomingPortTaskIds.add(normalizedActiveTaskId);
+  }
+  for (const successorId of successorsById?.get(normalizedActiveTaskId) || []) {
+    const normalizedSuccessorId = String(successorId);
+    activeEdgeIds.add(`${normalizedActiveTaskId}:${normalizedSuccessorId}`);
+    outgoingPortTaskIds.add(normalizedActiveTaskId);
+    incomingPortTaskIds.add(normalizedSuccessorId);
+  }
+
+  return { activeEdgeIds, incomingPortTaskIds, outgoingPortTaskIds };
 }
 
-export function dependencyPresentation({ sourceId, targetId, activeTaskIds }) {
-  const active = activeTaskIds?.has(String(sourceId)) || activeTaskIds?.has(String(targetId)) || false;
+export function dependencyPresentation({ edgeId, activeEdgeIds }) {
+  const active = activeEdgeIds?.has(String(edgeId)) || false;
   return { active, ...(active ? ACTIVE_DEPENDENCY_STYLE : QUIET_DEPENDENCY_STYLE) };
 }

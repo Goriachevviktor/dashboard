@@ -19,7 +19,7 @@ import {
   dependencyPathData,
   dependencyPresentation,
   QUIET_DEPENDENCY_STYLE,
-  resolveActiveDependencyTaskIds,
+  resolveActiveDependencyVisualState,
   resolveDependencyEdgePercents,
 } from '../utils/roadmapDependencyVisuals.js';
 import {
@@ -2101,10 +2101,10 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
   const { renderedWidth, timelineNodeRef, timelineRef } = useRenderedTimelineWidth(chartWidth);
   const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
-  const activeTaskIds = useMemo(() => {
+  const dependencyVisualState = useMemo(() => {
     const hoveredTaskId = hover == null ? '' : rm.bars[hover]?.id;
     const activeTaskId = linkSourceId || hoveredTaskId;
-    return resolveActiveDependencyTaskIds({
+    return resolveActiveDependencyVisualState({
       activeTaskId,
       predecessorsById: dependencyState.predecessorsById,
       successorsById: dependencyState.successorsById,
@@ -2134,20 +2134,21 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           target: { startPct: targetStartPct, endPct: targetEndPct, taskIndex: targetIndex },
           barDrag,
         });
+        const edgeId = `${sourceId}:${targetId}`;
         edges.push({
-          id: `${sourceId}:${targetId}`,
+          id: edgeId,
           route: computeDependencyRoute({
             ...percents,
             chartWidth: renderedWidth,
             predecessorCenterY: timelineRowCenter(predecessorRow),
             targetCenterY: timelineRowCenter(targetRow),
           }),
-          presentation: dependencyPresentation({ sourceId, targetId, activeTaskIds }),
+          presentation: dependencyPresentation({ edgeId, activeEdgeIds: dependencyVisualState.activeEdgeIds }),
         });
       });
     });
     return edges;
-  }, [activeTaskIds, barDrag, layout, renderedWidth, rm.bars, timeline]);
+  }, [barDrag, dependencyVisualState.activeEdgeIds, layout, renderedWidth, rm.bars, timeline]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2414,8 +2415,8 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     isDragging={barDrag?.idx === r.idx} linkMode={linkMode}
                     isLinked={linkSourceId === r.b.id}
                     isHighlighted={linkSourceId === r.b.id}
-                    showIncomingPort={activeTaskIds.has(String(r.b.id)) && (dependencyState.predecessorsById.get(String(r.b.id)) || []).length > 0}
-                    showOutgoingPort={activeTaskIds.has(String(r.b.id)) && (dependencyState.successorsById.get(String(r.b.id)) || []).length > 0}
+                    showIncomingPort={dependencyVisualState.incomingPortTaskIds.has(String(r.b.id))}
+                    showOutgoingPort={dependencyVisualState.outgoingPortTaskIds.has(String(r.b.id))}
                   />
                 )}
               </div>

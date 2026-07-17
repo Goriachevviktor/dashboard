@@ -7,21 +7,21 @@ import {
   dependencyPathData,
   dependencyPresentation,
   QUIET_DEPENDENCY_STYLE,
-  resolveActiveDependencyTaskIds,
+  resolveActiveDependencyVisualState,
   resolveDependencyAnchorPercents,
   resolveDependencyEdgePercents,
 } from "./roadmapDependencyVisuals.js";
 
-test("resolveActiveDependencyTaskIds normalizes a numeric active id and mixed neighbor ids", () => {
-  const activeIds = resolveActiveDependencyTaskIds({
+test("resolveActiveDependencyVisualState normalizes a numeric active id and mixed neighbor ids", () => {
+  const state = resolveActiveDependencyVisualState({
     activeTaskId: 42,
     predecessorsById: new Map([["42", [7, "8"]]]),
     successorsById: new Map([["42", [9, "10"]]]),
   });
 
-  assert.deepEqual([...activeIds], ["42", "7", "8", "9", "10"]);
-  assert.equal(activeIds.has(42), false);
-  assert.equal(dependencyPresentation({ sourceId: "7", targetId: "42", activeTaskIds: activeIds }).active, true);
+  assert.deepEqual([...state.activeEdgeIds], ["7:42", "8:42", "42:9", "42:10"]);
+  assert.deepEqual([...state.incomingPortTaskIds], ["42", "9", "10"]);
+  assert.deepEqual([...state.outgoingPortTaskIds], ["7", "8", "42"]);
 });
 
 test("resolveDependencyAnchorPercents falls back to persisted percentages", () => {
@@ -175,29 +175,40 @@ test("computeDependencyRoute keeps the preferred deterministic elbow when no can
 test("dependencyPresentation returns the exact quiet style for unrelated endpoints", () => {
   assert.deepEqual(QUIET_DEPENDENCY_STYLE, { strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
   const presentation = dependencyPresentation({
-    sourceId: "source",
-    targetId: "target",
-    activeTaskIds: new Set(["other"]),
+    edgeId: "source:target",
+    activeEdgeIds: new Set(["other:edge"]),
   });
   assert.deepEqual(presentation, { active: false, strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
   assert.equal(Object.hasOwn(presentation, "color"), false);
 });
 
-test("dependencyPresentation returns the exact active style when the source is active", () => {
+test("active dependency state isolates direct edges and directional ports", () => {
+  const state = resolveActiveDependencyVisualState({
+    activeTaskId: "B",
+    predecessorsById: new Map([["B", ["A"]], ["A", ["X"]]]),
+    successorsById: new Map([["B", ["C"]], ["C", ["D"]]]),
+  });
+
+  assert.deepEqual([...state.activeEdgeIds], ["A:B", "B:C"]);
+  assert.deepEqual([...state.incomingPortTaskIds], ["B", "C"]);
+  assert.deepEqual([...state.outgoingPortTaskIds], ["A", "B"]);
+  assert.equal(dependencyPresentation({ edgeId: "X:A", activeEdgeIds: state.activeEdgeIds }).active, false);
+  assert.equal(dependencyPresentation({ edgeId: "C:D", activeEdgeIds: state.activeEdgeIds }).active, false);
+});
+
+test("dependencyPresentation returns the exact active style for an active edge", () => {
   assert.deepEqual(ACTIVE_DEPENDENCY_STYLE, { strokeWidth: 1.75, opacity: 0.82, dashArray: "3 3" });
   const presentation = dependencyPresentation({
-    sourceId: "source",
-    targetId: "target",
-    activeTaskIds: new Set(["source"]),
+    edgeId: "source:target",
+    activeEdgeIds: new Set(["source:target"]),
   });
   assert.deepEqual(presentation, { active: true, strokeWidth: 1.75, opacity: 0.82, dashArray: "3 3" });
   assert.equal(Object.hasOwn(presentation, "color"), false);
 });
 
-test("dependencyPresentation is active when the target is active", () => {
+test("dependencyPresentation stays quiet when only an endpoint belongs to another active edge", () => {
   assert.deepEqual(dependencyPresentation({
-    sourceId: "source",
-    targetId: "target",
-    activeTaskIds: new Set(["target"]),
-  }), { active: true, strokeWidth: 1.75, opacity: 0.82, dashArray: "3 3" });
+    edgeId: "target:next",
+    activeEdgeIds: new Set(["source:target"]),
+  }), { active: false, strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
 });
