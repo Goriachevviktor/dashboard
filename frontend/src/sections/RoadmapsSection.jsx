@@ -16,7 +16,9 @@ import {
 } from '../utils/roadmapDependencies.js';
 import {
   computeDependencyRoute,
+  dependencyPathData,
   dependencyPresentation,
+  QUIET_DEPENDENCY_STYLE,
   resolveActiveDependencyTaskIds,
   resolveDependencyEdgePercents,
 } from '../utils/roadmapDependencyVisuals.js';
@@ -3256,6 +3258,8 @@ function buildTimelinePrintHtml(roadmap, members) {
           .lane-chart { min-height: ${TIMELINE_LANE_MIN_HEIGHT}px; background: rgba(118,118,128,.04); }
           .task-chart { min-height: ${TIMELINE_TASK_MIN_HEIGHT}px; }
           .timeline-overlays { position: absolute; left: ${sideW}px; top: 0; width: ${chartW}px; height: 100%; pointer-events: none; }
+          .print-dependency-overlay { position: absolute; top: 0; pointer-events:none; overflow: visible; color: #475569; z-index: ${TIMELINE_BAR_LAYER + 1}; }
+          .print-dependency-path { fill: none; stroke: currentColor; stroke-width: ${QUIET_DEPENDENCY_STYLE.strokeWidth}; stroke-opacity: ${QUIET_DEPENDENCY_STYLE.opacity}; stroke-dasharray: ${QUIET_DEPENDENCY_STYLE.dashArray}; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
           .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
           .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
@@ -3346,7 +3350,7 @@ function buildTimelinePrintHtml(roadmap, members) {
                   const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
                   const owner = getMemberById(members, row.b.owner);
                   const coExecutors = sanitizeMemberIds(row.b.memberIds, row.b.owner).map(id => getMemberById(members, id)).filter(Boolean);
-                  return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}">
+                  return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}" data-task-id="${escapeHtml(String(row.b.id))}" data-predecessors="${escapeHtml(JSON.stringify(sanitizePredecessorIds(row.b.predecessors, row.b.id)))}">
                     <div class="timeline-label task-label">${escapeHtml(row.b.title)}</div>
                     <div class="timeline-chart-row task-chart"><div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
                       ${row.b.status === "progress" ? `<span class="gantt-progress" style="width:${escapeHtml(String(row.b.progress || 0))}%"></span>` : ""}
@@ -3378,10 +3382,67 @@ function buildTimelinePrintHtml(roadmap, members) {
             overlays.style.height = height + 'px';
             overlays.querySelectorAll('.today-line, .milestone, .month-line').forEach(guide => { guide.style.height = height + 'px'; });
           }
+          const computeDependencyRoute = ${String(computeDependencyRoute)};
+          const dependencyPathData = ${String(dependencyPathData)};
+          const quietDependencyStyle = ${JSON.stringify(QUIET_DEPENDENCY_STYLE)};
+          function layoutPrintDependencies() {
+            const body = document.getElementById('timeline-body');
+            if (!body) return;
+            body.querySelector('.print-dependency-overlay')?.remove();
+            const rows = Array.from(body.querySelectorAll('.timeline-pair[data-task-id]'));
+            const firstChart = rows[0]?.querySelector('.timeline-chart-row');
+            if (!firstChart) return;
+            const bodyRect = body.getBoundingClientRect();
+            const chartRect = firstChart.getBoundingClientRect();
+            const chartWidth = chartRect.width;
+            if (!chartWidth) return;
+            const rowByTaskId = new Map(rows.map(row => [row.dataset.taskId, row]));
+            const svgNamespace = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNamespace, 'svg');
+            svg.setAttribute('class', 'print-dependency-overlay');
+            svg.setAttribute('width', String(chartWidth));
+            svg.setAttribute('height', String(Math.max(1, bodyRect.height)));
+            svg.setAttribute('viewBox', '0 0 ' + chartWidth + ' ' + Math.max(1, bodyRect.height));
+            svg.setAttribute('aria-hidden', 'true');
+            svg.style.left = (chartRect.left - bodyRect.left) + 'px';
+            rows.forEach(targetRow => {
+              let predecessorIds = [];
+              try { predecessorIds = JSON.parse(targetRow.dataset.predecessors || '[]'); } catch { predecessorIds = []; }
+              const targetBar = targetRow.querySelector('.gantt-bar');
+              if (!targetBar) return;
+              const targetRect = targetBar.getBoundingClientRect();
+              predecessorIds.forEach(predecessorId => {
+                const predecessorRow = rowByTaskId.get(String(predecessorId));
+                const predecessorBar = predecessorRow?.querySelector('.gantt-bar');
+                if (!predecessorRow || !predecessorBar) return;
+                const predecessorRect = predecessorBar.getBoundingClientRect();
+                const predecessorRowRect = predecessorRow.getBoundingClientRect();
+                const targetRowRect = targetRow.getBoundingClientRect();
+                const route = computeDependencyRoute({
+                  predecessorEndPct: ((predecessorRect.right - chartRect.left) / chartWidth) * 100,
+                  targetStartPct: ((targetRect.left - chartRect.left) / chartWidth) * 100,
+                  chartWidth,
+                  predecessorCenterY: predecessorRowRect.top - bodyRect.top + predecessorRowRect.height / 2,
+                  targetCenterY: targetRowRect.top - bodyRect.top + targetRowRect.height / 2,
+                });
+                const path = document.createElementNS(svgNamespace, 'path');
+                path.setAttribute('class', 'print-dependency-path');
+                path.setAttribute('d', dependencyPathData(route));
+                path.setAttribute('stroke-width', String(quietDependencyStyle.strokeWidth));
+                path.setAttribute('stroke-opacity', String(quietDependencyStyle.opacity));
+                path.setAttribute('stroke-dasharray', quietDependencyStyle.dashArray);
+                path.setAttribute('stroke-linecap', 'round');
+                path.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(path);
+              });
+            });
+            body.appendChild(svg);
+          }
           window.__timelineReady = (async () => {
             if (document.fonts && document.fonts.ready) await document.fonts.ready;
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             layoutTimelineOverlays();
+            layoutPrintDependencies();
           })();
         </script>
       </body>

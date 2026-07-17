@@ -22,7 +22,6 @@ test("dependency overlay owns SVG path and port presentation", () => {
   assert.equal(timelineSource.includes("<RoadmapDependencyOverlay"), true);
   assert.equal(timelineSource.includes("<RoadmapDependencyPort"), true);
   assert.equal(timelineSource.includes("<svg viewBox={`0 0 ${width} ${height}`}"), false);
-  assert.equal(timelineSource.includes("dependencyPathData("), false);
 });
 
 test("roadmap timeline contains no legacy dependency debug presentation", () => {
@@ -34,11 +33,32 @@ test("roadmap timeline contains no legacy dependency debug presentation", () => 
     "hasOutgoingLink",
     "Debug связей",
     ">Зависимость<",
-    "dependency-overlay",
+    'class="dependency-overlay"',
     'class="connector"',
     "computeDependencyLineLayout.toString",
     "dependencyPathData.toString",
   ]) {
     assert.equal(timelineSource.includes(marker), false, `legacy dependency visual remains: ${marker}`);
   }
+});
+
+test("timeline print renders quiet dotted dependency paths without ports", () => {
+  for (const marker of [
+    "print-dependency-overlay",
+    "print-dependency-path",
+    "stroke-linecap: round",
+    "stroke-linejoin: round",
+    'pointer-events:none',
+    "QUIET_DEPENDENCY_STYLE",
+    "computeDependencyRoute",
+    "dependencyPathData",
+    "data-predecessors",
+    "getBoundingClientRect",
+  ]) {
+    assert.equal(timelineSource.includes(marker), true, `print dependency structure missing: ${marker}`);
+  }
+
+  assert.equal(timelineSource.includes('class="connector"'), false);
+  assert.equal(timelineSource.includes('class="print-dependency-port"'), false);
+  assert.equal(timelineSource.includes("createElementNS(svgNamespace, 'circle')"), false);
 });
