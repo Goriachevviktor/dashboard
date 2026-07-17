@@ -62,3 +62,12 @@ test("timeline print renders quiet dotted dependency paths without ports", () =>
   assert.equal(timelineSource.includes('class="print-dependency-port"'), false);
   assert.equal(timelineSource.includes("createElementNS(svgNamespace, 'circle')"), false);
 });
+
+test("timeline print keeps today and milestones above dependency paths", () => {
+  assert.equal(
+    timelineSource.includes(`.print-dependency-overlay { position: absolute; top: 0; pointer-events:none; overflow: visible; color: #475569; z-index: \${TIMELINE_BAR_LAYER + 1}; }`),
+    true,
+  );
+  assert.equal(timelineSource.includes(`.today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: \${TIMELINE_BAR_LAYER + 2}; }`), true);
+  assert.equal(timelineSource.includes(`transform: translateX(-50%); z-index: \${TIMELINE_BAR_LAYER + 2}; display: flex;`), true);
+});

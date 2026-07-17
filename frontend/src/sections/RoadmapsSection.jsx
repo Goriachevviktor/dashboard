@@ -3261,9 +3261,9 @@ function buildTimelinePrintHtml(roadmap, members) {
           .print-dependency-overlay { position: absolute; top: 0; pointer-events:none; overflow: visible; color: #475569; z-index: ${TIMELINE_BAR_LAYER + 1}; }
           .print-dependency-path { fill: none; stroke: currentColor; stroke-width: ${QUIET_DEPENDENCY_STYLE.strokeWidth}; stroke-opacity: ${QUIET_DEPENDENCY_STYLE.opacity}; stroke-dasharray: ${QUIET_DEPENDENCY_STYLE.dashArray}; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
-          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
+          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: ${TIMELINE_BAR_LAYER + 2}; }
           .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
-          .milestone { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); z-index: 3; display: flex; flex-direction: column; align-items: center; }
+          .milestone { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); z-index: ${TIMELINE_BAR_LAYER + 2}; display: flex; flex-direction: column; align-items: center; }
           .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
           .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
           .milestone-line { position: absolute; top: 20px; bottom: 0; width: 1px; }
