@@ -13,6 +13,10 @@ test("roadmap timeline contains no legacy dependency visuals", () => {
     "hasOutgoingLink",
     "Debug связей",
     ">Зависимость<",
+    "dependency-overlay",
+    'class="connector"',
+    "computeDependencyLineLayout.toString",
+    "dependencyPathData.toString",
   ]) {
     assert.equal(source.includes(marker), false, `legacy dependency visual remains: ${marker}`);
   }

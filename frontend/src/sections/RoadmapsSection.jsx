@@ -7,7 +7,6 @@ import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import {
   applyDependencySchedule,
-  buildDependencyState,
   ensureRoadmapTaskIds,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
@@ -3129,28 +3128,6 @@ function buildRoadmapVisualPrintHtml(node, title) {
   `;
 }
 
-function printDependencyGeometry({ predecessorEndPct, targetStartPct, chartWidth, predecessorCenterY, targetCenterY, predecessorAnchorOffsetX = -4, targetAnchorOffsetX = 0, minimumShoulder = 16 }) {
-  const startX = chartWidth * predecessorEndPct / 100 + predecessorAnchorOffsetX;
-  const endX = chartWidth * targetStartPct / 100 + targetAnchorOffsetX;
-  const direction = endX >= startX ? 1 : -1;
-  const preferredMiddleX = direction > 0 ? Math.max(startX, endX) + minimumShoulder : Math.min(startX, endX) - minimumShoulder;
-  const oppositeMiddleX = direction > 0 ? Math.min(startX, endX) - minimumShoulder : Math.max(startX, endX) + minimumShoulder;
-  const oppositeIsValid = oppositeMiddleX >= 0 && oppositeMiddleX <= chartWidth
-    && Math.abs(oppositeMiddleX - startX) >= minimumShoulder
-    && Math.abs(oppositeMiddleX - endX) >= minimumShoulder;
-  return {
-    startX,
-    endX,
-    startY: predecessorCenterY,
-    endY: targetCenterY,
-    middleX: (preferredMiddleX < 0 || preferredMiddleX > chartWidth) && oppositeIsValid ? oppositeMiddleX : preferredMiddleX,
-  };
-}
-
-function printDependencyPath({ startX, startY, middleX, endY, endX }) {
-  return `M ${startX} ${startY} H ${middleX} V ${endY} H ${endX}`;
-}
-
 function buildTimelinePrintHtml(roadmap, members) {
   const timeline = roadmap.timeline;
   const today = new Date();
@@ -3168,19 +3145,6 @@ function buildTimelinePrintHtml(roadmap, members) {
   const sideW = 340;
   const chartW = Math.max(900, timeline.months.length * 110);
   const totalW = sideW + chartW;
-  const dependencyState = buildDependencyState(roadmap.bars);
-  const dependencyEdges = roadmap.bars.flatMap(bar => (
-    (dependencyState.predecessorsById.get(bar.id) || []).map(predecessorId => {
-      const predecessor = dependencyState.taskById.get(predecessorId);
-      return predecessor ? {
-        id: `${predecessorId}->${bar.id}`,
-        predecessorId,
-        taskId: bar.id,
-        startPct: percentFromTimelineDate(predecessor.endDate, timeline, true),
-        endPct: percentFromTimelineDate(bar.startDate, timeline),
-      } : null;
-    }).filter(Boolean)
-  ));
   const sm = STATUS_META[roadmap.status] || STATUS_META.archived;
   const ownerMember = getMemberById(members, roadmap.owner);
   const roadmapCoExecutors = sanitizeMemberIds(roadmap.memberIds, roadmap.owner).map(id => getMemberById(members, id)).filter(Boolean);
@@ -3234,9 +3198,7 @@ function buildTimelinePrintHtml(roadmap, members) {
           .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
           .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
           .milestone-line { position: absolute; top: 20px; bottom: 0; width: 1px; }
-          .dependency-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 4; pointer-events: none; }
           .gantt-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 30px; box-sizing: border-box; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; z-index: ${TIMELINE_BAR_LAYER}; }
-          .connector { position: absolute; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(37,99,235,.24); z-index: 5; pointer-events: none; }
           .gantt-progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.22); }
           .gantt-title { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
           .gantt-owner { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; position: relative; z-index: 1; }
@@ -3298,9 +3260,6 @@ function buildTimelinePrintHtml(roadmap, members) {
                 ${timeline.months.map(month => `<span class="month-line" style="left:${month.leftPct}%;background:${month.month % 3 === 0 ? "rgba(15,23,42,.08)" : "rgba(118,118,128,.06)"}"></span>`).join("")}
                 <span class="month-line" style="left:100%;background:rgba(15,23,42,.08)"></span>
                 ${showToday ? `<div class="today-line" style="left:${todayPct}%"><span class="today-badge">сегодня</span></div>` : ""}
-                ${dependencyEdges.length ? `<svg class="dependency-overlay" aria-hidden="true">
-                  ${dependencyEdges.map(edge => `<path data-source-id="${escapeHtml(edge.predecessorId)}" data-target-id="${escapeHtml(edge.taskId)}" data-start-pct="${edge.startPct}" data-end-pct="${edge.endPct}" fill="none" stroke="#a1a1a6" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>`).join("")}
-                </svg>` : ""}
                 ${(roadmap.milestones || []).map(item => {
                   const color = item.color || DEFAULT_MILESTONE_COLOR;
                   const pct = percentFromTimelineDate(item.date, timeline);
@@ -3322,9 +3281,7 @@ function buildTimelinePrintHtml(roadmap, members) {
                   const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
                   const owner = getMemberById(members, row.b.owner);
                   const coExecutors = sanitizeMemberIds(row.b.memberIds, row.b.owner).map(id => getMemberById(members, id)).filter(Boolean);
-                  const printHasInbound = (dependencyState.predecessorsById.get(row.b.id) || []).length > 0;
-                  const printHasOutbound = (dependencyState.successorsById.get(row.b.id) || []).length > 0;
-                  return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}" data-task-id="${escapeHtml(row.b.id)}">
+                  return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}">
                     <div class="timeline-label task-label">${escapeHtml(row.b.title)}</div>
                     <div class="timeline-chart-row task-chart"><div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
                       ${row.b.status === "progress" ? `<span class="gantt-progress" style="width:${escapeHtml(String(row.b.progress || 0))}%"></span>` : ""}
@@ -3334,8 +3291,6 @@ function buildTimelinePrintHtml(roadmap, members) {
                         ${coExecutors.slice(0, 2).map(item => item ? `<span class="avatar" style="width:18px;height:18px;background:${escapeHtml(item.color)};font-size:8px">${escapeHtml(item.initials)}</span>` : "").join("")}
                       </span>
                     </div>
-                    ${printHasInbound ? `<span class="connector" style="left:calc(${left}% - 4px)"></span>` : ""}
-                    ${printHasOutbound ? `<span class="connector" style="left:calc(${left + width}% - 8px)"></span>` : ""}
                     </div>
                   </div>`;
                 }).join("")}
@@ -3349,8 +3304,6 @@ function buildTimelinePrintHtml(roadmap, members) {
           </div>
         </div>
         <script>
-          const printDependencyGeometry = ${printDependencyGeometry.toString()};
-          const printDependencyPath = ${printDependencyPath.toString()};
           function layoutTimelineOverlays() {
             const body = document.getElementById('timeline-body');
             const overlays = body && body.querySelector('.timeline-overlays');
@@ -3359,32 +3312,6 @@ function buildTimelinePrintHtml(roadmap, members) {
             const height = Math.max(1, bodyRect.height);
             overlays.style.height = height + 'px';
             overlays.querySelectorAll('.today-line, .milestone, .month-line').forEach(guide => { guide.style.height = height + 'px'; });
-            const svg = overlays.querySelector('.dependency-overlay');
-            if (!svg) return;
-            const chartWidth = overlays.getBoundingClientRect().width;
-            svg.setAttribute('viewBox', '0 0 ' + chartWidth + ' ' + height);
-            svg.setAttribute('width', chartWidth);
-            svg.setAttribute('height', height);
-            const centers = new Map(Array.from(body.querySelectorAll('[data-task-id]')).map(row => {
-              const rect = row.getBoundingClientRect();
-              return [row.dataset.taskId, rect.top - bodyRect.top + rect.height / 2];
-            }));
-            svg.querySelectorAll('path[data-source-id]').forEach(path => {
-              const startY = centers.get(path.dataset.sourceId);
-              const endY = centers.get(path.dataset.targetId);
-              if (startY == null || endY == null) return;
-              const geometry = printDependencyGeometry({
-                predecessorEndPct: Number(path.dataset.startPct),
-                targetStartPct: Number(path.dataset.endPct),
-                chartWidth,
-                predecessorCenterY: startY,
-                targetCenterY: endY,
-                predecessorAnchorOffsetX: -4,
-                targetAnchorOffsetX: 0,
-                minimumShoulder: 16,
-              });
-              path.setAttribute('d', printDependencyPath(geometry));
-            });
           }
           window.__timelineReady = (async () => {
             if (document.fonts && document.fonts.ready) await document.fonts.ready;
