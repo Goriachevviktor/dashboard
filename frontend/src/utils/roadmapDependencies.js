@@ -2,8 +2,6 @@ function taskId(value) {
   return value == null ? "" : String(value);
 }
 
-export const DEPENDENCY_SVG_OVERFLOW = "visible";
-
 function parseIsoDate(value) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null;
   const date = new Date(`${value}T00:00:00`);
@@ -68,87 +66,6 @@ export function buildDependencyState(bars = []) {
   return { taskById, predecessorsById, successorsById };
 }
 
-
-export function buildDependencyDebugEdges(bars = []) {
-  const { taskById, predecessorsById } = buildDependencyState(bars);
-  const edges = [];
-
-  predecessorsById.forEach((predecessors, targetId) => {
-    const target = taskById.get(targetId);
-    (predecessors || []).forEach(sourceId => {
-      const source = taskById.get(sourceId);
-      if (!source || !target) return;
-      edges.push({
-        sourceId,
-        sourceTitle: source.title || sourceId,
-        targetId,
-        targetTitle: target.title || targetId,
-      });
-    });
-  });
-
-  return edges;
-}
-
-export function computeDependencyLineLayout({
-  predecessorEndPct,
-  targetStartPct,
-  chartWidth,
-  predecessorCenterY,
-  targetCenterY,
-  predecessorAnchorOffsetX = -4,
-  targetAnchorOffsetX = 0,
-  minimumShoulder = 16,
-}) {
-  const startX = chartWidth * predecessorEndPct / 100 + predecessorAnchorOffsetX;
-  const endX = chartWidth * targetStartPct / 100 + targetAnchorOffsetX;
-  const direction = endX >= startX ? 1 : -1;
-  const preferredMiddleX = direction > 0
-    ? Math.max(startX, endX) + minimumShoulder
-    : Math.min(startX, endX) - minimumShoulder;
-  const oppositeMiddleX = direction > 0
-    ? Math.min(startX, endX) - minimumShoulder
-    : Math.max(startX, endX) + minimumShoulder;
-  const oppositeIsValid = oppositeMiddleX >= 0
-    && oppositeMiddleX <= chartWidth
-    && Math.abs(oppositeMiddleX - startX) >= minimumShoulder
-    && Math.abs(oppositeMiddleX - endX) >= minimumShoulder;
-  const middleX = (preferredMiddleX < 0 || preferredMiddleX > chartWidth) && oppositeIsValid
-    ? oppositeMiddleX
-    : preferredMiddleX;
-  return {
-    startX,
-    endX,
-    startY: predecessorCenterY,
-    endY: targetCenterY,
-    middleX,
-  };
-}
-
-export function dependencyPathData({ startX, startY, middleX, endY, endX }) {
-  return `M ${startX} ${startY} H ${middleX} V ${endY} H ${endX}`;
-}
-
-export function resolveRenderedTimelineWidth(measuredWidth, minimumWidth) {
-  return Number.isFinite(measuredWidth) && measuredWidth > 0 ? measuredWidth : minimumWidth;
-}
-
-export function resolveDependencyAnchorPercents({ startPct, endPct, taskIndex, barDrag }) {
-  if (!barDrag || barDrag.idx !== taskIndex) return { startPct, endPct };
-  return {
-    startPct: barDrag.previewLeft,
-    endPct: barDrag.previewLeft + barDrag.previewWidth,
-  };
-}
-
-export function resolveDependencyEdgePercents({ predecessor, target, barDrag }) {
-  const predecessorAnchors = resolveDependencyAnchorPercents({ ...predecessor, barDrag });
-  const targetAnchors = resolveDependencyAnchorPercents({ ...target, barDrag });
-  return {
-    predecessorEndPct: predecessorAnchors.endPct,
-    targetStartPct: targetAnchors.startPct,
-  };
-}
 
 function topologicalOrder(bars = []) {
   const { taskById, predecessorsById, successorsById } = buildDependencyState(bars);
