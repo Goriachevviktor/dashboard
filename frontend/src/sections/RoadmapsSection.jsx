@@ -2,19 +2,28 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
+import RoadmapDependencyOverlay, { RoadmapDependencyPort } from '../components/RoadmapDependencyOverlay.jsx';
 import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
+import { useRenderedTimelineWidth } from '../hooks/useRenderedTimelineWidth.js';
 import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import {
   applyDependencySchedule,
+  buildDependencyState,
   ensureRoadmapTaskIds,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
 import {
+  computeDependencyRoute,
+  dependencyPresentation,
+  resolveDependencyEdgePercents,
+} from '../utils/roadmapDependencyVisuals.js';
+import {
   TIMELINE_LANE_MIN_HEIGHT,
   TIMELINE_TASK_MIN_HEIGHT,
   timelineRowKey,
+  timelineRowCenter,
   waitForTimelineReady,
 } from '../utils/timelineRowLayout.js';
 import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
@@ -1996,6 +2005,8 @@ function GanttBar({
   linkMode = false,
   isLinked = false,
   isHighlighted = false,
+  showIncomingPort = false,
+  showOutgoingPort = false,
 }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = previewLeft ?? percentFromTimelineDate(b.startDate, b.timeline);
@@ -2005,6 +2016,8 @@ function GanttBar({
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <div style={{ height: "100%", minHeight: TIMELINE_TASK_MIN_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
+      {showIncomingPort && <RoadmapDependencyPort side="incoming" left={left} width={width} />}
+      {showOutgoingPort && <RoadmapDependencyPort side="outgoing" left={left} width={width} />}
       <div
         onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
@@ -2082,8 +2095,58 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     });
     return ordered;
   }, [rm.bars, rm.lanes, timeline]);
-  const { bodyRef, registerRow, totalHeight } = useTimelineRowLayout(rows);
   const chartWidth = Math.max(720, timeline.months.length * 110);
+  const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
+  const renderedWidth = useRenderedTimelineWidth(gridRef, chartWidth);
+  const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
+  const activeTaskIds = useMemo(() => {
+    const hoveredTaskId = hover == null ? '' : rm.bars[hover]?.id;
+    const activeTaskId = linkSourceId || hoveredTaskId;
+    if (!activeTaskId) return new Set();
+    return new Set([
+      activeTaskId,
+      ...(dependencyState.predecessorsById.get(activeTaskId) || []),
+      ...(dependencyState.successorsById.get(activeTaskId) || []),
+    ]);
+  }, [dependencyState, hover, linkSourceId, rm.bars]);
+  const dependencyEdges = useMemo(() => {
+    const rowByTaskId = new Map(
+      layout.filter(row => row.type === 'bar').map(row => [String(row.b.id), row]),
+    );
+    const taskById = new Map(rm.bars.map((bar, taskIndex) => [String(bar.id), { bar, taskIndex }]));
+    const edges = [];
+
+    rm.bars.forEach((target, targetIndex) => {
+      const targetId = String(target.id);
+      const targetRow = rowByTaskId.get(targetId);
+      if (!targetRow) return;
+      sanitizePredecessorIds(target.predecessors, targetId).forEach(sourceId => {
+        const predecessor = taskById.get(sourceId);
+        const predecessorRow = rowByTaskId.get(sourceId);
+        if (!predecessor || !predecessorRow) return;
+        const predecessorStartPct = percentFromTimelineDate(predecessor.bar.startDate, timeline);
+        const predecessorEndPct = percentFromTimelineDate(predecessor.bar.endDate, timeline, true);
+        const targetStartPct = percentFromTimelineDate(target.startDate, timeline);
+        const targetEndPct = percentFromTimelineDate(target.endDate, timeline, true);
+        const percents = resolveDependencyEdgePercents({
+          predecessor: { startPct: predecessorStartPct, endPct: predecessorEndPct, taskIndex: predecessor.taskIndex },
+          target: { startPct: targetStartPct, endPct: targetEndPct, taskIndex: targetIndex },
+          barDrag,
+        });
+        edges.push({
+          id: `${sourceId}:${targetId}`,
+          route: computeDependencyRoute({
+            ...percents,
+            chartWidth: renderedWidth,
+            predecessorCenterY: timelineRowCenter(predecessorRow),
+            targetCenterY: timelineRowCenter(targetRow),
+          }),
+          presentation: dependencyPresentation({ sourceId, targetId, activeTaskIds }),
+        });
+      });
+    });
+    return edges;
+  }, [activeTaskIds, barDrag, layout, renderedWidth, rm.bars, timeline]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2283,6 +2346,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               ))}
               <span style={{ position: "absolute", top: 0, bottom: 0, width: 1, background: "rgba(15,23,42,.08)", left: "100%" }} />
             </div>
+            <RoadmapDependencyOverlay width={renderedWidth} height={totalHeight} edges={dependencyEdges} />
             {/* Линия сегодня */}
             {showToday && (
               <div style={{ position: "absolute", top: 0, bottom: 0, width: 1.5, background: "#ff3b30", left: todayPct + "%", zIndex: 3 }}>
@@ -2349,6 +2413,8 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     isDragging={barDrag?.idx === r.idx} linkMode={linkMode}
                     isLinked={linkSourceId === r.b.id}
                     isHighlighted={linkSourceId === r.b.id}
+                    showIncomingPort={activeTaskIds.has(String(r.b.id)) && (dependencyState.predecessorsById.get(String(r.b.id)) || []).length > 0}
+                    showOutgoingPort={activeTaskIds.has(String(r.b.id)) && (dependencyState.successorsById.get(String(r.b.id)) || []).length > 0}
                   />
                 )}
               </div>
