@@ -31,6 +31,46 @@ test("dependency edge preview changes only the active endpoint", () => {
   assert.deepEqual(predecessorActive, { predecessorEndPct: 26, targetStartPct: 40 });
 });
 
+test("resize-start moves the incoming edge while preserving the persisted outgoing edge", () => {
+  const persistedTarget = { startPct: 40, endPct: 55, taskIndex: 2 };
+  const resizeStartPreview = { idx: 2, previewLeft: 46, previewWidth: 9 };
+
+  assert.deepEqual(resolveDependencyAnchorPercents({
+    ...persistedTarget,
+    barDrag: resizeStartPreview,
+  }), { startPct: 46, endPct: 55 });
+  assert.deepEqual(resolveDependencyEdgePercents({
+    predecessor: { startPct: 10, endPct: 20, taskIndex: 1 },
+    target: persistedTarget,
+    barDrag: resizeStartPreview,
+  }), { predecessorEndPct: 20, targetStartPct: 46 });
+  assert.deepEqual(resolveDependencyEdgePercents({
+    predecessor: persistedTarget,
+    target: { startPct: 70, endPct: 80, taskIndex: 3 },
+    barDrag: resizeStartPreview,
+  }), { predecessorEndPct: 55, targetStartPct: 70 });
+});
+
+test("resize-end moves the outgoing edge while preserving the persisted incoming edge", () => {
+  const persistedPredecessor = { startPct: 10, endPct: 20, taskIndex: 1 };
+  const resizeEndPreview = { idx: 1, previewLeft: 10, previewWidth: 16 };
+
+  assert.deepEqual(resolveDependencyAnchorPercents({
+    ...persistedPredecessor,
+    barDrag: resizeEndPreview,
+  }), { startPct: 10, endPct: 26 });
+  assert.deepEqual(resolveDependencyEdgePercents({
+    predecessor: persistedPredecessor,
+    target: { startPct: 40, endPct: 55, taskIndex: 2 },
+    barDrag: resizeEndPreview,
+  }), { predecessorEndPct: 26, targetStartPct: 40 });
+  assert.deepEqual(resolveDependencyEdgePercents({
+    predecessor: { startPct: 0, endPct: 5, taskIndex: 0 },
+    target: persistedPredecessor,
+    barDrag: resizeEndPreview,
+  }), { predecessorEndPct: 5, targetStartPct: 10 });
+});
+
 test("dependency anchors fall back to persisted percentages", () => {
   assert.deepEqual(resolveDependencyAnchorPercents({ startPct: 20, endPct: 35, taskIndex: 2, barDrag: null }), {
     startPct: 20,
