@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createRenderedTimelineWidthController,
   resolveRenderedTimelineWidth,
-  updateObservedTimelineGrid,
 } from './useRenderedTimelineWidth.js';
 
 test('rendered timeline width uses a wider measured grid', () => {
@@ -20,25 +20,64 @@ test('rendered timeline width never falls below its minimum', () => {
   assert.equal(resolveRenderedTimelineWidth(640, 720), 720);
 });
 
-test('observed grid lifecycle unobserves replacements and schedules measurement', () => {
-  const first = {};
-  const replacement = {};
-  const nodeRef = { current: null };
+test('rendered width controller reconciles replacement nodes and cleanup', () => {
+  const first = { getBoundingClientRect: () => ({ width: 800 }) };
+  const replacement = { getBoundingClientRect: () => ({ width: 1200 }) };
   const calls = [];
-  const observer = {
-    observe: node => calls.push(['observe', node]),
-    unobserve: node => calls.push(['unobserve', node]),
+  class FakeResizeObserver {
+    constructor(callback) {
+      this.callback = callback;
+      calls.push(['construct']);
+    }
+    observe(node) { calls.push(['observe', node]); }
+    unobserve(node) { calls.push(['unobserve', node]); }
+    disconnect() { calls.push(['disconnect']); }
+  }
+  const windowTarget = {
+    addEventListener: (...args) => calls.push(['addEventListener', ...args]),
+    removeEventListener: (...args) => calls.push(['removeEventListener', ...args]),
   };
-  const schedule = () => calls.push(['schedule']);
+  const controller = createRenderedTimelineWidthController({
+    minimumWidth: 720,
+    onWidth: width => calls.push(['width', width]),
+    ResizeObserverImpl: FakeResizeObserver,
+    windowTarget,
+  });
 
-  updateObservedTimelineGrid({ nodeRef, observer, node: first, schedule });
-  updateObservedTimelineGrid({ nodeRef, observer, node: replacement, schedule });
-  updateObservedTimelineGrid({ nodeRef, observer, node: null, schedule });
+  controller.timelineRef(first);
+  controller.timelineRef(replacement);
+  controller.timelineRef(null);
+  controller.cleanup();
 
   assert.deepEqual(calls, [
-    ['observe', first], ['schedule'],
-    ['unobserve', first], ['observe', replacement], ['schedule'],
-    ['unobserve', replacement], ['schedule'],
+    ['construct'], ['observe', first], ['width', 800],
+    ['unobserve', first], ['observe', replacement], ['width', 1200],
+    ['unobserve', replacement],
+    ['disconnect'],
   ]);
-  assert.equal(nodeRef.current, null);
+  assert.equal(controller.nodeRef.current, null);
+});
+
+test('rendered width controller uses window resize only without ResizeObserver', () => {
+  const calls = [];
+  const node = { getBoundingClientRect: () => ({ width: 900 }) };
+  const windowTarget = {
+    addEventListener: (name, callback) => calls.push(['add', name, callback]),
+    removeEventListener: (name, callback) => calls.push(['remove', name, callback]),
+  };
+  const controller = createRenderedTimelineWidthController({
+    minimumWidth: 720,
+    onWidth: width => calls.push(['width', width]),
+    ResizeObserverImpl: undefined,
+    windowTarget,
+  });
+
+  controller.timelineRef(node);
+  const resizeCallback = calls.find(call => call[0] === 'add')[2];
+  resizeCallback();
+  controller.cleanup();
+
+  assert.deepEqual(calls.map(call => call.slice(0, 2)), [
+    ['add', 'resize'], ['width', 900], ['width', 900], ['remove', 'resize'],
+  ]);
 });

@@ -7,9 +7,22 @@ import {
   dependencyPathData,
   dependencyPresentation,
   QUIET_DEPENDENCY_STYLE,
+  resolveActiveDependencyTaskIds,
   resolveDependencyAnchorPercents,
   resolveDependencyEdgePercents,
 } from "./roadmapDependencyVisuals.js";
+
+test("resolveActiveDependencyTaskIds normalizes a numeric active id and mixed neighbor ids", () => {
+  const activeIds = resolveActiveDependencyTaskIds({
+    activeTaskId: 42,
+    predecessorsById: new Map([["42", [7, "8"]]]),
+    successorsById: new Map([["42", [9, "10"]]]),
+  });
+
+  assert.deepEqual([...activeIds], ["42", "7", "8", "9", "10"]);
+  assert.equal(activeIds.has(42), false);
+  assert.equal(dependencyPresentation({ sourceId: "7", targetId: "42", activeTaskIds: activeIds }).active, true);
+});
 
 test("resolveDependencyAnchorPercents falls back to persisted percentages", () => {
   assert.deepEqual(resolveDependencyAnchorPercents({ startPct: 12.5, endPct: 37.5, taskIndex: 2 }), {

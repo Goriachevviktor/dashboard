@@ -55,7 +55,17 @@ export function dependencyPathData({ startX, startY, elbowX, endY, endX }) {
 export const QUIET_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
 export const ACTIVE_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1.75, opacity: 0.82, dashArray: "3 3" });
 
+export function resolveActiveDependencyTaskIds({ activeTaskId, predecessorsById, successorsById }) {
+  const normalizedActiveTaskId = activeTaskId == null ? "" : String(activeTaskId);
+  if (!normalizedActiveTaskId) return new Set();
+  return new Set([
+    normalizedActiveTaskId,
+    ...(predecessorsById?.get(normalizedActiveTaskId) || []).map(String),
+    ...(successorsById?.get(normalizedActiveTaskId) || []).map(String),
+  ]);
+}
+
 export function dependencyPresentation({ sourceId, targetId, activeTaskIds }) {
-  const active = activeTaskIds?.has(sourceId) || activeTaskIds?.has(targetId) || false;
+  const active = activeTaskIds?.has(String(sourceId)) || activeTaskIds?.has(String(targetId)) || false;
   return { active, ...(active ? ACTIVE_DEPENDENCY_STYLE : QUIET_DEPENDENCY_STYLE) };
 }

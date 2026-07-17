@@ -17,6 +17,7 @@ import {
 import {
   computeDependencyRoute,
   dependencyPresentation,
+  resolveActiveDependencyTaskIds,
   resolveDependencyEdgePercents,
 } from '../utils/roadmapDependencyVisuals.js';
 import {
@@ -2073,7 +2074,6 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
   const [barDrag, setBarDrag] = useState(null);
-  const gridRef = useRef(null);
   const timeline = rm.timeline;
   const today = new Date();
   const todayIso = toIsoDate(today);
@@ -2097,17 +2097,16 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   }, [rm.bars, rm.lanes, timeline]);
   const chartWidth = Math.max(720, timeline.months.length * 110);
   const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
-  const renderedWidth = useRenderedTimelineWidth(gridRef, chartWidth);
+  const { renderedWidth, timelineNodeRef, timelineRef } = useRenderedTimelineWidth(chartWidth);
   const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
   const activeTaskIds = useMemo(() => {
     const hoveredTaskId = hover == null ? '' : rm.bars[hover]?.id;
     const activeTaskId = linkSourceId || hoveredTaskId;
-    if (!activeTaskId) return new Set();
-    return new Set([
+    return resolveActiveDependencyTaskIds({
       activeTaskId,
-      ...(dependencyState.predecessorsById.get(activeTaskId) || []),
-      ...(dependencyState.successorsById.get(activeTaskId) || []),
-    ]);
+      predecessorsById: dependencyState.predecessorsById,
+      successorsById: dependencyState.successorsById,
+    });
   }, [dependencyState, hover, linkSourceId, rm.bars]);
   const dependencyEdges = useMemo(() => {
     const rowByTaskId = new Map(
@@ -2155,7 +2154,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     if (!milestoneDrag) return undefined;
 
     function updateDrag(clientX) {
-      const rect = gridRef.current?.getBoundingClientRect();
+      const rect = timelineNodeRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return;
       const nextPct = ((clientX - rect.left) / rect.width) * 100;
       const deltaX = clientX - milestoneDrag.startClientX;
@@ -2174,7 +2173,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       const current = milestoneDrag;
       if (!current) return;
       updateDrag(clientX);
-      const finalPct = Math.max(0, Math.min(100, ((clientX - (gridRef.current?.getBoundingClientRect().left || 0)) / Math.max(1, gridRef.current?.getBoundingClientRect().width || 1)) * 100));
+      const finalPct = Math.max(0, Math.min(100, ((clientX - (timelineNodeRef.current?.getBoundingClientRect().left || 0)) / Math.max(1, timelineNodeRef.current?.getBoundingClientRect().width || 1)) * 100));
       const finalDate = timelineDateFromPercent(finalPct, timeline);
       setMilestoneDrag(null);
       if (current.moved) {
@@ -2200,13 +2199,13 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline]);
+  }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline, timelineNodeRef]);
 
   useEffect(() => {
     if (!barDrag || linkMode) return undefined;
 
     function computePct(clientX) {
-      const rect = gridRef.current?.getBoundingClientRect();
+      const rect = timelineNodeRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return barDrag.left;
       return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     }
@@ -2254,7 +2253,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [barDrag, linkMode, onBarClick, onBarDrag, timeline]);
+  }, [barDrag, linkMode, onBarClick, onBarDrag, timeline, timelineNodeRef]);
 
   function startMilestoneDrag(event, milestone, idx, milestonePct) {
     event.preventDefault();
@@ -2275,7 +2274,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     event.stopPropagation();
     const left = percentFromTimelineDate(bar.startDate, timeline);
     const width = Math.max(0.9, percentFromTimelineDate(bar.endDate, timeline, true) - left);
-    const rect = gridRef.current?.getBoundingClientRect();
+    const rect = timelineNodeRef.current?.getBoundingClientRect();
     const startPct = rect && rect.width > 0 ? Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)) : left;
     setBarDrag({
       idx,
@@ -2334,7 +2333,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         {/* Тело */}
         <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: rows.length ? undefined : 120, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
           {/* Сетка и оверлеи Gantt */}
-          <div ref={gridRef} style={{ position: "absolute", top: 0, left: sideW, width: `calc(100% - ${sideW}px)`, height: totalHeight, pointerEvents: "none" }}>
+          <div ref={timelineRef} style={{ position: "absolute", top: 0, left: sideW, width: `calc(100% - ${sideW}px)`, height: totalHeight, pointerEvents: "none" }}>
             {/* Вертикальные линии */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
               {timeline.months.map((month, i) => (
