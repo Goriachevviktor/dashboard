@@ -11,7 +11,33 @@ import {
   DEPENDENCY_SVG_OVERFLOW,
   resolveRenderedTimelineWidth,
   buildDependencyDebugEdges,
+  resolveDependencyAnchorPercents,
 } from "./roadmapDependencies.js";
+
+test("dependency anchors fall back to persisted percentages", () => {
+  assert.deepEqual(resolveDependencyAnchorPercents({ startPct: 20, endPct: 35, taskIndex: 2, barDrag: null }), {
+    startPct: 20,
+    endPct: 35,
+  });
+});
+
+test("dependency anchors use both ends of the active move preview", () => {
+  assert.deepEqual(resolveDependencyAnchorPercents({
+    startPct: 20,
+    endPct: 35,
+    taskIndex: 2,
+    barDrag: { idx: 2, previewLeft: 42, previewWidth: 18 },
+  }), { startPct: 42, endPct: 60 });
+});
+
+test("dependency anchors ignore another task preview", () => {
+  assert.deepEqual(resolveDependencyAnchorPercents({
+    startPct: 20,
+    endPct: 35,
+    taskIndex: 2,
+    barDrag: { idx: 3, previewLeft: 42, previewWidth: 18 },
+  }), { startPct: 20, endPct: 35 });
+});
 
 test("ensureRoadmapTaskIds assigns stable ids to bars without ids", () => {
   const bars = ensureRoadmapTaskIds("rm-demo", [{ title: "A" }, { title: "B" }]);

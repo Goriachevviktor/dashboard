@@ -133,6 +133,14 @@ export function resolveRenderedTimelineWidth(measuredWidth, minimumWidth) {
   return Number.isFinite(measuredWidth) && measuredWidth > 0 ? measuredWidth : minimumWidth;
 }
 
+export function resolveDependencyAnchorPercents({ startPct, endPct, taskIndex, barDrag }) {
+  if (!barDrag || barDrag.idx !== taskIndex) return { startPct, endPct };
+  return {
+    startPct: barDrag.previewLeft,
+    endPct: barDrag.previewLeft + barDrag.previewWidth,
+  };
+}
+
 function topologicalOrder(bars = []) {
   const { taskById, predecessorsById, successorsById } = buildDependencyState(bars);
   const inDegree = new Map();
