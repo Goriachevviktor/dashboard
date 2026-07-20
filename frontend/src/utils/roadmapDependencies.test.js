@@ -2,12 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyDependencySchedule,
   ensureRoadmapTaskIds,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
-  applyDependencySchedule,
-  computeDependencyLineLayout,
-  buildDependencyDebugEdges,
 } from "./roadmapDependencies.js";
 
 test("ensureRoadmapTaskIds assigns stable ids to bars without ids", () => {
@@ -17,10 +15,7 @@ test("ensureRoadmapTaskIds assigns stable ids to bars without ids", () => {
 });
 
 test("sanitizePredecessorIds removes duplicates and self references", () => {
-  assert.deepEqual(
-    sanitizePredecessorIds(["a", "b", "a", "self"], "self"),
-    ["a", "b"],
-  );
+  assert.deepEqual(sanitizePredecessorIds(["a", "b", "a", "self"], "self"), ["a", "b"]);
 });
 
 test("wouldCreateDependencyCycle detects transitive cycles", () => {
@@ -62,31 +57,4 @@ test("applyDependencySchedule keeps bars unchanged when no predecessor pushes da
   ]);
   assert.equal(bars[1].startDate, "2026-07-03");
   assert.equal(bars[1].endDate, "2026-07-04");
-});
-
-test("computeDependencyLineLayout ends on target bullet anchor", () => {
-  const line = computeDependencyLineLayout({
-    predecessorEndPct: 20,
-    targetStartPct: 50,
-    chartWidth: 1000,
-    predecessorTop: 10,
-    targetTop: 80,
-    rowHeight: 54,
-  });
-  assert.equal(line.startX, 204);
-  assert.equal(line.endX, 500);
-  assert.equal(line.startY, 37);
-  assert.equal(line.endY, 107);
-});
-
-
-test("buildDependencyDebugEdges lists resolved source and target titles", () => {
-  const edges = buildDependencyDebugEdges([
-    { id: "a", title: "Source", predecessors: [] },
-    { id: "b", title: "Target", predecessors: ["a"] },
-    { id: "c", title: "Broken", predecessors: ["missing"] },
-  ]);
-  assert.deepEqual(edges, [
-    { sourceId: "a", sourceTitle: "Source", targetId: "b", targetTitle: "Target" },
-  ]);
 });

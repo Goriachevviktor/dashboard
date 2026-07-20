@@ -2,18 +2,47 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { ROADMAP_YEAR } from '../utils.js';
 import StatCard from '../components/common/StatCard.jsx';
 import Avatar from '../components/common/Avatar.jsx';
+import RoadmapDependencyOverlay, { RoadmapDependencyPort } from '../components/RoadmapDependencyOverlay.jsx';
 import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
+import { useRenderedTimelineWidth } from '../hooks/useRenderedTimelineWidth.js';
+import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import {
   applyDependencySchedule,
   buildDependencyState,
-  buildDependencyDebugEdges,
-  computeDependencyLineLayout,
   ensureRoadmapTaskIds,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
+import {
+  computeDependencyRoute,
+  dependencyPresentation,
+  dependencyRoutingRuntimeSource,
+  isDependencyRouteRenderable,
+  QUIET_DEPENDENCY_STYLE,
+  resolveActiveDependencyVisualState,
+  resolveRenderedBarRect,
+} from '../utils/roadmapDependencyVisuals.js';
+import {
+  TIMELINE_LANE_MIN_HEIGHT,
+  TIMELINE_TASK_MIN_HEIGHT,
+  timelineRowKey,
+  waitForTimelineReady,
+} from '../utils/timelineRowLayout.js';
 import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
+import {
+  availableTasksForLink,
+  buildRoadmapLinkIndex,
+  canLinkTaskToRoadmaps,
+  createSingleFlight,
+  normalizeTaskRoadmapLinks,
+  normalizeTaskRoadmapLinksWithChanges,
+  persistLinkedBarChange,
+  persistRoadmapRepairs,
+  resolveLinkedBar,
+  snapshotLinkedTask,
+  unlinkTaskBar,
+} from '../utils/taskRoadmapLinks.js';
 import { COLORS, FONT_STACK, ROADMAP_BAR_COL, ROADMAP_MILESTONE_COLORS, ROADMAP_STATUS_COLOR, segmentedWrapStyle, segmentedItemStyle } from '../theme.js';
 
 const OWNERS = {
@@ -28,6 +57,7 @@ const MONTHS = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","
 const QUARTERS = ["Q1","Q2","Q3","Q4"];
 const DEFAULT_DATE_MIN = "2024-01-01";
 const DEFAULT_DATE_MAX = "2030-12-31";
+const TIMELINE_BAR_LAYER = 2;
 
 const STATUS_META = {
   active:   { label: "Активна",   color: ROADMAP_STATUS_COLOR.active,   bg: "transparent" },
@@ -1091,7 +1121,7 @@ const STATUS_OPTIONS = [
   { value: "done",     label: "Завершено" },
 ];
 
-function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId, onClose, onSave, onDelete }) {
+function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId, linkedTask, onUnlink, onClose, onSave, onDelete }) {
   const isEdit = Boolean(initBar);
   const taskId = initBar?.id || "";
   const [title,    setTitle]    = useState(initBar?.title    || "");
@@ -1105,6 +1135,8 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
   const [predecessors, setPredecessors] = useState(sanitizePredecessorIds(initBar?.predecessors, initBar?.id));
   const [candidatePredecessorId, setCandidatePredecessorId] = useState("");
   const [error,    setError]    = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const mutationFlight = useRef(createSingleFlight());
 
   const predecessorOptions = useMemo(() => (
     (Array.isArray(bars) ? bars : [])
@@ -1143,7 +1175,23 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
     setMemberIds(list => list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
   }
 
-  function handleSubmit(e) {
+  async function runMutation(operation) {
+    return mutationFlight.current.run(async () => {
+      setSubmitting(true);
+      try {
+        const saved = await operation();
+        if (saved) onClose();
+        return saved;
+      } catch (mutationError) {
+        setError(mutationError?.message || "Не удалось сохранить изменения");
+        return null;
+      } finally {
+        setSubmitting(false);
+      }
+    });
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
     const start = parseIsoDate(startDate);
     const end = parseIsoDate(endDate);
@@ -1155,19 +1203,18 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
       setError("Дата окончания должна быть позже даты начала");
       return;
     }
-    onSave({
-      id: initBar?.id,
-      title,
-      lane,
-      status,
-      progress: Number(progress),
-      startDate,
-      endDate,
-      owner,
-      memberIds: sanitizeMemberIds(memberIds, owner),
-      predecessors: sanitizePredecessorIds(predecessors, initBar?.id),
-    });
-    onClose();
+    await runMutation(() => onSave({
+        id: initBar?.id,
+        title,
+        lane,
+        status,
+        progress: Number(progress),
+        startDate,
+        endDate,
+        owner,
+        memberIds: sanitizeMemberIds(memberIds, owner),
+        predecessors: sanitizePredecessorIds(predecessors, initBar?.id),
+      }));
   }
 
   const inputStyle = {
@@ -1191,9 +1238,13 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
           {isEdit ? "Редактировать задачу" : "Новая задача"}
         </div>
 
+        <fieldset disabled={submitting} style={{ display: "contents" }}>
+
+        {linkedTask && <div style={{ fontSize: 12, fontWeight: 700, color: "#007aff" }}>Связана с обычной задачей</div>}
+
         <div>
           <label style={labelStyle}>Название *</label>
-          <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} required autoFocus style={inputStyle} placeholder="Название задачи" />
+          <input value={title} onChange={e => { setTitle(e.target.value); setError(""); }} required autoFocus disabled={Boolean(linkedTask)} style={inputStyle} placeholder="Название задачи" />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -1248,7 +1299,7 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
 
         <div>
           <label style={labelStyle}>Владелец</label>
-          <select value={owner} onChange={e => { const nextOwner = e.target.value; setOwner(nextOwner); setMemberIds(list => sanitizeMemberIds(list, nextOwner)); }} style={{ ...inputStyle, cursor: "pointer" }}>
+          <select value={owner} disabled={Boolean(linkedTask)} onChange={e => { const nextOwner = e.target.value; setOwner(nextOwner); setMemberIds(list => sanitizeMemberIds(list, nextOwner)); }} style={{ ...inputStyle, cursor: "pointer" }}>
             {members.map(member => (
               <option key={member.key} value={member.key}>{member.name}</option>
             ))}
@@ -1374,8 +1425,14 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
 
         <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 4 }}>
           <div>
+            {linkedTask && (
+              <button type="button" onClick={() => runMutation(() => onUnlink?.())} style={{
+                padding: "8px 18px", borderRadius: 999, border: "none", marginRight: 8,
+                background: "rgba(0,122,255,.08)", color: "#007aff", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}>Отвязать</button>
+            )}
             {isEdit && (
-              <button type="button" onClick={() => { onDelete(); onClose(); }} style={{
+              <button type="button" onClick={() => runMutation(onDelete)} style={{
                 padding: "8px 18px", borderRadius: 999, border: "none",
                 background: "rgba(118,118,128,.08)", color: "#e03131", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>Удалить</button>
@@ -1386,14 +1443,49 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
               padding: "8px 20px", borderRadius: 999, border: "none",
               background: "rgba(118,118,128,.12)", color: "#1d1d1f", fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
             }}>Отмена</button>
-            <button type="submit" style={{
+            <button type="submit" disabled={submitting} style={{
               padding: "8px 22px", borderRadius: 999, border: "none",
               background: "#007aff", color: "#fff", boxShadow: "0 2px 8px rgba(0,122,255,.28)",
               fontFamily: FONT_STACK, fontSize: 13, fontWeight: 600, cursor: "pointer",
-            }}>Сохранить</button>
+            }}>{submitting ? "Сохраняем…" : "Сохранить"}</button>
           </div>
         </div>
+        </fieldset>
       </form>
+    </div>
+  );
+}
+
+function TaskLinkModal({ tasks, members, onClose, onLink }) {
+  const [query, setQuery] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const singleFlight = useRef(createSingleFlight());
+  const filtered = tasks.filter(task => String(task.title || "").toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.30)", display: "grid", placeItems: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 560, maxHeight: "75vh", overflow: "auto", background: "#fff", borderRadius: 20, padding: 24, boxShadow: "0 32px 80px rgba(15,23,42,.18)" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 14 }}>Связать обычную задачу</div>
+        <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Поиск по названию" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #dbeafe", borderRadius: 10, marginBottom: 12 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map(task => {
+            const assignee = getMemberById(members, task.assigneeId ?? task.ownerId);
+            return <button key={task.id} type="button" disabled={submitting} onClick={() => singleFlight.current.run(async () => {
+              setSubmitting(true);
+              try {
+                const linked = await onLink(task);
+                if (linked) onClose();
+              } finally {
+                setSubmitting(false);
+              }
+            })} style={{ textAlign: "left", border: "1px solid #e8f2ff", borderRadius: 12, padding: 12, background: "#fff", cursor: "pointer" }}>
+              <div style={{ fontWeight: 700 }}>{task.title || "Без названия"}</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{task.column || "Беклог"} · {task.due || "—"} · {assignee?.name || "Не назначен"}</div>
+            </button>;
+          })}
+          {!filtered.length && <div style={{ color: "#64748b", padding: 12 }}>Доступных задач нет</div>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button type="button" onClick={onClose} style={{ border: "none", borderRadius: 999, padding: "8px 18px", cursor: "pointer" }}>Отмена</button></div>
+      </div>
     </div>
   );
 }
@@ -1901,9 +1993,6 @@ function CatalogView({ roadmaps, members, onOpen, onNew }) {
 
 // ── Timeline (Gantt) ───────────────────────────────────────────────────────
 
-const TIMELINE_TASK_ROW_HEIGHT = 54;
-const TIMELINE_LANE_ROW_HEIGHT = 40;
-
 function GanttBar({
   b,
   hover,
@@ -1918,9 +2007,11 @@ function GanttBar({
   isDragging = false,
   linkMode = false,
   isLinked = false,
-  hasIncomingLink = false,
-  hasOutgoingLink = false,
   isHighlighted = false,
+  showIncomingPort = false,
+  showOutgoingPort = false,
+  rect = null,
+  outgoingAnchorX = null,
 }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = previewLeft ?? percentFromTimelineDate(b.startDate, b.timeline);
@@ -1929,7 +2020,9 @@ function GanttBar({
   const ownerMember = getMemberById(members, b.owner);
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
-    <div style={{ height: TIMELINE_TASK_ROW_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
+    <div style={{ height: "100%", minHeight: TIMELINE_TASK_MIN_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
+      {showIncomingPort && rect && <RoadmapDependencyPort anchorX={rect.left} />}
+      {showOutgoingPort && outgoingAnchorX != null && <RoadmapDependencyPort anchorX={outgoingAnchorX} />}
       <div
         onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
@@ -1942,8 +2035,7 @@ function GanttBar({
           background: c.bar, display: "flex", alignItems: "center",
           padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
           boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
-          transform: isHov ? "translateY(-1px)" : "none",
-          transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : 2,
+          transition: "box-shadow .15s", zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
           minWidth: 8,
           userSelect: "none",
           touchAction: "none",
@@ -1971,35 +2063,7 @@ function GanttBar({
         {b.status === "progress" && (
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: b.progress + "%", background: "rgba(255,255,255,.22)", zIndex: 0 }} />
         )}
-        {hasIncomingLink && (
-          <span style={{
-            position: "absolute",
-            left: -4,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "#fff",
-            boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
-            zIndex: 1,
-          }} />
-        )}
-        {hasOutgoingLink && (
-          <span style={{
-            position: "absolute",
-            right: -8,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "#fff",
-            boxShadow: "0 0 0 2px rgba(37,99,235,.24)",
-            zIndex: 1,
-          }} />
-        )}
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1, paddingLeft: hasIncomingLink ? 8 : 0 }}>{b.title}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1 }}>{b.title}</span>
         <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
           <Avatar member={ownerMember} size={20} />
           <AvatarStack members={coExecutors} size={18} max={2} />
@@ -2013,7 +2077,6 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
   const [barDrag, setBarDrag] = useState(null);
-  const gridRef = useRef(null);
   const timeline = rm.timeline;
   const today = new Date();
   const todayIso = toIsoDate(today);
@@ -2022,66 +2085,92 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     && today >= parseIsoDate(timeline.startDate)
     && today <= addDays(parseIsoDate(timeline.endDate), 1);
 
-  const rows = [];
-  rm.lanes.forEach(lane => {
-    const laneBars = rm.bars.filter(b => b.lane === lane.id);
-    rows.push({ type: "lane", lane });
-    laneBars.forEach(b => rows.push({ type: "bar", b: { ...b, timeline }, idx: rm.bars.indexOf(b) }));
-  });
-
-  let offsetTop = 0;
-  const positionedRows = rows.map(row => {
-    const top = offsetTop;
-    offsetTop += row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT;
-    return { ...row, top };
-  });
-  const gridHeight = positionedRows.length ? offsetTop : 120;
-  const chartWidth = Math.max(720, timeline.months.length * 110);
-  const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
-  const hoveredBar = hover == null ? null : positionedRows.find(row => row.type === "bar" && row.idx === hover)?.b || null;
-  const focusTaskId = hoveredBar?.id || linkSourceId || "";
-  const highlightedTaskIds = useMemo(() => {
-    if (!focusTaskId) return new Set();
-    return new Set([
-      focusTaskId,
-      ...(dependencyState.predecessorsById.get(focusTaskId) || []),
-      ...(dependencyState.successorsById.get(focusTaskId) || []),
-    ]);
-  }, [dependencyState.predecessorsById, dependencyState.successorsById, focusTaskId]);
-  const rowByTaskId = useMemo(() => {
-    const map = new Map();
-    positionedRows.forEach(row => {
-      if (row.type === "bar" && row.b?.id) map.set(row.b.id, row);
+  const rows = useMemo(() => {
+    const ordered = [];
+    rm.lanes.forEach(lane => {
+      const laneRow = { type: "lane", lane };
+      ordered.push({ ...laneRow, key: timelineRowKey(laneRow) });
+      rm.bars.forEach((b, idx) => {
+        if (b.lane !== lane.id) return;
+        const barRow = { type: "bar", b: { ...b, timeline }, idx };
+        ordered.push({ ...barRow, key: timelineRowKey(barRow) });
+      });
     });
-    return map;
-  }, [positionedRows]);
-  const dependencyDebugEdges = useMemo(() => buildDependencyDebugEdges(rm.bars), [rm.bars]);
-  const dependencyLines = useMemo(() => (
-    positionedRows
-      .filter(row => row.type === "bar")
-      .flatMap(row => {
-        const predecessors = dependencyState.predecessorsById.get(row.b.id) || [];
-        return predecessors.map(predecessorId => {
-          const predecessorRow = rowByTaskId.get(predecessorId);
-          if (!predecessorRow) return null;
-          const geometry = computeDependencyLineLayout({
-            predecessorEndPct: percentFromTimelineDate(predecessorRow.b.endDate, timeline, true),
-            targetStartPct: percentFromTimelineDate(row.b.startDate, timeline),
-            chartWidth,
-            predecessorTop: predecessorRow.top,
-            targetTop: row.top,
-            rowHeight: TIMELINE_TASK_ROW_HEIGHT,
-          });
-          return {
-            id: `${predecessorId}->${row.b.id}`,
-            predecessorId,
-            taskId: row.b.id,
-            ...geometry,
-            active: highlightedTaskIds.has(predecessorId) || highlightedTaskIds.has(row.b.id),
-          };
-        }).filter(Boolean);
-      })
-  ), [chartWidth, dependencyState.predecessorsById, highlightedTaskIds, positionedRows, rowByTaskId, timeline]);
+    return ordered;
+  }, [rm.bars, rm.lanes, timeline]);
+  const chartWidth = Math.max(720, timeline.months.length * 110);
+  const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
+  const { renderedWidth, timelineNodeRef, timelineRef } = useRenderedTimelineWidth(chartWidth);
+  const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
+  const dependencyVisualState = useMemo(() => {
+    const hoveredTaskId = hover == null ? '' : rm.bars[hover]?.id;
+    const activeTaskId = linkSourceId || hoveredTaskId;
+    return resolveActiveDependencyVisualState({
+      activeTaskId,
+      predecessorsById: dependencyState.predecessorsById,
+      successorsById: dependencyState.successorsById,
+    });
+  }, [dependencyState, hover, linkSourceId, rm.bars]);
+  const renderedBarRectById = useMemo(() => {
+    const rowByTaskId = new Map(
+      layout.filter(row => row.type === 'bar').map(row => [String(row.b.id), row]),
+    );
+    return new Map(rm.bars.flatMap((bar, taskIndex) => {
+      const row = rowByTaskId.get(String(bar.id));
+      if (!row) return [];
+      const persistedLeft = percentFromTimelineDate(bar.startDate, timeline);
+      const persistedWidth = Math.max(
+        0.9,
+        percentFromTimelineDate(bar.endDate, timeline, true) - persistedLeft,
+      );
+      const isPreviewed = barDrag?.idx === taskIndex;
+      const leftPct = isPreviewed ? barDrag.previewLeft : persistedLeft;
+      const widthPct = isPreviewed ? barDrag.previewWidth : persistedWidth;
+      return [[String(bar.id), resolveRenderedBarRect({
+        leftPct,
+        widthPct,
+        chartWidth: renderedWidth,
+        rowTop: row.top,
+        rowHeight: row.height,
+      })]];
+    }));
+  }, [barDrag, layout, renderedWidth, rm.bars, timeline]);
+  const dependencyRouteEdges = useMemo(() => {
+    const edges = [];
+
+    rm.bars.forEach(target => {
+      const targetId = String(target.id);
+      const targetRect = renderedBarRectById.get(targetId);
+      if (!targetRect) return;
+      sanitizePredecessorIds(target.predecessors, targetId).forEach(sourceId => {
+        const sourceRect = renderedBarRectById.get(sourceId);
+        if (!sourceRect) return;
+        const obstacleRects = [...renderedBarRectById.entries()]
+          .filter(([taskId]) => taskId !== sourceId && taskId !== targetId)
+          .map(([, rect]) => rect);
+        const edgeId = `${sourceId}:${targetId}`;
+        edges.push({
+          id: edgeId,
+          route: computeDependencyRoute({
+            sourceRect,
+            targetRect,
+            obstacleRects,
+            chartWidth: renderedWidth,
+          }),
+        });
+      });
+    });
+    return edges;
+  }, [renderedBarRectById, renderedWidth, rm.bars]);
+  const dependencyEdges = useMemo(() => dependencyRouteEdges
+    .filter(edge => isDependencyRouteRenderable(edge.route))
+    .map(edge => ({
+      ...edge,
+      presentation: dependencyPresentation({
+        edgeId: edge.id,
+        activeEdgeIds: dependencyVisualState.activeEdgeIds,
+      }),
+    })), [dependencyRouteEdges, dependencyVisualState.activeEdgeIds]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2090,7 +2179,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     if (!milestoneDrag) return undefined;
 
     function updateDrag(clientX) {
-      const rect = gridRef.current?.getBoundingClientRect();
+      const rect = timelineNodeRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return;
       const nextPct = ((clientX - rect.left) / rect.width) * 100;
       const deltaX = clientX - milestoneDrag.startClientX;
@@ -2109,7 +2198,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       const current = milestoneDrag;
       if (!current) return;
       updateDrag(clientX);
-      const finalPct = Math.max(0, Math.min(100, ((clientX - (gridRef.current?.getBoundingClientRect().left || 0)) / Math.max(1, gridRef.current?.getBoundingClientRect().width || 1)) * 100));
+      const finalPct = Math.max(0, Math.min(100, ((clientX - (timelineNodeRef.current?.getBoundingClientRect().left || 0)) / Math.max(1, timelineNodeRef.current?.getBoundingClientRect().width || 1)) * 100));
       const finalDate = timelineDateFromPercent(finalPct, timeline);
       setMilestoneDrag(null);
       if (current.moved) {
@@ -2135,13 +2224,13 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline]);
+  }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline, timelineNodeRef]);
 
   useEffect(() => {
     if (!barDrag || linkMode) return undefined;
 
     function computePct(clientX) {
-      const rect = gridRef.current?.getBoundingClientRect();
+      const rect = timelineNodeRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return barDrag.left;
       return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     }
@@ -2189,7 +2278,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [barDrag, linkMode, onBarClick, onBarDrag, timeline]);
+  }, [barDrag, linkMode, onBarClick, onBarDrag, timeline, timelineNodeRef]);
 
   function startMilestoneDrag(event, milestone, idx, milestonePct) {
     event.preventDefault();
@@ -2210,7 +2299,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     event.stopPropagation();
     const left = percentFromTimelineDate(bar.startDate, timeline);
     const width = Math.max(0.9, percentFromTimelineDate(bar.endDate, timeline, true) - left);
-    const rect = gridRef.current?.getBoundingClientRect();
+    const rect = timelineNodeRef.current?.getBoundingClientRect();
     const startPct = rect && rect.width > 0 ? Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)) : left;
     setBarDrag({
       idx,
@@ -2267,32 +2356,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         </div>
 
         {/* Тело */}
-        <div style={{ display: "flex" }}>
-          {/* Левый сайдбар */}
-          <div style={{
-            width: sideW,
-            flexShrink: 0,
-            borderRight: "1px solid rgba(15,23,42,.06)",
-            position: "sticky",
-            left: 0,
-            zIndex: 6,
-            background: "#fff",
-            boxShadow: "8px 0 16px rgba(15,23,42,.04)",
-          }}>
-            {positionedRows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: TIMELINE_LANE_ROW_HEIGHT, padding: "0 20px", background: "rgba(118,118,128,.04)", fontSize: 12, fontWeight: 700, color: "#1d1d1f" }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />
-                {r.lane.name}
-              </div>
-            ) : (
-              <div key={i} style={{ minHeight: TIMELINE_TASK_ROW_HEIGHT, padding: "7px 20px 7px 28px", display: "flex", alignItems: "center", fontSize: 13, lineHeight: 1.25, color: highlightedTaskIds.has(r.b.id) ? "#1d1d1f" : "#3a3a3c", fontWeight: highlightedTaskIds.has(r.b.id) ? 600 : 400, whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }} title={r.b.title}>
-                {r.b.title}
-              </div>
-            ))}
-          </div>
-
-          {/* Сетка Gantt */}
-          <div ref={gridRef} style={{ flex: 1, minWidth: Math.max(720, timeline.months.length * 110), position: "relative", minHeight: gridHeight, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
+        <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: rows.length ? undefined : 120, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
+          {/* Сетка и оверлеи Gantt */}
+          <div ref={timelineRef} style={{ position: "absolute", top: 0, left: sideW, width: `calc(100% - ${sideW}px)`, height: totalHeight, pointerEvents: "none" }}>
             {/* Вертикальные линии */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
               {timeline.months.map((month, i) => (
@@ -2304,6 +2370,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               ))}
               <span style={{ position: "absolute", top: 0, bottom: 0, width: 1, background: "rgba(15,23,42,.08)", left: "100%" }} />
             </div>
+            <RoadmapDependencyOverlay width={renderedWidth} height={totalHeight} edges={dependencyEdges} />
             {/* Линия сегодня */}
             {showToday && (
               <div style={{ position: "absolute", top: 0, bottom: 0, width: 1.5, background: "#ff3b30", left: todayPct + "%", zIndex: 3 }}>
@@ -2313,27 +2380,6 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                   padding: "2px 7px", borderRadius: "0 0 6px 6px", whiteSpace: "nowrap",
                 }}>сегодня</span>
               </div>
-            )}
-            {dependencyLines.length > 0 && (
-              <svg
-                viewBox={`0 0 ${chartWidth} ${gridHeight}`}
-                preserveAspectRatio="none"
-                style={{ position: "absolute", inset: 0, width: "100%", height: gridHeight, pointerEvents: "none", zIndex: 2 }}
-              >
-                {dependencyLines.map(line => (
-                  <path
-                    key={line.id}
-                    d={`M ${line.startX} ${line.startY} H ${line.middleX} V ${line.endY} H ${line.endX}`}
-                    fill="none"
-                    stroke={line.active ? "#007aff" : "#a1a1a6"}
-                    strokeWidth={1}
-                    strokeDasharray="2 2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ))}
-              </svg>
             )}
             {/* Вехи */}
             {rm.milestones.map((m, i) => {
@@ -2346,7 +2392,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     position: "absolute", top: 0, bottom: 0, zIndex: 3,
                     left: `${milestonePct}%`, transform: "translateX(-50%)",
                     display: "flex", flexDirection: "column", alignItems: "center",
-                    pointerEvents: "none",
+                    pointerEvents: "none", height: totalHeight,
                   }}>
                   <span
                     onPointerDown={event => startMilestoneDrag(event, m, i, milestonePct)}
@@ -2362,36 +2408,52 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 </div>
               );
             })}
-            {/* Строки */}
-            {positionedRows.map((r, i) => r.type === "lane" ? (
-              <div key={i} style={{ height: TIMELINE_LANE_ROW_HEIGHT, background: "rgba(118,118,128,.04)" }} />
-            ) : (
-              <GanttBar
-                key={i}
-                b={r.b}
-                idx={r.idx}
-                hover={hover}
-                setHover={setHover}
-                onBarClick={onBarClick}
-                onBarPointerStart={startBarPointerAction}
-                onBarLinkClick={onLinkTaskSelect}
-                members={members}
-                previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null}
-                previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null}
-                isDragging={barDrag?.idx === r.idx}
-                linkMode={linkMode}
-                isLinked={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0 || (dependencyState.successorsById.get(r.b.id) || []).length > 0}
-                hasIncomingLink={(dependencyState.predecessorsById.get(r.b.id) || []).length > 0}
-                hasOutgoingLink={(dependencyState.successorsById.get(r.b.id) || []).length > 0}
-                isHighlighted={highlightedTaskIds.has(r.b.id)}
-              />
-            ))}
           </div>
+
+          {/* Парные строки: одна grid-дорожка для подписи и диаграммы */}
+          {rows.map(r => (
+            <div key={r.key} style={{ display: "contents" }}>
+              <div style={{
+                minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT,
+                padding: r.type === "lane" ? "0 20px" : "7px 20px 7px 28px",
+                display: "flex", alignItems: "center", gap: 8,
+                borderRight: "1px solid rgba(15,23,42,.06)", position: "sticky", left: 0, zIndex: 6,
+                width: sideW, background: r.type === "lane" ? "rgba(118,118,128,.04)" : "#fff",
+                boxShadow: "8px 0 16px rgba(15,23,42,.04)", fontSize: r.type === "lane" ? 12 : 13,
+                lineHeight: 1.25, fontWeight: r.type === "lane" ? 700 : 400,
+                color: r.type === "lane" ? "#1d1d1f" : "#3a3a3c",
+                whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere",
+              }} title={r.type === "bar" ? r.b.title : undefined}>
+                {r.type === "lane" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />}
+                {r.type === "lane" ? r.lane.name : r.b.title}
+              </div>
+              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT, position: "relative", background: r.type === "lane" ? "rgba(118,118,128,.04)" : undefined }}>
+                {r.type === "bar" && (
+                  <GanttBar
+                    b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick}
+                    onBarPointerStart={startBarPointerAction} onBarLinkClick={onLinkTaskSelect} members={members}
+                    previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null}
+                    previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null}
+                    isDragging={barDrag?.idx === r.idx} linkMode={linkMode}
+                    isLinked={linkSourceId === r.b.id}
+                    isHighlighted={linkSourceId === r.b.id}
+                    showIncomingPort={dependencyVisualState.incomingPortTaskIds.has(String(r.b.id))}
+                    showOutgoingPort={dependencyVisualState.outgoingPortTaskIds.has(String(r.b.id))}
+                    rect={renderedBarRectById.get(String(r.b.id))}
+                    outgoingAnchorX={Math.min(
+                      renderedWidth,
+                      (renderedBarRectById.get(String(r.b.id))?.right ?? 0) + 8,
+                    )}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Empty state — нет дорожек */}
-      {positionedRows.length === 0 && (
+      {rows.length === 0 && (
         <div style={{ padding: "32px 24px", textAlign: "center", color: "#a1a1a6", fontSize: 13 }}>
           Нет дорожек. Нажмите «Редактировать» карту и добавьте направления.
         </div>
@@ -2408,32 +2470,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           <DiamondIcon size={12} />Веха
         </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#3a3a3c" }}>
-          <svg width="24" height="8" viewBox="0 0 24 8"><path d="M0 4 H17" stroke="#a1a1a6" strokeWidth="1" strokeDasharray="2 2" fill="none"/><path d="M21 4 l-4 -2.5 M21 4 l-4 2.5" stroke="#a1a1a6" strokeWidth="1" fill="none"/></svg>
-          Зависимость
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#3a3a3c" }}>
           <span style={{ width: 2, height: 12, background: "#ff3b30", borderRadius: 1, display: "inline-block" }} />
           Сегодня
         </span>
       </div>
 
-      {dependencyDebugEdges.length > 0 && (
-        <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#8e8e93", textTransform: "uppercase", letterSpacing: 0.4 }}>
-            Debug связей
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {dependencyDebugEdges.map(edge => (
-              <div key={`${edge.sourceId}->${edge.targetId}`} style={{ fontSize: 12, color: "#3a3a3c", fontFamily: FONT_STACK }}>
-                <span style={{ color: "#1d1d1f", fontWeight: 600 }}>{edge.sourceTitle}</span>
-                <span style={{ color: "#8e8e93", padding: "0 6px" }}>→</span>
-                <span style={{ color: "#1d1d1f", fontWeight: 600 }}>{edge.targetTitle}</span>
-                <span style={{ color: "#a1a1a6", paddingLeft: 8, fontSize: 11 }}>{edge.sourceId} → {edge.targetId}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2637,11 +2678,12 @@ function LaneFormModal({ onClose, onSave }) {
   );
 }
 
-function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks }) {
+function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onUnlinkBar, onLinkOrdinaryTask, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks }) {
   const [tab, setTab]               = useState("timeline");
   const [barModal, setBarModal]     = useState(null); // null | "new" | { bar, idx }
   const [mileModal, setMileModal]   = useState(null); // null | "new" | { milestone, idx }
   const [laneModal, setLaneModal]   = useState(false);
+  const [taskLinkModal, setTaskLinkModal] = useState(false);
   const [linkMode, setLinkMode]     = useState(false);
   const [linkSourceId, setLinkSourceId] = useState("");
   const [linkMessage, setLinkMessage] = useState("");
@@ -2832,7 +2874,10 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить задачу
         </button>
+        <button onClick={() => setTaskLinkModal(true)} style={{ display: "inline-flex", alignItems: "center", padding: "8px 16px", borderRadius: 999, border: "none", color: "#007aff", cursor: "pointer", fontFamily: FONT_STACK, fontWeight: 600 }}>Связать обычную задачу</button>
       </div>
+
+      {taskLinkModal && <TaskLinkModal tasks={availableTasks} members={members} onClose={() => setTaskLinkModal(false)} onLink={onLinkOrdinaryTask} />}
 
       {/* Модалка дорожки */}
       {laneModal && (
@@ -2860,6 +2905,8 @@ function RoadmapDetail({ rm, members, defaultOwnerId, onBack, onEdit, onExportJs
           lanes={rm.lanes}
           members={members}
           defaultOwnerId={defaultOwnerId}
+          linkedTask={barModal !== "new" && barModal.bar.linkedTaskId != null ? taskById.get(String(barModal.bar.linkedTaskId)) : null}
+          onUnlink={barModal !== "new" ? () => onUnlinkBar(barModal.idx) : undefined}
           onClose={() => setBarModal(null)}
           onSave={data => onSaveBar(barModal === "new" ? null : barModal.idx, data)}
           onDelete={barModal !== "new" ? () => onDeleteBar(barModal.idx) : undefined}
@@ -3190,16 +3237,9 @@ function buildTimelinePrintHtml(roadmap, members) {
     rows.push({ type: "lane", lane });
     laneBars.forEach(b => rows.push({ type: "bar", b }));
   });
-  const sideW = 320;
+  const sideW = 340;
   const chartW = Math.max(900, timeline.months.length * 110);
   const totalW = sideW + chartW;
-  const gridHeight = rows.reduce((sum, row) => sum + (row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT), 0);
-  let offsetTop = 0;
-  const positionedRows = rows.map(row => {
-    const top = offsetTop;
-    offsetTop += row.type === "lane" ? TIMELINE_LANE_ROW_HEIGHT : TIMELINE_TASK_ROW_HEIGHT;
-    return { ...row, top };
-  });
   const sm = STATUS_META[roadmap.status] || STATUS_META.archived;
   const ownerMember = getMemberById(members, roadmap.owner);
   const roadmapCoExecutors = sanitizeMemberIds(roadmap.memberIds, roadmap.owner).map(id => getMemberById(members, id)).filter(Boolean);
@@ -3236,21 +3276,26 @@ function buildTimelinePrintHtml(roadmap, members) {
           .quarter-title { font-size: 13px; font-weight: 700; padding: 10px 0 6px; text-align: center; color: #1d1d1f; }
           .quarter-months { display: grid; }
           .quarter-month { font-size: 11px; color: #a1a1a6; text-align: center; padding-bottom: 8px; }
-          .timeline-body { display: flex; position: relative; }
-          .side-body { width: ${sideW}px; flex-shrink: 0; border-right: 1px solid rgba(15,23,42,.06); background: #fff; position: relative; z-index: 2; }
-          .lane-row { display: flex; align-items: center; gap: 8px; height: ${TIMELINE_LANE_ROW_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
+          .timeline-body { position: relative; width: ${totalW}px; }
+          .timeline-pair { display: grid; grid-template-columns: 340px ${chartW}px; align-items: stretch; position: relative; }
+          .timeline-label { border-right: 1px solid rgba(15,23,42,.06); background: #fff; position: relative; z-index: 2; box-sizing: border-box; white-space: normal; }
+          .lane-label { display: flex; align-items: center; gap: 8px; min-height: ${TIMELINE_LANE_MIN_HEIGHT}px; padding: 0 20px; background: rgba(118,118,128,.04); font-size: 12px; font-weight: 700; color: #1d1d1f; }
           .lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-          .task-label { min-height: ${TIMELINE_TASK_ROW_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #3a3a3c; overflow-wrap: anywhere; }
-          .chart { width: ${chartW}px; position: relative; height: ${Math.max(120, gridHeight)}px; }
+          .task-label { min-height: ${TIMELINE_TASK_MIN_HEIGHT}px; padding: 7px 20px 7px 28px; display: flex; align-items: center; font-size: 13px; line-height: 1.25; color: #3a3a3c; overflow-wrap: anywhere; }
+          .timeline-chart-row { position: relative; min-width: 0; }
+          .lane-chart { min-height: ${TIMELINE_LANE_MIN_HEIGHT}px; background: rgba(118,118,128,.04); }
+          .task-chart { min-height: ${TIMELINE_TASK_MIN_HEIGHT}px; }
+          .timeline-overlays { position: absolute; left: ${sideW}px; top: 0; width: ${chartW}px; height: 100%; pointer-events: none; }
+          .print-dependency-overlay { position: absolute; top: 0; pointer-events:none; overflow: visible; color: #475569; z-index: ${TIMELINE_BAR_LAYER + 1}; }
+          .print-dependency-path { fill: none; stroke: currentColor; stroke-width: ${QUIET_DEPENDENCY_STYLE.strokeWidth}; stroke-opacity: ${QUIET_DEPENDENCY_STYLE.opacity}; stroke-dasharray: ${QUIET_DEPENDENCY_STYLE.dashArray}; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
           .month-line { position: absolute; top: 0; bottom: 0; width: 1px; }
-          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: 3; }
+          .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: ${TIMELINE_BAR_LAYER + 2}; }
           .today-badge { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 0 0 6px 6px; white-space: nowrap; }
-          .milestone { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); z-index: 3; display: flex; flex-direction: column; align-items: center; }
+          .milestone { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); z-index: ${TIMELINE_BAR_LAYER + 2}; display: flex; flex-direction: column; align-items: center; }
           .milestone-diamond { margin-top: 4px; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid currentColor; background: #fff; box-sizing: border-box; }
           .milestone-label { position: absolute; top: 22px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
           .milestone-line { position: absolute; top: 20px; bottom: 0; width: 1px; }
-          .gantt-row { position: absolute; left: 0; right: 0; }
-          .gantt-bar { position: absolute; height: 30px; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; }
+          .gantt-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 30px; box-sizing: border-box; border-radius: 9px; display: flex; align-items: center; padding: 0 10px; gap: 8px; overflow: hidden; box-shadow: none; border: 1px solid rgba(255,255,255,.18); min-width: 8px; z-index: ${TIMELINE_BAR_LAYER}; }
           .gantt-progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.22); }
           .gantt-title { font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
           .gantt-owner { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; position: relative; z-index: 1; }
@@ -3307,14 +3352,8 @@ function buildTimelinePrintHtml(roadmap, members) {
                 `).join("")}
               </div>
             </div>
-            <div class="timeline-body">
-              <div class="side-body">
-                ${positionedRows.map(row => row.type === "lane"
-                  ? `<div class="lane-row"><span class="lane-dot" style="background:${escapeHtml(row.lane.color)}"></span>${escapeHtml(row.lane.name)}</div>`
-                  : `<div class="task-label">${escapeHtml(row.b.title)}</div>`
-                ).join("")}
-              </div>
-              <div class="chart">
+            <div id="timeline-body" class="timeline-body">
+              <div class="timeline-overlays">
                 ${timeline.months.map(month => `<span class="month-line" style="left:${month.leftPct}%;background:${month.month % 3 === 0 ? "rgba(15,23,42,.08)" : "rgba(118,118,128,.06)"}"></span>`).join("")}
                 <span class="month-line" style="left:100%;background:rgba(15,23,42,.08)"></span>
                 ${showToday ? `<div class="today-line" style="left:${todayPct}%"><span class="today-badge">сегодня</span></div>` : ""}
@@ -3327,15 +3366,21 @@ function buildTimelinePrintHtml(roadmap, members) {
                     <span class="milestone-line" style="background:repeating-linear-gradient(180deg, ${escapeHtml(color)}66 0 4px, transparent 4px 8px)"></span>
                   </div>`;
                 }).join("")}
-                ${positionedRows.map(row => {
-                  if (row.type !== "bar") return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_LANE_ROW_HEIGHT}px;background:rgba(118,118,128,.04)"></div>`;
+              </div>
+              ${rows.map(row => {
+                  const key = timelineRowKey(row);
+                  if (row.type !== "bar") return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}">
+                    <div class="timeline-label lane-label"><span class="lane-dot" style="background:${escapeHtml(row.lane.color)}"></span>${escapeHtml(row.lane.name)}</div>
+                    <div class="timeline-chart-row lane-chart"></div>
+                  </div>`;
                   const c = BAR_COL[row.b.status] || BAR_COL.planned;
                   const left = percentFromTimelineDate(row.b.startDate, timeline);
                   const width = Math.max(0.9, percentFromTimelineDate(row.b.endDate, timeline, true) - left);
                   const owner = getMemberById(members, row.b.owner);
                   const coExecutors = sanitizeMemberIds(row.b.memberIds, row.b.owner).map(id => getMemberById(members, id)).filter(Boolean);
-                  return `<div class="gantt-row" style="top:${row.top}px;height:${TIMELINE_TASK_ROW_HEIGHT}px">
-                    <div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
+                  return `<div class="timeline-pair" data-timeline-row="${escapeHtml(key)}" data-task-id="${escapeHtml(String(row.b.id))}" data-predecessors="${escapeHtml(JSON.stringify(sanitizePredecessorIds(row.b.predecessors, row.b.id)))}">
+                    <div class="timeline-label task-label">${escapeHtml(row.b.title)}</div>
+                    <div class="timeline-chart-row task-chart"><div class="gantt-bar" style="left:${left}%;width:${width}%;background:${escapeHtml(c.bar)}">
                       ${row.b.status === "progress" ? `<span class="gantt-progress" style="width:${escapeHtml(String(row.b.progress || 0))}%"></span>` : ""}
                       <span class="gantt-title">${escapeHtml(row.b.title)}</span>
                       <span class="gantt-owner">
@@ -3343,9 +3388,9 @@ function buildTimelinePrintHtml(roadmap, members) {
                         ${coExecutors.slice(0, 2).map(item => item ? `<span class="avatar" style="width:18px;height:18px;background:${escapeHtml(item.color)};font-size:8px">${escapeHtml(item.initials)}</span>` : "").join("")}
                       </span>
                     </div>
+                    </div>
                   </div>`;
                 }).join("")}
-              </div>
             </div>
             <div class="legend">
               <span class="legend-item"><span class="legend-box" style="background:#34c759"></span>Завершено</span>
@@ -3355,6 +3400,92 @@ function buildTimelinePrintHtml(roadmap, members) {
             </div>
           </div>
         </div>
+        <script>
+          function layoutTimelineOverlays() {
+            const body = document.getElementById('timeline-body');
+            const overlays = body && body.querySelector('.timeline-overlays');
+            if (!body || !overlays) return;
+            const bodyRect = body.getBoundingClientRect();
+            const height = Math.max(1, bodyRect.height);
+            overlays.style.height = height + 'px';
+            overlays.querySelectorAll('.today-line, .milestone, .month-line').forEach(guide => { guide.style.height = height + 'px'; });
+          }
+          ${dependencyRoutingRuntimeSource()}
+          const quietDependencyStyle = ${JSON.stringify(QUIET_DEPENDENCY_STYLE)};
+          function layoutPrintDependencies() {
+            const body = document.getElementById('timeline-body');
+            if (!body) return;
+            body.querySelector('.print-dependency-overlay')?.remove();
+            const rows = Array.from(body.querySelectorAll('.timeline-pair[data-task-id]'));
+            const firstChart = rows[0]?.querySelector('.timeline-chart-row');
+            if (!firstChart) return;
+            const bodyRect = body.getBoundingClientRect();
+            const chartRect = firstChart.getBoundingClientRect();
+            const chartWidth = chartRect.width;
+            if (!chartWidth) return;
+            const rowByTaskId = new Map(rows.map(row => [row.dataset.taskId, row]));
+            const renderedBarRectById = new Map(rows.flatMap(row => {
+              const bar = row.querySelector('.gantt-bar');
+              if (!bar) return [];
+              const barRect = bar.getBoundingClientRect();
+              return [[row.dataset.taskId, resolveRenderedBarRect({
+                leftPct: ((barRect.left - chartRect.left) / chartWidth) * 100,
+                widthPct: (barRect.width / chartWidth) * 100,
+                chartWidth,
+                rowTop: barRect.top - bodyRect.top,
+                rowHeight: barRect.height,
+                minimumWidthPx: barRect.width,
+                barHeight: barRect.height,
+              })]];
+            }));
+            const svgNamespace = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNamespace, 'svg');
+            svg.setAttribute('class', 'print-dependency-overlay');
+            svg.setAttribute('width', String(chartWidth));
+            svg.setAttribute('height', String(Math.max(1, bodyRect.height)));
+            svg.setAttribute('viewBox', '0 0 ' + chartWidth + ' ' + Math.max(1, bodyRect.height));
+            svg.setAttribute('aria-hidden', 'true');
+            svg.style.left = (chartRect.left - bodyRect.left) + 'px';
+            rows.forEach(targetRow => {
+              let predecessorIds = [];
+              try { predecessorIds = JSON.parse(targetRow.dataset.predecessors || '[]'); } catch { predecessorIds = []; }
+              const targetId = targetRow.dataset.taskId;
+              const targetRect = renderedBarRectById.get(targetId);
+              if (!targetRect) return;
+              predecessorIds.forEach(predecessorId => {
+                const sourceId = String(predecessorId);
+                const sourceRect = renderedBarRectById.get(sourceId);
+                if (!rowByTaskId.has(sourceId) || !sourceRect) return;
+                const obstacleRects = [...renderedBarRectById.entries()]
+                  .filter(([taskId]) => taskId !== sourceId && taskId !== targetId)
+                  .map(([, rect]) => rect);
+                const route = computeDependencyRoute({
+                  sourceRect,
+                  targetRect,
+                  obstacleRects,
+                  chartWidth,
+                });
+                if (!isDependencyRouteRenderable(route)) return;
+                const path = document.createElementNS(svgNamespace, 'path');
+                path.setAttribute('class', 'print-dependency-path');
+                path.setAttribute('d', dependencyPathData(route));
+                path.setAttribute('stroke-width', String(quietDependencyStyle.strokeWidth));
+                path.setAttribute('stroke-opacity', String(quietDependencyStyle.opacity));
+                path.setAttribute('stroke-dasharray', quietDependencyStyle.dashArray);
+                path.setAttribute('stroke-linecap', 'round');
+                path.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(path);
+              });
+            });
+            body.appendChild(svg);
+          }
+          window.__timelineReady = (async () => {
+            if (document.fonts && document.fonts.ready) await document.fonts.ready;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            layoutTimelineOverlays();
+            layoutPrintDependencies();
+          })();
+        </script>
       </body>
     </html>
   `;
@@ -3377,20 +3508,23 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     }, 300);
   };
 
-  iframe.onload = () => {
+  iframe.onload = async () => {
     const frameWindow = iframe.contentWindow;
     if (!frameWindow) {
       cleanup();
       return;
     }
     frameWindow.focus();
-    window.setTimeout(() => {
-      try {
-        frameWindow.print();
-      } finally {
-        cleanup();
-      }
-    }, 250);
+    try {
+      await waitForTimelineReady(() => frameWindow.__timelineReady, {
+        timeoutMs: 1500,
+        setTimer: window.setTimeout.bind(window),
+        clearTimer: window.clearTimeout.bind(window),
+      });
+      frameWindow.print();
+    } finally {
+      cleanup();
+    }
   };
 
   window.document.body.appendChild(iframe);
@@ -3399,7 +3533,7 @@ function openRoadmapPrintView(node, title, roadmap = null, members = [], tab = "
     : buildRoadmapVisualPrintHtml(node, title);
 }
 
-export default function RoadmapsSection({ team = [], api, currentUser = null, onError }) {
+export default function RoadmapsSection({ tasks = [], team = [], api, currentUser = null, onError, onLinkIndexChange, onTaskUpdated }) {
   const [confirmAction, confirmDialog] = useConfirmDialog();
   const [roadmaps, setRoadmaps] = useState([]);
   const [openId, setOpenId]     = useState(null);
@@ -3409,6 +3543,11 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
   const [loadError, setLoadError] = useState("");
   const members = useMemo(() => buildMemberRegistry(userDirectory.length ? userDirectory : team, currentUser), [userDirectory, team, currentUser]);
   const defaultOwnerId = memberKey(currentUser?.id || members[0]?.id || "viktor");
+  const taskById = useMemo(() => new Map(tasks.map(task => [String(task.id), task])), [tasks]);
+
+  useEffect(() => {
+    onLinkIndexChange?.(buildRoadmapLinkIndex(roadmaps));
+  }, [roadmaps, onLinkIndexChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3448,7 +3587,19 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
           listRoadmaps: () => api.listRoadmaps(),
           clearLegacy: () => window.localStorage.removeItem(LEGACY_ROADMAPS_KEY),
         });
-        if (!cancelled) setRoadmaps(normalizeRoadmaps(resolvedRoadmaps, recalc));
+        const normalizedLinks = normalizeTaskRoadmapLinksWithChanges(resolvedRoadmaps, tasks);
+        const normalizedRoadmaps = normalizeRoadmaps(normalizedLinks.roadmaps, recalc);
+        if (!cancelled) setRoadmaps(normalizedRoadmaps);
+        const repairResult = await persistRoadmapRepairs({
+          roadmaps: normalizedRoadmaps,
+          originalRoadmaps: resolvedRoadmaps,
+          changedRoadmapIds: normalizedLinks.changedRoadmapIds,
+          patchRoadmap: (id, roadmap) => api.patchRoadmap(id, roadmap),
+          onError: error => { if (!cancelled) onError?.(error); },
+        });
+        if (!cancelled) {
+          setRoadmaps(normalizeRoadmaps(normalizeTaskRoadmapLinks(repairResult.roadmaps, tasks), recalc));
+        }
       } catch (error) {
         if (!cancelled) {
           setLoadError(error?.message || "Не удалось загрузить дорожные карты");
@@ -3460,7 +3611,7 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
     }
     loadRoadmapsFromApi();
     return () => { cancelled = true; };
-  }, [api, currentUser, onError, team]);
+  }, [api, currentUser, onError, tasks, team]);
 
   const rm = openId ? roadmaps.find(r => r.id === openId) : null;
 
@@ -3529,7 +3680,20 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
   }
 
   async function handleSaveBar(idx, data) {
-    await updateOpenRoadmap(roadmap => {
+    const current = roadmaps.find(roadmap => roadmap.id === openId);
+    const previousBar = idx === null ? null : current?.bars[idx];
+    if (current && previousBar?.linkedTaskId != null) {
+      const nextBar = { ...previousBar, ...data, id: previousBar.id, predecessors: sanitizePredecessorIds(data.predecessors, previousBar.id) };
+      try {
+        const saved = recalc(await persistLinkedBarChange({ api, roadmap: current, previousBar, nextBar, onTaskUpdated }));
+        replaceRoadmap(saved);
+        return saved;
+      } catch (error) {
+        onError?.(error);
+        return null;
+      }
+    }
+    return updateOpenRoadmap(roadmap => {
       const bars = idx === null
         ? [...roadmap.bars, { ...data, id: data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, data.id) }]
         : roadmap.bars.map((barItem, index) => index === idx ? { ...barItem, ...data, id: barItem.id || data.id || createRoadmapTaskId(), predecessors: sanitizePredecessorIds(data.predecessors, barItem.id || data.id) } : barItem);
@@ -3537,8 +3701,38 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
     });
   }
 
+  async function handleLinkOrdinaryTask(task) {
+    const current = roadmaps.find(roadmap => roadmap.id === openId);
+    if (!current || !task || !canLinkTaskToRoadmaps(roadmaps, task)) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    const dueDate = task.due && task.due !== "—" ? task.due : null;
+    const startDate = dueDate && dueDate < today ? dueDate : today;
+    const base = {
+      id: createRoadmapTaskId(),
+      lane: current.lanes[0]?.id || "",
+      owner: memberKey(task.assigneeId ?? task.ownerId ?? defaultOwnerId),
+      startDate,
+      endDate: dueDate || startDate,
+      predecessors: [],
+      linkedTaskId: task.id,
+      linkedTaskSnapshot: snapshotLinkedTask(task),
+    };
+    const resolved = resolveLinkedBar(base, task);
+    return persistRoadmap(recalc({ ...current, bars: [...current.bars, resolved] }));
+  }
+
+  async function handleUnlinkBar(idx) {
+    return updateOpenRoadmap(roadmap => ({
+      ...roadmap,
+      bars: roadmap.bars.map((bar, index) => {
+        if (index !== idx) return bar;
+        return unlinkTaskBar(bar, taskById.get(String(bar.linkedTaskId)));
+      }),
+    }));
+  }
+
   async function handleDeleteBar(idx) {
-    await updateOpenRoadmap(roadmap => {
+    return updateOpenRoadmap(roadmap => {
       const deletedTaskId = roadmap.bars[idx]?.id;
       return { ...roadmap, bars: removeTaskDependencies(roadmap.bars.filter((_, index) => index !== idx), deletedTaskId) };
     });
@@ -3607,6 +3801,8 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
           rm={rm}
           members={members}
           defaultOwnerId={defaultOwnerId}
+          availableTasks={availableTasksForLink(roadmaps, tasks)}
+          taskById={taskById}
           onBack={() => setOpenId(null)}
           onEdit={() => setRmModal("edit")}
           onExportJson={() => downloadRoadmapExport(rm)}
@@ -3615,6 +3811,8 @@ export default function RoadmapsSection({ team = [], api, currentUser = null, on
           onExportPdf={(node, activeTab) => openRoadmapPrintView(node, rm.title, rm, members, activeTab)}
           onSaveBar={handleSaveBar}
           onDeleteBar={handleDeleteBar}
+          onUnlinkBar={handleUnlinkBar}
+          onLinkOrdinaryTask={handleLinkOrdinaryTask}
           onSaveMilestone={handleSaveMilestone}
           onDeleteMilestone={handleDeleteMilestone}
           onSaveLane={handleSaveLane}

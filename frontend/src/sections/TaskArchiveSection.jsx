@@ -3,7 +3,7 @@ import StatCard from '../components/common/StatCard.jsx';
 import { useViewportFlags } from '../utils.js';
 import { TaskDetailModal } from './TasksSection.jsx';
 
-function TaskArchiveSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
+function TaskArchiveSection({ initialTasks = [], team = [], api, onError, currentUser = null, roadmapLinksByTaskId = {}, onTaskMutation }) {
   const { isMobile } = useViewportFlags();
   const [tasks, setTasks] = useState(initialTasks);
   const [editTask, setEditTask] = useState(null);
@@ -13,6 +13,7 @@ function TaskArchiveSection({ initialTasks = [], team = [], api, onError, curren
     try {
       const saved = await api.patchTask(taskId, payload);
       setTasks(items => items.map(item => item.id === saved.id ? saved : item));
+      onTaskMutation?.({ type: 'upsert', task: saved });
       return saved;
     } catch (error) {
       onError(error);
@@ -27,7 +28,7 @@ function TaskArchiveSection({ initialTasks = [], team = [], api, onError, curren
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
+      {editTask && <TaskDetailModal task={editTask} roadmapLink={roadmapLinksByTaskId[String(editTask.id)] || null} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(180px, 1fr))", gap: isMobile ? 8 : 14 }}>
         <StatCard compact={isMobile} label="В архиве" value={archivedTasks.length} sub="закрытых задач" color="#64748b"/>

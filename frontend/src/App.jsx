@@ -14,18 +14,20 @@ import AmbpSection from './sections/AmbpSection.jsx';
 import PlanSection from './sections/PlanSection.jsx';
 import UsersSection from './sections/UsersSection.jsx';
 import RoadmapsSection from './sections/RoadmapsSection.jsx';
+import { applyTaskCacheMutation } from './utils/dashboardTasks.js';
 import MindMapSection from './sections/MindMapSection.jsx';
 import BlockDiagramSection from './sections/BlockDiagramSection.jsx';
 import DashboardSkeleton from './components/common/Skeleton.jsx';
 import ErrorBoundary from './components/common/ErrorBoundary.jsx';
+import { loadRoadmapLinkIndex } from './utils/taskRoadmapLinks.js';
 
 const ACTIVE_SECTION_KEY = "dashboard_active_section_v1";
 
 const SECTION_COMPONENTS = {
-  tasks:   ({ data, api, onError, currentUser }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
-  archive: ({ data, api, onError, currentUser }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
+  tasks:   ({ data, api, onError, currentUser, roadmapLinks, onTaskMutation }) => <TasksSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} onTaskMutation={onTaskMutation} />,
+  archive: ({ data, api, onError, currentUser, roadmapLinks, onTaskMutation }) => <TaskArchiveSection initialTasks={data.tasks} team={data.team} api={api} onError={onError} currentUser={currentUser} roadmapLinksByTaskId={roadmapLinks} onTaskMutation={onTaskMutation} />,
   events:  ({ data, api, onError, currentUser }) => <EventsSection initialEvents={data.events} initialEventTasks={data.eventTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
-  roadmaps:({ data, api, currentUser, onError }) => <RoadmapsSection team={data.team} api={api} currentUser={currentUser} onError={onError} />,
+  roadmaps:({ data, api, currentUser, onError, onRoadmapLinksChange, onTaskUpdated }) => <RoadmapsSection tasks={data.tasks} team={data.team} api={api} currentUser={currentUser} onError={onError} onLinkIndexChange={onRoadmapLinksChange} onTaskUpdated={onTaskUpdated} />,
   mindmap: ({ api, onError }) => <MindMapSection api={api} onError={onError} />,
   diagrams:() => <BlockDiagramSection />,
   syncs:   ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
@@ -52,6 +54,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
   const [dashboardDataRevision, setDashboardDataRevision] = useState(0);
+  const [roadmapLinksByTaskId, setRoadmapLinksByTaskId] = useState({});
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
@@ -73,6 +76,17 @@ export default function App() {
     setApiError(error?.message || "Ошибка API");
     window.setTimeout(() => setApiError(""), 5000);
   }, []);
+
+  const onTaskMutation = useCallback((mutation) => {
+    setDashboardData(current => current ? {
+      ...current,
+      tasks: applyTaskCacheMutation(current.tasks, mutation),
+    } : current);
+  }, []);
+
+  const onTaskUpdated = useCallback((savedTask) => {
+    onTaskMutation({ type: 'upsert', task: savedTask });
+  }, [onTaskMutation]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -141,6 +155,26 @@ export default function App() {
 
   const api = useMemo(() => buildApi(authRequest), [authRequest]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!accessToken || !currentUser) {
+      return () => { cancelled = true; };
+    }
+    async function loadRoadmapLinks() {
+      try {
+        const index = await loadRoadmapLinkIndex(api);
+        if (!cancelled) setRoadmapLinksByTaskId(index);
+      } catch (error) {
+        if (!cancelled) {
+          setRoadmapLinksByTaskId({});
+          onError(error);
+        }
+      }
+    }
+    void loadRoadmapLinks();
+    return () => { cancelled = true; };
+  }, [accessToken, api, currentUser, onError]);
+
   // Load dashboard data
   useEffect(() => {
     let cancelled = false;
@@ -204,12 +238,13 @@ export default function App() {
     setAccessToken(result.accessToken);
     setCurrentUser(result.user);
     setDashboardData(null);
+    setRoadmapLinksByTaskId({});
     setApiError("");
   }
 
   async function handleLogout() {
     try { await dashboardRequest("/auth/logout", { method: "POST" }); } catch { /* сессия могла уже истечь */ }
-    setAccessToken(""); setCurrentUser(null); setDashboardData(null);
+    setAccessToken(""); setCurrentUser(null); setDashboardData(null); setRoadmapLinksByTaskId({});
   }
 
   async function handleInstallClick() {
@@ -338,7 +373,7 @@ export default function App() {
             <DashboardSkeleton />
           ) : (
             <ErrorBoundary key={`${section.id}:${dashboardDataRevision}`}>
-              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser })}
+              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId, onTaskUpdated, onTaskMutation })}
             </ErrorBoundary>
           )}
         </div>

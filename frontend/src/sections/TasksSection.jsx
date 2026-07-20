@@ -9,7 +9,7 @@ import { COLORS, FONT_STACK, PRIORITY_COLOR, COLUMN_TEXT, COLUMN_DOT, COLUMN_SUR
 const LEGACY_PRI_COLOR = { "Высокий": "#ef4444", "Средний": "#f59e0b", "Низкий": "#10b981" };
 const LEGACY_COL_COLOR = { "Беклог": "#94a3b8", "В работе": "#2563eb", "Готов": "#10b981", "Архив": "#64748b" };
 
-export function TaskDetailModal({ task, onClose, onSave, team = [], currentUser = null }) {
+export function TaskDetailModal({ task, roadmapLink = null, onClose, onSave, team = [], currentUser = null }) {
   const { isMobile } = useViewportFlags();
   const scrollRef = useRef(null);
   const touchStartY = useRef(0);
@@ -233,6 +233,13 @@ export function TaskDetailModal({ task, onClose, onSave, team = [], currentUser 
 
         {/* Body */}
         <div ref={scrollRef} style={{ padding: isMobile ? "12px 18px" : "22px 28px", display: "flex", flexDirection: "column", gap: isMobile ? 10 : 18, overflowY: "auto", flex: 1, minHeight: 0, WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", touchAction: "pan-y" }}>
+          {roadmapLink && (
+            <div style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", padding: isMobile ? "6px 10px" : "7px 11px", borderRadius: 999, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: isMobile ? 11 : 12, fontWeight: 700 }}>
+              <span style={{ color: "#60a5fa", flexShrink: 0 }}>Дорожная карта</span>
+              <span aria-hidden="true" style={{ color: "#93c5fd", flexShrink: 0 }}>·</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{roadmapLink.roadmapTitle}</span>
+            </div>
+          )}
           {isMobile ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", background: "#f8fafc", border: "1px solid #e2edf8", borderRadius: 999, padding: "6px 10px" }}>
@@ -721,7 +728,7 @@ function KanbanCard({ task, onChangeAssignee, onDragStart, onDragEnd, onEdit, on
 
 // ---- TASKS SECTION ----
 
-function TasksSection({ initialTasks = [], team = [], api, onError, currentUser = null }) {
+function TasksSection({ initialTasks = [], team = [], api, onError, currentUser = null, roadmapLinksByTaskId = {}, onTaskMutation }) {
   const { isCompact, isMobile } = useViewportFlags();
   const [confirmDelete, confirmDialog] = useConfirmDialog();
   const [tasks, setTasks] = useState(initialTasks);
@@ -760,23 +767,25 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
     return moveTask(taskId, "Архив");
   }
 
-  async function changeAssignee(taskId, newId) {
+  async function updateTask(taskId, payload) {
     try {
-      const updated = await api.patchTask(taskId, { assigneeId: newId });
+      const updated = await api.patchTask(taskId, payload);
       setTasks(ts => ts.map(t => t.id === taskId ? updated : t));
+      onTaskMutation?.({ type: 'upsert', task: updated });
+      return updated;
     } catch (error) {
       onError(error);
+      return null;
     }
   }
 
+  async function changeAssignee(taskId, newId) {
+    return updateTask(taskId, { assigneeId: newId });
+  }
+
   async function moveTask(taskId, newCol) {
-    try {
-      const targetColumn = normalizeTaskColumn(newCol);
-      const updated = await api.patchTask(taskId, { column: targetColumn });
-      setTasks(ts => ts.map(t => t.id === taskId ? updated : t));
-    } catch (error) {
-      onError(error);
-    }
+    const targetColumn = normalizeTaskColumn(newCol);
+    return updateTask(taskId, { column: targetColumn });
   }
 
   async function addTask(data) {
@@ -784,19 +793,15 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
       const payload = { ...data, column: normalizeTaskColumn(data.column) };
       const created = await api.createTask(payload);
       setTasks(ts => [...ts, created]);
+      onTaskMutation?.({ type: 'upsert', task: created });
     } catch (error) {
       onError(error);
     }
   }
 
   async function saveTask(updated) {
-    try {
-      const payload = { ...updated, column: normalizeTaskColumn(updated.column) };
-      const saved = await api.patchTask(updated.id, payload);
-      setTasks(ts => ts.map(t => t.id === saved.id ? saved : t));
-    } catch (error) {
-      onError(error);
-    }
+    const payload = { ...updated, column: normalizeTaskColumn(updated.column) };
+    return updateTask(updated.id, payload);
   }
   async function deleteTask(taskId) {
     const task = tasks.find(item => item.id === taskId);
@@ -810,6 +815,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
     try {
       await api.deleteTask(taskId);
       setTasks(ts => ts.filter(t => t.id !== taskId));
+      onTaskMutation?.({ type: 'remove', taskId });
       if (editTask?.id === taskId) setEditTask(null);
     } catch (error) {
       onError(error);
@@ -922,7 +928,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {confirmDialog}
         {showModal && <AddTaskModal onClose={() => setShowModal(false)} onAdd={addTask} team={team} />}
-        {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
+        {editTask && <TaskDetailModal task={editTask} roadmapLink={roadmapLinksByTaskId[String(editTask.id)] || null} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
         {scopeControls}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
@@ -1014,7 +1020,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
     <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%" }}>
       {confirmDialog}
       {showModal && <AddTaskModal onClose={() => setShowModal(false)} onAdd={addTask} team={team} />}
-      {editTask && <TaskDetailModal task={editTask} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
+      {editTask && <TaskDetailModal task={editTask} roadmapLink={roadmapLinksByTaskId[String(editTask.id)] || null} onClose={() => setEditTask(null)} onSave={saveTask} team={team} currentUser={currentUser} />}
 
       {/* Stats */}
       {scopeControls}
