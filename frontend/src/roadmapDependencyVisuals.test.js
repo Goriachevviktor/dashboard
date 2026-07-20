@@ -83,6 +83,29 @@ test("timeline print renders quiet dotted dependency paths without ports", () =>
   assert.equal(timelineSource.includes("createElementNS(svgNamespace, 'circle')"), false);
 });
 
+test("timeline print routes dependencies from one measured rectangle map", () => {
+  const printSource = timelineSource.slice(
+    timelineSource.indexOf("function layoutPrintDependencies()"),
+    timelineSource.indexOf("window.__timelineReady"),
+  );
+  for (const marker of [
+    "renderedBarRectById",
+    "sourceRect",
+    "targetRect",
+    "obstacleRects",
+    "resolveRenderedBarRect",
+    "dependencyPathData(route)",
+  ]) {
+    assert.equal(printSource.includes(marker), true, `print rectangle routing missing: ${marker}`);
+  }
+
+  assert.equal(printSource.includes("predecessorEndPct:"), false);
+  assert.equal(printSource.includes("targetStartPct:"), false);
+  assert.equal(printSource.includes("predecessorCenterY:"), false);
+  assert.equal(printSource.includes("targetCenterY:"), false);
+  assert.equal(printSource.includes("createElementNS(svgNamespace, 'circle')"), false);
+});
+
 test("timeline print keeps today and milestones above dependency paths", () => {
   assert.equal(
     timelineSource.includes(`.print-dependency-overlay { position: absolute; top: 0; pointer-events:none; overflow: visible; color: #475569; z-index: \${TIMELINE_BAR_LAYER + 1}; }`),

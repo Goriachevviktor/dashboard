@@ -3402,6 +3402,7 @@ function buildTimelinePrintHtml(roadmap, members) {
             overlays.style.height = height + 'px';
             overlays.querySelectorAll('.today-line, .milestone, .month-line').forEach(guide => { guide.style.height = height + 'px'; });
           }
+          const resolveRenderedBarRect = ${String(resolveRenderedBarRect)};
           const computeDependencyRoute = ${String(computeDependencyRoute)};
           const dependencyPathData = ${String(dependencyPathData)};
           const quietDependencyStyle = ${JSON.stringify(QUIET_DEPENDENCY_STYLE)};
@@ -3417,6 +3418,20 @@ function buildTimelinePrintHtml(roadmap, members) {
             const chartWidth = chartRect.width;
             if (!chartWidth) return;
             const rowByTaskId = new Map(rows.map(row => [row.dataset.taskId, row]));
+            const renderedBarRectById = new Map(rows.flatMap(row => {
+              const bar = row.querySelector('.gantt-bar');
+              if (!bar) return [];
+              const barRect = bar.getBoundingClientRect();
+              return [[row.dataset.taskId, resolveRenderedBarRect({
+                leftPct: ((barRect.left - chartRect.left) / chartWidth) * 100,
+                widthPct: (barRect.width / chartWidth) * 100,
+                chartWidth,
+                rowTop: barRect.top - bodyRect.top,
+                rowHeight: barRect.height,
+                minimumWidthPx: barRect.width,
+                barHeight: barRect.height,
+              })]];
+            }));
             const svgNamespace = 'http://www.w3.org/2000/svg';
             const svg = document.createElementNS(svgNamespace, 'svg');
             svg.setAttribute('class', 'print-dependency-overlay');
@@ -3428,22 +3443,21 @@ function buildTimelinePrintHtml(roadmap, members) {
             rows.forEach(targetRow => {
               let predecessorIds = [];
               try { predecessorIds = JSON.parse(targetRow.dataset.predecessors || '[]'); } catch { predecessorIds = []; }
-              const targetBar = targetRow.querySelector('.gantt-bar');
-              if (!targetBar) return;
-              const targetRect = targetBar.getBoundingClientRect();
+              const targetId = targetRow.dataset.taskId;
+              const targetRect = renderedBarRectById.get(targetId);
+              if (!targetRect) return;
               predecessorIds.forEach(predecessorId => {
-                const predecessorRow = rowByTaskId.get(String(predecessorId));
-                const predecessorBar = predecessorRow?.querySelector('.gantt-bar');
-                if (!predecessorRow || !predecessorBar) return;
-                const predecessorRect = predecessorBar.getBoundingClientRect();
-                const predecessorRowRect = predecessorRow.getBoundingClientRect();
-                const targetRowRect = targetRow.getBoundingClientRect();
+                const sourceId = String(predecessorId);
+                const sourceRect = renderedBarRectById.get(sourceId);
+                if (!rowByTaskId.has(sourceId) || !sourceRect) return;
+                const obstacleRects = [...renderedBarRectById.entries()]
+                  .filter(([taskId]) => taskId !== sourceId && taskId !== targetId)
+                  .map(([, rect]) => rect);
                 const route = computeDependencyRoute({
-                  predecessorEndPct: ((predecessorRect.right - chartRect.left) / chartWidth) * 100,
-                  targetStartPct: ((targetRect.left - chartRect.left) / chartWidth) * 100,
+                  sourceRect,
+                  targetRect,
+                  obstacleRects,
                   chartWidth,
-                  predecessorCenterY: predecessorRowRect.top - bodyRect.top + predecessorRowRect.height / 2,
-                  targetCenterY: targetRowRect.top - bodyRect.top + targetRowRect.height / 2,
                 });
                 const path = document.createElementNS(svgNamespace, 'path');
                 path.setAttribute('class', 'print-dependency-path');
