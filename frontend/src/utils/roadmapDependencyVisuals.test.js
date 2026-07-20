@@ -10,7 +10,50 @@ import {
   resolveActiveDependencyVisualState,
   resolveDependencyAnchorPercents,
   resolveDependencyEdgePercents,
+  resolveRenderedBarRect,
 } from "./roadmapDependencyVisuals.js";
+
+function routeIntersectsRects(points, rects, {
+  allowStartOutsideSource = false,
+  allowEndOnTargetLeft = false,
+} = {}) {
+  return points.slice(1).some((point, index) => {
+    const previous = points[index];
+    const lastSegment = index === points.length - 2;
+
+    return rects.some((rect, rectIndex) => {
+      if (
+        allowStartOutsideSource
+        && index === 0
+        && rectIndex === 0
+        && previous.x >= rect.right
+      ) return false;
+      if (
+        allowEndOnTargetLeft
+        && lastSegment
+        && rectIndex === rects.length - 1
+        && point.x === rect.left
+      ) return false;
+
+      if (point.y === previous.y) {
+        const minX = Math.min(previous.x, point.x);
+        const maxX = Math.max(previous.x, point.x);
+        return point.y > rect.top
+          && point.y < rect.bottom
+          && maxX > rect.left
+          && minX < rect.right;
+      }
+
+      assert.equal(point.x, previous.x, "dependency routes must remain orthogonal");
+      const minY = Math.min(previous.y, point.y);
+      const maxY = Math.max(previous.y, point.y);
+      return point.x > rect.left
+        && point.x < rect.right
+        && maxY > rect.top
+        && minY < rect.bottom;
+    });
+  });
+}
 
 test("resolveActiveDependencyVisualState normalizes a numeric active id and mixed neighbor ids", () => {
   const state = resolveActiveDependencyVisualState({
@@ -83,99 +126,81 @@ test("resolveDependencyEdgePercents isolates a target-active preview", () => {
   });
 });
 
-test("computeDependencyRoute exits vertically toward a lower target", () => {
-  const route = computeDependencyRoute({
-    predecessorEndPct: 30,
-    targetStartPct: 60,
+test("resolveRenderedBarRect applies the physical minimum width", () => {
+  assert.deepEqual(resolveRenderedBarRect({
+    leftPct: 40,
+    widthPct: 0.2,
     chartWidth: 1000,
-    predecessorCenterY: 24,
-    targetCenterY: 72,
+    rowTop: 54,
+    rowHeight: 54,
+  }), {
+    left: 400,
+    right: 408,
+    top: 66,
+    bottom: 96,
+    centerY: 81,
+    width: 8,
   });
-  assert.deepEqual(route, {
-    startX: 296,
-    startY: 24,
-    corridorY: 48,
-    approachX: 584,
-    endY: 72,
-    endX: 600,
-  });
-  assert.equal(dependencyPathData(route), "M 296 24 V 48 H 584 V 72 H 600");
 });
 
-test("computeDependencyRoute exits vertically toward an upper target", () => {
-  const route = computeDependencyRoute({
-    predecessorEndPct: 80,
-    targetStartPct: 20,
-    chartWidth: 1000,
-    predecessorCenterY: 72,
-    targetCenterY: 24,
-  });
-  assert.deepEqual(route, {
-    startX: 796,
-    startY: 72,
-    corridorY: 48,
-    approachX: 184,
-    endY: 24,
-    endX: 200,
-  });
-  assert.equal(dependencyPathData(route), "M 796 72 V 48 H 184 V 24 H 200");
-});
-
-test("computeDependencyRoute keeps adjacent same-date tasks off their bars", () => {
-  const route = computeDependencyRoute({
-    predecessorEndPct: 50,
-    targetStartPct: 50,
-    chartWidth: 1000,
-    predecessorCenterY: 24,
-    targetCenterY: 56,
-  });
-  assert.deepEqual(route, {
-    startX: 496,
-    startY: 24,
-    corridorY: 40,
-    approachX: 484,
-    endY: 56,
-    endX: 500,
-  });
-  assert.equal(dependencyPathData(route), "M 496 24 V 40 H 484 V 56 H 500");
-});
-
-test("computeDependencyRoute preserves unequal row centers", () => {
-  const route = computeDependencyRoute({
-    predecessorEndPct: 10,
-    targetStartPct: 40,
+test("resolveRenderedBarRect keeps a wider percentage width", () => {
+  assert.equal(resolveRenderedBarRect({
+    leftPct: 10,
+    widthPct: 20,
     chartWidth: 500,
-    predecessorCenterY: 17.5,
-    targetCenterY: 103.25,
-  });
-  assert.equal(route.startY, 17.5);
-  assert.equal(route.endY, 103.25);
+    rowTop: 0,
+    rowHeight: 54,
+  }).right, 150);
 });
 
-test("computeDependencyRoute clamps its anchors near the left boundary", () => {
-  const route = computeDependencyRoute({
-    predecessorEndPct: 0,
-    targetStartPct: 1,
-    chartWidth: 1000,
-    predecessorCenterY: 20,
-    targetCenterY: 60,
-  });
-  assert.equal(route.startX, 0);
-  assert.equal(route.approachX, 0);
-  assert.equal(route.endX, 10);
+test("computeDependencyRoute uses a compact route toward a lower target", () => {
+  const sourceRect = { left: 40, right: 180, top: 52, bottom: 82, centerY: 67 };
+  const targetRect = { left: 220, right: 360, top: 106, bottom: 136, centerY: 121 };
+  const route = computeDependencyRoute({ sourceRect, targetRect, obstacleRects: [], chartWidth: 720 });
+
+  assert.equal(route.startX, 188);
+  assert.equal(route.endX, 220);
+  assert.equal(route.compact, true);
+  assert.deepEqual(route.points, [
+    { x: 188, y: 67 },
+    { x: 188, y: 94 },
+    { x: 204, y: 94 },
+    { x: 204, y: 121 },
+    { x: 220, y: 121 },
+  ]);
+  assert.equal(dependencyPathData(route), "M 188 67 V 94 H 204 V 121 H 220");
 });
 
-test("computeDependencyRoute keeps the target approach inside the right boundary", () => {
+test("computeDependencyRoute starts upward toward an upper target", () => {
+  const sourceRect = { left: 40, right: 180, top: 106, bottom: 136, centerY: 121 };
+  const targetRect = { left: 220, right: 360, top: 52, bottom: 82, centerY: 67 };
+  const route = computeDependencyRoute({ sourceRect, targetRect, obstacleRects: [], chartWidth: 720 });
+
+  assert.equal(route.compact, true);
+  assert.equal(route.points[1].y < route.points[0].y, true);
+  assert.equal(dependencyPathData(route), "M 188 121 V 94 H 204 V 67 H 220");
+});
+
+test("computeDependencyRoute adds a free channel around an intermediate bar", () => {
+  const source = { left: 40, right: 180, top: 52, bottom: 82, centerY: 67 };
+  const blocker = { left: 150, right: 350, top: 106, bottom: 136, centerY: 121 };
+  const target = { left: 220, right: 360, top: 160, bottom: 190, centerY: 175 };
   const route = computeDependencyRoute({
-    predecessorEndPct: 100,
-    targetStartPct: 100,
-    chartWidth: 1000,
-    predecessorCenterY: 20,
-    targetCenterY: 60,
+    sourceRect: source,
+    targetRect: target,
+    obstacleRects: [blocker],
+    chartWidth: 720,
   });
-  assert.equal(route.startX, 996);
-  assert.equal(route.approachX, 984);
-  assert.equal(route.endX, 1000);
+
+  assert.equal(route.startX, 188);
+  assert.equal(route.compact, false);
+  assert.equal(route.points[1].y, 94);
+  assert.equal(route.points.at(-1).x, 220);
+  assert.equal(route.points.at(-1).y, 175);
+  assert.equal(routeIntersectsRects(route.points, [source, blocker, target], {
+    allowStartOutsideSource: true,
+    allowEndOnTargetLeft: true,
+  }), false);
 });
 
 test("dependencyPresentation returns the exact quiet style for unrelated endpoints", () => {
