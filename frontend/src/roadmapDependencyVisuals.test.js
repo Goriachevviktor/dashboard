@@ -24,6 +24,26 @@ test("dependency overlay owns SVG path and port presentation", () => {
   assert.equal(timelineSource.includes("<svg viewBox={`0 0 ${width} ${height}`}"), false);
 });
 
+test("timeline routes dependencies from shared rendered bar rectangles", () => {
+  for (const marker of [
+    "resolveRenderedBarRect",
+    "renderedBarRectById",
+    "sourceRect",
+    "targetRect",
+    "obstacleRects",
+  ]) {
+    assert.equal(timelineSource.includes(marker), true, `rendered rectangle wiring missing: ${marker}`);
+  }
+});
+
+test("active dependency ports use the same pixel anchors as routes", () => {
+  assert.equal(overlaySource.includes("RoadmapDependencyPort({ anchorX })"), true);
+  assert.equal(overlaySource.includes("left: anchorX - 4"), true);
+  assert.equal(timelineSource.includes("anchorX={rect.left}"), true);
+  assert.equal(timelineSource.includes("anchorX={outgoingAnchorX}"), true);
+  assert.equal(overlaySource.includes("calc(${left + width}% - 8px)"), false);
+});
+
 test("roadmap timeline contains no legacy dependency debug presentation", () => {
   for (const marker of [
     "dependencyLines",

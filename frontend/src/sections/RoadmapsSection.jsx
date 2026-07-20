@@ -20,13 +20,12 @@ import {
   dependencyPresentation,
   QUIET_DEPENDENCY_STYLE,
   resolveActiveDependencyVisualState,
-  resolveDependencyEdgePercents,
+  resolveRenderedBarRect,
 } from '../utils/roadmapDependencyVisuals.js';
 import {
   TIMELINE_LANE_MIN_HEIGHT,
   TIMELINE_TASK_MIN_HEIGHT,
   timelineRowKey,
-  timelineRowCenter,
   waitForTimelineReady,
 } from '../utils/timelineRowLayout.js';
 import { legacyRoadmapRaw, legacyUserRoadmaps, migrateLegacyRoadmaps, normalizeRoadmaps } from './roadmapState.js';
@@ -2010,6 +2009,8 @@ function GanttBar({
   isHighlighted = false,
   showIncomingPort = false,
   showOutgoingPort = false,
+  rect = null,
+  outgoingAnchorX = null,
 }) {
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = previewLeft ?? percentFromTimelineDate(b.startDate, b.timeline);
@@ -2019,8 +2020,8 @@ function GanttBar({
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
     <div style={{ height: "100%", minHeight: TIMELINE_TASK_MIN_HEIGHT, display: "flex", alignItems: "center", position: "relative" }}>
-      {showIncomingPort && <RoadmapDependencyPort side="incoming" left={left} width={width} />}
-      {showOutgoingPort && <RoadmapDependencyPort side="outgoing" left={left} width={width} />}
+      {showIncomingPort && rect && <RoadmapDependencyPort anchorX={rect.left} />}
+      {showOutgoingPort && outgoingAnchorX != null && <RoadmapDependencyPort anchorX={outgoingAnchorX} />}
       <div
         onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
@@ -2110,45 +2111,58 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       successorsById: dependencyState.successorsById,
     });
   }, [dependencyState, hover, linkSourceId, rm.bars]);
-  const dependencyEdges = useMemo(() => {
+  const renderedBarRectById = useMemo(() => {
     const rowByTaskId = new Map(
       layout.filter(row => row.type === 'bar').map(row => [String(row.b.id), row]),
     );
-    const taskById = new Map(rm.bars.map((bar, taskIndex) => [String(bar.id), { bar, taskIndex }]));
+    return new Map(rm.bars.flatMap((bar, taskIndex) => {
+      const row = rowByTaskId.get(String(bar.id));
+      if (!row) return [];
+      const persistedLeft = percentFromTimelineDate(bar.startDate, timeline);
+      const persistedWidth = Math.max(
+        0.9,
+        percentFromTimelineDate(bar.endDate, timeline, true) - persistedLeft,
+      );
+      const isPreviewed = barDrag?.idx === taskIndex;
+      const leftPct = isPreviewed ? barDrag.previewLeft : persistedLeft;
+      const widthPct = isPreviewed ? barDrag.previewWidth : persistedWidth;
+      return [[String(bar.id), resolveRenderedBarRect({
+        leftPct,
+        widthPct,
+        chartWidth: renderedWidth,
+        rowTop: row.top,
+        rowHeight: row.height,
+      })]];
+    }));
+  }, [barDrag, layout, renderedWidth, rm.bars, timeline]);
+  const dependencyEdges = useMemo(() => {
     const edges = [];
 
-    rm.bars.forEach((target, targetIndex) => {
+    rm.bars.forEach(target => {
       const targetId = String(target.id);
-      const targetRow = rowByTaskId.get(targetId);
-      if (!targetRow) return;
+      const targetRect = renderedBarRectById.get(targetId);
+      if (!targetRect) return;
       sanitizePredecessorIds(target.predecessors, targetId).forEach(sourceId => {
-        const predecessor = taskById.get(sourceId);
-        const predecessorRow = rowByTaskId.get(sourceId);
-        if (!predecessor || !predecessorRow) return;
-        const predecessorStartPct = percentFromTimelineDate(predecessor.bar.startDate, timeline);
-        const predecessorEndPct = percentFromTimelineDate(predecessor.bar.endDate, timeline, true);
-        const targetStartPct = percentFromTimelineDate(target.startDate, timeline);
-        const targetEndPct = percentFromTimelineDate(target.endDate, timeline, true);
-        const percents = resolveDependencyEdgePercents({
-          predecessor: { startPct: predecessorStartPct, endPct: predecessorEndPct, taskIndex: predecessor.taskIndex },
-          target: { startPct: targetStartPct, endPct: targetEndPct, taskIndex: targetIndex },
-          barDrag,
-        });
+        const sourceRect = renderedBarRectById.get(sourceId);
+        if (!sourceRect) return;
+        const obstacleRects = [...renderedBarRectById.entries()]
+          .filter(([taskId]) => taskId !== sourceId && taskId !== targetId)
+          .map(([, rect]) => rect);
         const edgeId = `${sourceId}:${targetId}`;
         edges.push({
           id: edgeId,
           route: computeDependencyRoute({
-            ...percents,
+            sourceRect,
+            targetRect,
+            obstacleRects,
             chartWidth: renderedWidth,
-            predecessorCenterY: timelineRowCenter(predecessorRow),
-            targetCenterY: timelineRowCenter(targetRow),
           }),
           presentation: dependencyPresentation({ edgeId, activeEdgeIds: dependencyVisualState.activeEdgeIds }),
         });
       });
     });
     return edges;
-  }, [barDrag, dependencyVisualState.activeEdgeIds, layout, renderedWidth, rm.bars, timeline]);
+  }, [dependencyVisualState.activeEdgeIds, renderedBarRectById, renderedWidth, rm.bars]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2417,6 +2431,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                     isHighlighted={linkSourceId === r.b.id}
                     showIncomingPort={dependencyVisualState.incomingPortTaskIds.has(String(r.b.id))}
                     showOutgoingPort={dependencyVisualState.outgoingPortTaskIds.has(String(r.b.id))}
+                    rect={renderedBarRectById.get(String(r.b.id))}
+                    outgoingAnchorX={Math.min(
+                      renderedWidth,
+                      (renderedBarRectById.get(String(r.b.id))?.right ?? 0) + 8,
+                    )}
                   />
                 )}
               </div>

@@ -1,16 +1,12 @@
 import { dependencyPathData } from '../utils/roadmapDependencyVisuals.js';
 
-export function RoadmapDependencyPort({ side, left, width }) {
-  const portLeft = side === 'incoming'
-    ? `calc(${left}% - 4px)`
-    : `calc(${left + width}% - 8px)`;
-
+export function RoadmapDependencyPort({ anchorX }) {
   return (
     <span
       aria-hidden="true"
       style={{
         position: 'absolute',
-        left: portLeft,
+        left: anchorX - 4,
         top: '50%',
         width: 8,
         height: 8,
