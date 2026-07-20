@@ -392,6 +392,7 @@ export function computeDependencyRoute({
   clearance = 2,
 }) {
   const clampX = value => Math.max(0, Math.min(chartWidth, value));
+  const sourceAttachX = clampX(sourceRect.right);
   const startX = clampX(sourceRect.right + anchorGap);
   const endX = clampX(targetRect.left);
   const approachX = clampX(endX - targetShoulder);
@@ -426,7 +427,13 @@ export function computeDependencyRoute({
 
   if (validCompactCandidates.length > 0) {
     validCompactCandidates.sort((first, second) => first.length - second.length);
-    return { points: validCompactCandidates[0].points, compact: true, startX, endX };
+    return {
+      points: validCompactCandidates[0].points,
+      compact: true,
+      startX,
+      endX,
+      sourceAttachX,
+    };
   }
 
   const shortestDetour = findShortestDetour({
@@ -440,7 +447,15 @@ export function computeDependencyRoute({
     chartWidth,
     clearance,
   });
-  if (shortestDetour) return { points: shortestDetour, compact: false, startX, endX };
+  if (shortestDetour) {
+    return {
+      points: shortestDetour,
+      compact: false,
+      startX,
+      endX,
+      sourceAttachX,
+    };
+  }
 
   const direction = Math.sign(targetRect.centerY - sourceRect.centerY) || 1;
   const sourceGapY = closestGapAfter(gapYs, sourceRect.centerY, direction)
@@ -470,11 +485,22 @@ export function computeDependencyRoute({
     candidate.channelX === 0 || candidate.channelX === chartWidth
   ));
   const fallback = boundaryCandidates[0] ?? detourCandidates[0];
-  return { points: fallback.points, compact: false, startX, endX, blocked: true };
+  return {
+    points: fallback.points,
+    compact: false,
+    startX,
+    endX,
+    sourceAttachX,
+    blocked: true,
+  };
 }
 
-export function dependencyPathData({ points }) {
+export function dependencyPathData({ points, sourceAttachX }) {
   let previousCommand = "";
+  const sourceY = points[0].y;
+  const sourcePrefix = sourceAttachX === points[0].x
+    ? `M ${sourceAttachX} ${sourceY}`
+    : `M ${sourceAttachX} ${sourceY} H ${points[0].x}`;
   return points.slice(1).reduce((path, point, index) => {
     const previous = points[index];
     let command;
@@ -485,7 +511,7 @@ export function dependencyPathData({ points }) {
     }
     previousCommand = command;
     return `${path} ${command} ${command === "V" ? point.y : point.x}`;
-  }, `M ${points[0].x} ${points[0].y}`);
+  }, sourcePrefix);
 }
 
 export function isDependencyRouteRenderable(route) {

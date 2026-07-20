@@ -36,6 +36,16 @@ test("timeline routes dependencies from shared rendered bar rectangles", () => {
   }
 });
 
+test("timeline uses the shared source-bridge route serializer", () => {
+  const printSource = timelineSource.slice(
+    timelineSource.indexOf("function layoutPrintDependencies()"),
+    timelineSource.indexOf("window.__timelineReady"),
+  );
+
+  assert.equal(overlaySource.includes("dependencyPathData(route)"), true);
+  assert.equal(printSource.includes("dependencyPathData(route)"), true);
+});
+
 test("browser keeps route geometry stable while hover only remaps presentation", () => {
   const geometryStart = timelineSource.indexOf("const dependencyRouteEdges = useMemo(() => {");
   const presentationStart = timelineSource.indexOf("const dependencyEdges = useMemo(() =>", geometryStart);

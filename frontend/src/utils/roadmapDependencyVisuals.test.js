@@ -70,7 +70,7 @@ test("print routing runtime executes with all shared router dependencies", () =>
       chartWidth: 500,
     }));`, context);
 
-  assert.match(context.printPath, /^M 108 15 V /);
+  assert.match(context.printPath, /^M 100 15 H 108 V /);
   assert.match(context.printPath, / H 400$/);
 });
 
@@ -177,6 +177,7 @@ test("computeDependencyRoute uses a compact route toward a lower target", () => 
   const targetRect = { left: 220, right: 360, top: 106, bottom: 136, centerY: 121 };
   const route = computeDependencyRoute({ sourceRect, targetRect, obstacleRects: [], chartWidth: 720 });
 
+  assert.equal(route.sourceAttachX, 180);
   assert.equal(route.startX, 188);
   assert.equal(route.endX, 220);
   assert.equal(route.compact, true);
@@ -187,7 +188,7 @@ test("computeDependencyRoute uses a compact route toward a lower target", () => 
     { x: 204, y: 121 },
     { x: 220, y: 121 },
   ]);
-  assert.equal(dependencyPathData(route), "M 188 67 V 94 H 204 V 121 H 220");
+  assert.equal(dependencyPathData(route), "M 180 67 H 188 V 94 H 204 V 121 H 220");
 });
 
 test("computeDependencyRoute starts upward toward an upper target", () => {
@@ -197,7 +198,7 @@ test("computeDependencyRoute starts upward toward an upper target", () => {
 
   assert.equal(route.compact, true);
   assert.equal(route.points[1].y < route.points[0].y, true);
-  assert.equal(dependencyPathData(route), "M 188 121 V 94 H 204 V 67 H 220");
+  assert.equal(dependencyPathData(route), "M 180 121 H 188 V 94 H 204 V 67 H 220");
 });
 
 test("computeDependencyRoute adds a free channel around an intermediate bar", () => {
@@ -212,10 +213,13 @@ test("computeDependencyRoute adds a free channel around an intermediate bar", ()
   });
 
   assert.equal(route.startX, 188);
+  assert.equal(route.sourceAttachX, 180);
   assert.equal(route.compact, false);
   assert.equal(route.points[1].y, 94);
   assert.equal(route.points.at(-1).x, 220);
   assert.equal(route.points.at(-1).y, 175);
+  assert.match(dependencyPathData(route), /^M 180 67 H 188 V /);
+  assert.match(dependencyPathData(route), / H 220$/);
   assert.equal(routeIntersectsRects(route.points, [source, blocker, target]), false);
 });
 
@@ -301,6 +305,7 @@ test("computeDependencyRoute marks a truly blocked boundary fallback", () => {
   });
 
   assert.equal(route.blocked, true);
+  assert.equal(route.sourceAttachX, 100);
   assert.equal(routeIntersectsRects(route.points, [source, blocker, target]), true);
 });
 
@@ -334,7 +339,7 @@ test("dependencyPathData serializes a multi-channel detour with seven or more po
   ];
 
   assert.equal(
-    dependencyPathData({ points }),
+    dependencyPathData({ points, sourceAttachX: 108 }),
     "M 108 15 V 42 H 302 V 96 H 198 V 150 H 384 V 177 H 400",
   );
 });
