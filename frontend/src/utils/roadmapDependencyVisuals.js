@@ -488,6 +488,10 @@ export function dependencyPathData({ points }) {
   }, `M ${points[0].x} ${points[0].y}`);
 }
 
+export function isDependencyRouteRenderable(route) {
+  return Boolean(route) && route.blocked !== true;
+}
+
 export function dependencyRoutingRuntimeSource() {
   return [
     resolveRenderedBarRect,
@@ -508,6 +512,7 @@ export function dependencyRoutingRuntimeSource() {
     findShortestDetour,
     computeDependencyRoute,
     dependencyPathData,
+    isDependencyRouteRenderable,
   ].map(fn => fn.toString()).join("\n");
 }
 

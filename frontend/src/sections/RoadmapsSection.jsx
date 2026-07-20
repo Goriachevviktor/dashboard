@@ -18,6 +18,7 @@ import {
   computeDependencyRoute,
   dependencyPresentation,
   dependencyRoutingRuntimeSource,
+  isDependencyRouteRenderable,
   QUIET_DEPENDENCY_STYLE,
   resolveActiveDependencyVisualState,
   resolveRenderedBarRect,
@@ -2034,8 +2035,7 @@ function GanttBar({
           background: c.bar, display: "flex", alignItems: "center",
           padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
           boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
-          transform: isHov ? "translateY(-1px)" : "none",
-          transition: "transform .12s, box-shadow .15s", zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
+          transition: "box-shadow .15s", zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
           minWidth: 8,
           userSelect: "none",
           touchAction: "none",
@@ -2135,7 +2135,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       })]];
     }));
   }, [barDrag, layout, renderedWidth, rm.bars, timeline]);
-  const dependencyEdges = useMemo(() => {
+  const dependencyRouteEdges = useMemo(() => {
     const edges = [];
 
     rm.bars.forEach(target => {
@@ -2157,12 +2157,20 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             obstacleRects,
             chartWidth: renderedWidth,
           }),
-          presentation: dependencyPresentation({ edgeId, activeEdgeIds: dependencyVisualState.activeEdgeIds }),
         });
       });
     });
     return edges;
-  }, [dependencyVisualState.activeEdgeIds, renderedBarRectById, renderedWidth, rm.bars]);
+  }, [renderedBarRectById, renderedWidth, rm.bars]);
+  const dependencyEdges = useMemo(() => dependencyRouteEdges
+    .filter(edge => isDependencyRouteRenderable(edge.route))
+    .map(edge => ({
+      ...edge,
+      presentation: dependencyPresentation({
+        edgeId: edge.id,
+        activeEdgeIds: dependencyVisualState.activeEdgeIds,
+      }),
+    })), [dependencyRouteEdges, dependencyVisualState.activeEdgeIds]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -3457,6 +3465,7 @@ function buildTimelinePrintHtml(roadmap, members) {
                   obstacleRects,
                   chartWidth,
                 });
+                if (!isDependencyRouteRenderable(route)) return;
                 const path = document.createElementNS(svgNamespace, 'path');
                 path.setAttribute('class', 'print-dependency-path');
                 path.setAttribute('d', dependencyPathData(route));

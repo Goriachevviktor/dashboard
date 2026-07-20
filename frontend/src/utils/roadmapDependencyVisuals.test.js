@@ -9,12 +9,26 @@ import {
   computeDependencyRoute,
   dependencyPathData,
   dependencyPresentation,
+  isDependencyRouteRenderable,
   QUIET_DEPENDENCY_STYLE,
   resolveActiveDependencyVisualState,
   resolveDependencyAnchorPercents,
   resolveDependencyEdgePercents,
   resolveRenderedBarRect,
 } from "./roadmapDependencyVisuals.js";
+
+test("blocked dependency routes are diagnostic only", () => {
+  assert.equal(isDependencyRouteRenderable({ blocked: true, points: [] }), false);
+  assert.equal(isDependencyRouteRenderable({ points: [] }), true);
+
+  const runtimeSource = dependencyVisuals.dependencyRoutingRuntimeSource();
+  const context = {};
+  vm.runInNewContext(`${runtimeSource}
+    globalThis.printBlockedRouteVisible = isDependencyRouteRenderable({ blocked: true });
+    globalThis.printClearRouteVisible = isDependencyRouteRenderable({ points: [] });`, context);
+  assert.equal(context.printBlockedRouteVisible, false);
+  assert.equal(context.printClearRouteVisible, true);
+});
 
 function routeIntersectsRects(points, rects) {
   return points.slice(1).some((point, index) => {

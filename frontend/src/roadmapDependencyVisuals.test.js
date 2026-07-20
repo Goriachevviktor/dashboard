@@ -36,6 +36,33 @@ test("timeline routes dependencies from shared rendered bar rectangles", () => {
   }
 });
 
+test("browser keeps route geometry stable while hover only remaps presentation", () => {
+  const geometryStart = timelineSource.indexOf("const dependencyRouteEdges = useMemo(() => {");
+  const presentationStart = timelineSource.indexOf("const dependencyEdges = useMemo(() =>", geometryStart);
+  assert.notEqual(geometryStart, -1);
+  assert.notEqual(presentationStart, -1);
+  const geometryMemo = timelineSource.slice(geometryStart, presentationStart);
+  const presentationMemo = timelineSource.slice(presentationStart, timelineSource.indexOf("const sideW", presentationStart));
+  assert.equal(geometryMemo.includes("computeDependencyRoute"), true);
+  assert.equal(geometryMemo.includes("dependencyVisualState.activeEdgeIds"), false);
+  assert.equal(presentationMemo.includes("dependencyPresentation"), true);
+  assert.equal(presentationMemo.includes("isDependencyRouteRenderable"), true);
+  assert.equal(presentationMemo.includes("computeDependencyRoute"), false);
+});
+
+test("browser and print consumers suppress diagnostic blocked routes", () => {
+  assert.equal(timelineSource.includes(".filter(edge => isDependencyRouteRenderable(edge.route))"), true);
+  const printSource = timelineSource.slice(
+    timelineSource.indexOf("function layoutPrintDependencies()"),
+    timelineSource.indexOf("window.__timelineReady"),
+  );
+  assert.equal(printSource.includes("if (!isDependencyRouteRenderable(route)) return;"), true);
+});
+
+test("hover highlight does not shift a rendered gantt bar away from its route", () => {
+  assert.equal(timelineSource.includes('transform: isHov ? "translateY(-1px)" : "none"'), false);
+});
+
 test("active dependency ports use the same pixel anchors as routes", () => {
   assert.equal(overlaySource.includes("RoadmapDependencyPort({ anchorX })"), true);
   assert.equal(overlaySource.includes("left: anchorX - 4"), true);
