@@ -488,6 +488,29 @@ export function dependencyPathData({ points }) {
   }, `M ${points[0].x} ${points[0].y}`);
 }
 
+export function dependencyRoutingRuntimeSource() {
+  return [
+    resolveRenderedBarRect,
+    horizontalSegmentBlocked,
+    verticalSegmentBlocked,
+    removeConsecutiveDuplicatePoints,
+    routeLength,
+    segmentBlocked,
+    routeBlocked,
+    buildGapYs,
+    closestGapAfter,
+    makeDetourPoints,
+    normalizeOrthogonalPoints,
+    comparePointTraces,
+    compareSearchStates,
+    heapPush,
+    heapPop,
+    findShortestDetour,
+    computeDependencyRoute,
+    dependencyPathData,
+  ].map(fn => fn.toString()).join("\n");
+}
+
 export const QUIET_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
 export const ACTIVE_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1.75, opacity: 0.82, dashArray: "3 3" });
 

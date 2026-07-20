@@ -16,8 +16,8 @@ import {
 } from '../utils/roadmapDependencies.js';
 import {
   computeDependencyRoute,
-  dependencyPathData,
   dependencyPresentation,
+  dependencyRoutingRuntimeSource,
   QUIET_DEPENDENCY_STYLE,
   resolveActiveDependencyVisualState,
   resolveRenderedBarRect,
@@ -3402,9 +3402,7 @@ function buildTimelinePrintHtml(roadmap, members) {
             overlays.style.height = height + 'px';
             overlays.querySelectorAll('.today-line, .milestone, .month-line').forEach(guide => { guide.style.height = height + 'px'; });
           }
-          const resolveRenderedBarRect = ${String(resolveRenderedBarRect)};
-          const computeDependencyRoute = ${String(computeDependencyRoute)};
-          const dependencyPathData = ${String(dependencyPathData)};
+          ${dependencyRoutingRuntimeSource()}
           const quietDependencyStyle = ${JSON.stringify(QUIET_DEPENDENCY_STYLE)};
           function layoutPrintDependencies() {
             const body = document.getElementById('timeline-body');

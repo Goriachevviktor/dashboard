@@ -93,11 +93,11 @@ test("timeline print routes dependencies from one measured rectangle map", () =>
     "sourceRect",
     "targetRect",
     "obstacleRects",
-    "resolveRenderedBarRect",
     "dependencyPathData(route)",
   ]) {
     assert.equal(printSource.includes(marker), true, `print rectangle routing missing: ${marker}`);
   }
+  assert.equal(timelineSource.includes("${dependencyRoutingRuntimeSource()}"), true);
 
   assert.equal(printSource.includes("predecessorEndPct:"), false);
   assert.equal(printSource.includes("targetStartPct:"), false);

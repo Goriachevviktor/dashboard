@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
+
+import * as dependencyVisuals from "./roadmapDependencyVisuals.js";
 
 import {
   ACTIVE_DEPENDENCY_STYLE,
@@ -37,6 +40,25 @@ function routeIntersectsRects(points, rects) {
     });
   });
 }
+
+test("print routing runtime executes with all shared router dependencies", () => {
+  const legacyPrintRuntime = [resolveRenderedBarRect, computeDependencyRoute, dependencyPathData]
+    .map(fn => fn.toString())
+    .join("\n");
+  const runtimeSource = dependencyVisuals.dependencyRoutingRuntimeSource?.() ?? legacyPrintRuntime;
+  const context = {};
+
+  vm.runInNewContext(`${runtimeSource}
+    globalThis.printPath = dependencyPathData(computeDependencyRoute({
+      sourceRect: { left: 50, right: 100, top: 0, bottom: 30, centerY: 15, width: 50 },
+      targetRect: { left: 400, right: 450, top: 108, bottom: 138, centerY: 123, width: 50 },
+      obstacleRects: [{ left: 120, right: 380, top: 54, bottom: 84, centerY: 69, width: 260 }],
+      chartWidth: 500,
+    }));`, context);
+
+  assert.match(context.printPath, /^M 108 15 V /);
+  assert.match(context.printPath, / H 400$/);
+});
 
 test("resolveActiveDependencyVisualState normalizes a numeric active id and mixed neighbor ids", () => {
   const state = resolveActiveDependencyVisualState({
