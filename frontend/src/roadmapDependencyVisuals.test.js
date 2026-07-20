@@ -151,3 +151,11 @@ test("timeline print keeps today and milestones above dependency paths", () => {
   assert.equal(timelineSource.includes(`.today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b30; z-index: \${TIMELINE_BAR_LAYER + 2}; }`), true);
   assert.equal(timelineSource.includes(`transform: translateX(-50%); z-index: \${TIMELINE_BAR_LAYER + 2}; display: flex;`), true);
 });
+
+test('new roadmap bar form resolves one shared local creation date', () => {
+  assert.match(timelineSource, /resolveRoadmapBarInitialDates/);
+  assert.match(timelineSource, /legacyStartDate:\s*monthValueToDate\(initBar\?\.start \?\? 0, 0\)/);
+  assert.match(timelineSource, /legacyEndDate:\s*monthValueToDate\(initBar\?\.end \?\? 3, 2, true\)/);
+  assert.match(timelineSource, /useState\(initialDates\.startDate\)/);
+  assert.match(timelineSource, /useState\(initialDates\.endDate\)/);
+});

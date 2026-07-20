@@ -7,6 +7,7 @@ import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
 import { useRenderedTimelineWidth } from '../hooks/useRenderedTimelineWidth.js';
 import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
+import { resolveRoadmapBarInitialDates } from '../utils/roadmapDateDefaults.js';
 import {
   applyDependencySchedule,
   buildDependencyState,
@@ -1128,8 +1129,13 @@ function BarFormModal({ bar: initBar, bars = [], lanes, members, defaultOwnerId,
   const [lane,     setLane]     = useState(initBar?.lane     || lanes[0]?.id || "");
   const [status,   setStatus]   = useState(initBar?.status   || "planned");
   const [progress, setProgress] = useState(initBar?.progress ?? 0);
-  const [startDate, setStartDate] = useState(initBar?.startDate || monthValueToDate(initBar?.start ?? 0, 0));
-  const [endDate,   setEndDate]   = useState(initBar?.endDate || monthValueToDate(initBar?.end ?? 3, 2, true));
+  const [initialDates] = useState(() => resolveRoadmapBarInitialDates({
+    bar: initBar,
+    legacyStartDate: monthValueToDate(initBar?.start ?? 0, 0),
+    legacyEndDate: monthValueToDate(initBar?.end ?? 3, 2, true),
+  }));
+  const [startDate, setStartDate] = useState(initialDates.startDate);
+  const [endDate,   setEndDate]   = useState(initialDates.endDate);
   const [owner,    setOwner]    = useState(memberKey(initBar?.owner || defaultOwnerId || members[0]?.id || "viktor"));
   const [memberIds, setMemberIds] = useState(sanitizeMemberIds(initBar?.memberIds, initBar?.owner || defaultOwnerId));
   const [predecessors, setPredecessors] = useState(sanitizePredecessorIds(initBar?.predecessors, initBar?.id));
