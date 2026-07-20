@@ -83,12 +83,7 @@ test("resolveDependencyEdgePercents isolates a target-active preview", () => {
   });
 });
 
-function assertMinimumShoulders(route, minimumShoulder = 16) {
-  assert.ok(Math.abs(route.elbowX - route.startX) >= minimumShoulder);
-  assert.ok(Math.abs(route.endX - route.elbowX) >= minimumShoulder);
-}
-
-test("computeDependencyRoute routes a forward dependency toward the target", () => {
+test("computeDependencyRoute exits vertically toward a lower target", () => {
   const route = computeDependencyRoute({
     predecessorEndPct: 30,
     targetStartPct: 60,
@@ -96,24 +91,37 @@ test("computeDependencyRoute routes a forward dependency toward the target", () 
     predecessorCenterY: 24,
     targetCenterY: 72,
   });
-  assert.deepEqual(route, { startX: 296, startY: 24, elbowX: 312, endY: 72, endX: 600 });
-  assertMinimumShoulders(route);
-  assert.equal(dependencyPathData(route), "M 296 24 H 312 V 72 H 600");
+  assert.deepEqual(route, {
+    startX: 296,
+    startY: 24,
+    corridorY: 48,
+    approachX: 584,
+    endY: 72,
+    endX: 600,
+  });
+  assert.equal(dependencyPathData(route), "M 296 24 V 48 H 584 V 72 H 600");
 });
 
-test("computeDependencyRoute routes a reverse dependency toward the target", () => {
+test("computeDependencyRoute exits vertically toward an upper target", () => {
   const route = computeDependencyRoute({
     predecessorEndPct: 80,
     targetStartPct: 20,
     chartWidth: 1000,
-    predecessorCenterY: 24,
-    targetCenterY: 72,
+    predecessorCenterY: 72,
+    targetCenterY: 24,
   });
-  assert.deepEqual(route, { startX: 796, startY: 24, elbowX: 780, endY: 72, endX: 200 });
-  assertMinimumShoulders(route);
+  assert.deepEqual(route, {
+    startX: 796,
+    startY: 72,
+    corridorY: 48,
+    approachX: 184,
+    endY: 24,
+    endX: 200,
+  });
+  assert.equal(dependencyPathData(route), "M 796 72 V 48 H 184 V 24 H 200");
 });
 
-test("computeDependencyRoute uses the opposite shoulder for same-X adjacent anchors", () => {
+test("computeDependencyRoute keeps adjacent same-date tasks off their bars", () => {
   const route = computeDependencyRoute({
     predecessorEndPct: 50,
     targetStartPct: 50,
@@ -121,8 +129,15 @@ test("computeDependencyRoute uses the opposite shoulder for same-X adjacent anch
     predecessorCenterY: 24,
     targetCenterY: 56,
   });
-  assert.deepEqual(route, { startX: 496, startY: 24, elbowX: 480, endY: 56, endX: 500 });
-  assertMinimumShoulders(route);
+  assert.deepEqual(route, {
+    startX: 496,
+    startY: 24,
+    corridorY: 40,
+    approachX: 484,
+    endY: 56,
+    endX: 500,
+  });
+  assert.equal(dependencyPathData(route), "M 496 24 V 40 H 484 V 56 H 500");
 });
 
 test("computeDependencyRoute preserves unequal row centers", () => {
@@ -137,19 +152,20 @@ test("computeDependencyRoute preserves unequal row centers", () => {
   assert.equal(route.endY, 103.25);
 });
 
-test("computeDependencyRoute keeps an in-chart preferred elbow near the left edge", () => {
+test("computeDependencyRoute clamps its anchors near the left boundary", () => {
   const route = computeDependencyRoute({
     predecessorEndPct: 0,
-    targetStartPct: 4,
+    targetStartPct: 1,
     chartWidth: 1000,
     predecessorCenterY: 20,
     targetCenterY: 60,
   });
-  assert.equal(route.elbowX, 12);
-  assertMinimumShoulders(route);
+  assert.equal(route.startX, 0);
+  assert.equal(route.approachX, 0);
+  assert.equal(route.endX, 10);
 });
 
-test("computeDependencyRoute switches to an in-chart opposite elbow near the right edge", () => {
+test("computeDependencyRoute keeps the target approach inside the right boundary", () => {
   const route = computeDependencyRoute({
     predecessorEndPct: 100,
     targetStartPct: 100,
@@ -157,19 +173,9 @@ test("computeDependencyRoute switches to an in-chart opposite elbow near the rig
     predecessorCenterY: 20,
     targetCenterY: 60,
   });
-  assert.equal(route.elbowX, 980);
-  assertMinimumShoulders(route);
-});
-
-test("computeDependencyRoute keeps the preferred deterministic elbow when no candidate has full shoulders", () => {
-  const route = computeDependencyRoute({
-    predecessorEndPct: 0,
-    targetStartPct: 100,
-    chartWidth: 20,
-    predecessorCenterY: 20,
-    targetCenterY: 60,
-  });
-  assert.deepEqual(route, { startX: -4, startY: 20, elbowX: 12, endY: 60, endX: 20 });
+  assert.equal(route.startX, 996);
+  assert.equal(route.approachX, 984);
+  assert.equal(route.endX, 1000);
 });
 
 test("dependencyPresentation returns the exact quiet style for unrelated endpoints", () => {

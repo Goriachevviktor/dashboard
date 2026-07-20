@@ -22,34 +22,24 @@ export function computeDependencyRoute({
   targetOffsetX = 0,
   minimumShoulder = 16,
 }) {
-  const startX = (predecessorEndPct / 100) * chartWidth + sourceOffsetX;
-  const endX = (targetStartPct / 100) * chartWidth + targetOffsetX;
-  const direction = endX >= startX ? 1 : -1;
-  const preferredElbowX = startX + direction * minimumShoulder;
-  const oppositeElbowX = startX - direction * minimumShoulder;
-  const isUsableElbow = elbowX => (
-    elbowX >= 0
-    && elbowX <= chartWidth
-    && Math.abs(elbowX - startX) >= minimumShoulder
-    && Math.abs(endX - elbowX) >= minimumShoulder
-  );
-  const elbowX = isUsableElbow(preferredElbowX)
-    ? preferredElbowX
-    : isUsableElbow(oppositeElbowX)
-      ? oppositeElbowX
-      : preferredElbowX;
+  const clampX = value => Math.max(0, Math.min(chartWidth, value));
+  const startX = clampX((predecessorEndPct / 100) * chartWidth + sourceOffsetX);
+  const endX = clampX((targetStartPct / 100) * chartWidth + targetOffsetX);
+  const corridorY = predecessorCenterY + (targetCenterY - predecessorCenterY) / 2;
+  const approachX = clampX(endX - minimumShoulder);
 
   return {
     startX,
     startY: predecessorCenterY,
-    elbowX,
+    corridorY,
+    approachX,
     endY: targetCenterY,
     endX,
   };
 }
 
-export function dependencyPathData({ startX, startY, elbowX, endY, endX }) {
-  return `M ${startX} ${startY} H ${elbowX} V ${endY} H ${endX}`;
+export function dependencyPathData({ startX, startY, corridorY, approachX, endY, endX }) {
+  return `M ${startX} ${startY} V ${corridorY} H ${approachX} V ${endY} H ${endX}`;
 }
 
 export const QUIET_DEPENDENCY_STYLE = Object.freeze({ strokeWidth: 1, opacity: 0.24, dashArray: "2 4" });
