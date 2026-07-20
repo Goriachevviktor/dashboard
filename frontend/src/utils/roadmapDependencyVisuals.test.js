@@ -13,28 +13,11 @@ import {
   resolveRenderedBarRect,
 } from "./roadmapDependencyVisuals.js";
 
-function routeIntersectsRects(points, rects, {
-  allowStartOutsideSource = false,
-  allowEndOnTargetLeft = false,
-} = {}) {
+function routeIntersectsRects(points, rects) {
   return points.slice(1).some((point, index) => {
     const previous = points[index];
-    const lastSegment = index === points.length - 2;
 
-    return rects.some((rect, rectIndex) => {
-      if (
-        allowStartOutsideSource
-        && index === 0
-        && rectIndex === 0
-        && previous.x >= rect.right
-      ) return false;
-      if (
-        allowEndOnTargetLeft
-        && lastSegment
-        && rectIndex === rects.length - 1
-        && point.x === rect.left
-      ) return false;
-
+    return rects.some(rect => {
       if (point.y === previous.y) {
         const minX = Math.min(previous.x, point.x);
         const maxX = Math.max(previous.x, point.x);
@@ -197,10 +180,127 @@ test("computeDependencyRoute adds a free channel around an intermediate bar", ()
   assert.equal(route.points[1].y, 94);
   assert.equal(route.points.at(-1).x, 220);
   assert.equal(route.points.at(-1).y, 175);
-  assert.equal(routeIntersectsRects(route.points, [source, blocker, target], {
-    allowStartOutsideSource: true,
-    allowEndOnTargetLeft: true,
-  }), false);
+  assert.equal(routeIntersectsRects(route.points, [source, blocker, target]), false);
+});
+
+test("computeDependencyRoute keeps vertically overlapping endpoints collision-free", () => {
+  const source = { left: 300, right: 400, top: 0, bottom: 30, centerY: 15 };
+  const target = { left: 300, right: 400, top: 20, bottom: 50, centerY: 35 };
+  const route = computeDependencyRoute({ sourceRect: source, targetRect: target, chartWidth: 500 });
+
+  assert.equal(route.blocked, undefined);
+  assert.equal(route.points[1].x, 408);
+  assert.equal(route.points[1].y > route.points[0].y, true);
+  assert.equal(route.points.at(-2).x <= target.left, true);
+  assert.equal(routeIntersectsRects(route.points, [source, target]), false);
+});
+
+test("computeDependencyRoute changes channels around alternating obstacles", () => {
+  const source = { left: 50, right: 100, top: 0, bottom: 30, centerY: 15 };
+  const target = { left: 400, right: 450, top: 162, bottom: 192, centerY: 177 };
+  const obstacles = [
+    { left: 0, right: 300, top: 54, bottom: 84, centerY: 69 },
+    { left: 200, right: 500, top: 108, bottom: 138, centerY: 123 },
+  ];
+  const route = computeDependencyRoute({
+    sourceRect: source,
+    targetRect: target,
+    obstacleRects: obstacles,
+    chartWidth: 500,
+    clearance: 2,
+  });
+
+  assert.equal(route.blocked, undefined);
+  assert.equal(route.compact, false);
+  assert.deepEqual(route.points, [
+    { x: 108, y: 15 },
+    { x: 108, y: 42 },
+    { x: 302, y: 42 },
+    { x: 302, y: 96 },
+    { x: 198, y: 96 },
+    { x: 198, y: 150 },
+    { x: 384, y: 150 },
+    { x: 384, y: 177 },
+    { x: 400, y: 177 },
+  ]);
+  assert.equal(routeIntersectsRects(route.points, [source, ...obstacles, target]), false);
+});
+
+test("computeDependencyRoute breaks equal-length multi-channel ties toward smaller X", () => {
+  const source = { left: 192, right: 242, top: 0, bottom: 30, centerY: 15 };
+  const target = { left: 266, right: 316, top: 162, bottom: 192, centerY: 177 };
+  const obstacles = [
+    { left: 200, right: 300, top: 54, bottom: 84, centerY: 69 },
+    { left: 0, right: 200, top: 108, bottom: 138, centerY: 123 },
+    { left: 300, right: 500, top: 108, bottom: 138, centerY: 123 },
+  ];
+  const route = computeDependencyRoute({
+    sourceRect: source,
+    targetRect: target,
+    obstacleRects: obstacles,
+    chartWidth: 500,
+  });
+
+  assert.equal(route.blocked, undefined);
+  assert.deepEqual(route.points, [
+    { x: 250, y: 15 },
+    { x: 250, y: 42 },
+    { x: 198, y: 42 },
+    { x: 198, y: 96 },
+    { x: 250, y: 96 },
+    { x: 250, y: 177 },
+    { x: 266, y: 177 },
+  ]);
+});
+
+test("computeDependencyRoute marks a truly blocked boundary fallback", () => {
+  const source = { left: 50, right: 100, top: 0, bottom: 30, centerY: 15 };
+  const blocker = { left: -10, right: 510, top: 54, bottom: 84, centerY: 69 };
+  const target = { left: 400, right: 450, top: 108, bottom: 138, centerY: 123 };
+  const route = computeDependencyRoute({
+    sourceRect: source,
+    targetRect: target,
+    obstacleRects: [blocker],
+    chartWidth: 500,
+  });
+
+  assert.equal(route.blocked, true);
+  assert.equal(routeIntersectsRects(route.points, [source, blocker, target]), true);
+});
+
+test("computeDependencyRoute preserves compact commands when X coordinates clamp together", () => {
+  const source = { left: -40, right: -8, top: 0, bottom: 30, centerY: 15 };
+  const target = { left: 10, right: 60, top: 54, bottom: 84, centerY: 69 };
+  const route = computeDependencyRoute({ sourceRect: source, targetRect: target, chartWidth: 100 });
+
+  assert.equal(route.compact, true);
+  assert.deepEqual(route.points, [
+    { x: 0, y: 15 },
+    { x: 0, y: 42 },
+    { x: 0, y: 42 },
+    { x: 0, y: 69 },
+    { x: 10, y: 69 },
+  ]);
+  assert.equal(dependencyPathData(route), "M 0 15 V 42 H 0 V 69 H 10");
+});
+
+test("dependencyPathData serializes a multi-channel detour with seven or more points", () => {
+  const points = [
+    { x: 108, y: 15 },
+    { x: 108, y: 42 },
+    { x: 302, y: 42 },
+    { x: 302, y: 96 },
+    { x: 198, y: 96 },
+    { x: 198, y: 150 },
+    { x: 384, y: 150 },
+    { x: 384, y: 177 },
+    { x: 400, y: 177 },
+  ];
+
+  assert.equal(
+    dependencyPathData({ points }),
+    "M 108 15 V 42 H 302 V 96 H 198 V 150 H 384 V 177 H 400",
+  );
 });
 
 test("dependencyPresentation returns the exact quiet style for unrelated endpoints", () => {

@@ -4,7 +4,7 @@
 
 **Goal:** Anchor dependencies 8 px outside the predecessor and route them around every rendered task bar in browser Timeline and PDF.
 
-**Architecture:** Replace percentage-only routing with shared pixel rectangles. A pure router first tries the compact `V → H → V → H` path through a real row gap; if blocked, it selects a deterministic free vertical channel and returns an orthogonal detour. Browser and print both build the same rectangle shape and serialize arbitrary orthogonal point lists through one path function.
+**Architecture:** Replace percentage-only routing with shared pixel rectangles. A pure router first tries the compact `V → H → V → H` path through a real row gap; if blocked, a deterministic shortest-path search may switch between free vertical channels as many times as minimally necessary. Browser and print both build the same rectangle shape and serialize arbitrary orthogonal point lists through one path function.
 
 **Tech Stack:** React 19, JavaScript ES modules, Node test runner, SVG paths, Vite 8.
 
@@ -13,7 +13,7 @@
 - The predecessor anchor is exactly 8 px to the right of its rendered bar edge whenever chart bounds permit.
 - No permanent anchor dot is rendered; the active outgoing port is centered on the same anchor.
 - No route segment may enter the source, target, or intermediate task rectangles.
-- The compact path remains `V → H → V → H`; extra orthogonal bends are allowed only when the compact path is blocked.
+- The compact path remains `V → H → V → H`; when it is blocked, the router may add the minimum necessary number of orthogonal bends to avoid every task.
 - Browser and PDF use the same rectangle, routing, and path-serialization functions.
 - Rendered minimum bar width is 8 px and must affect bars, ports, and routes identically.
 - Quiet/active dotted styles, dependency IDs, cycle prevention, schedule shifting, arrows, labels, colors, and parallel link channels do not change.
@@ -186,7 +186,7 @@ function verticalSegmentBlocked(x, y1, y2, rects, clearance) {
 }
 ```
 
-Exclude `sourceRect` and `targetRect` from obstacle checks; source clearance is guaranteed by `startX = sourceRect.right + anchorGap`, and the final segment may end on `targetRect.left`.
+Check source and target interiors as well as intermediate obstacles. Exempt only the first vertical segment when it departs on or to the right of the source-right boundary, and only the final horizontal segment when it approaches `targetRect.left` from the left. This prevents endpoint rectangles from being excluded wholesale.
 
 - [ ] **Step 7: Implement deterministic compact and detour candidates**
 
@@ -213,21 +213,9 @@ Build gap candidates from sorted `sourceRect`, `targetRect`, and obstacles using
 ]
 ```
 
-If all compact candidates collide, create channel X candidates from `0`, `chartWidth`, and every obstacle's `left - clearance` / `right + clearance`, clamped and sorted by total Manhattan length then numeric X. Try:
+If all compact candidates collide, build an orthogonal visibility graph. Its Y states are free row-gap midpoints plus rectangle clearance boundaries; its X states are `startX`, `approachX`, `0`, `chartWidth`, and every obstacle's clamped `left - clearance` / `right + clearance`. Connect collision-free horizontal and vertical neighbors, with the start connected only by an initial vertical move in the target's direction and the target connected only through the left-side approach.
 
-```js
-[
-  { x: startX, y: sourceRect.centerY },
-  { x: startX, y: sourceGapY },
-  { x: channelX, y: sourceGapY },
-  { x: channelX, y: targetGapY },
-  { x: approachX, y: targetGapY },
-  { x: approachX, y: targetRect.centerY },
-  { x: endX, y: targetRect.centerY },
-]
-```
-
-Reject candidates with any blocked segment. Remove consecutive duplicate points. Return the shortest valid route, with compact candidates preferred on equal length. If chart clamping leaves no collision-free candidate, return the shortest boundary-channel candidate rather than crossing a task silently; expose `blocked: true` for diagnostics and tests.
+Run deterministic Dijkstra search over `(point, incoming direction)` states. Compare candidates by total Manhattan length, then number of bends, then preference for real row-gap midpoints, then numeric coordinate order. This permits as many channel changes as minimally necessary while choosing the same route for equal inputs. Normalize duplicate and collinear search points, but preserve all five logical compact points so clamping cannot erase its `V → H → V → H` command shape. If no collision-free graph path exists, return the shortest boundary-channel fallback and expose `blocked: true` for diagnostics and tests.
 
 - [ ] **Step 8: Serialize arbitrary orthogonal points**
 
