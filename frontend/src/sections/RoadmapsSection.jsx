@@ -9,6 +9,7 @@ import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import { resolveRoadmapBarInitialDates } from '../utils/roadmapDateDefaults.js';
 import {
+  canStartRoadmapPointerDrag,
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
@@ -2093,12 +2094,15 @@ function GanttBar({
 function roadmapOrderChanged(original, preview) {
   if (!preview) return false;
   const laneOrder = roadmap => roadmap.lanes.map(lane => String(lane.id)).join("\u0000");
-  const barOrder = roadmap => roadmap.bars.map(bar => `${String(bar.id)}:${String(bar.lane)}`).join("\u0000");
+  const barOrder = roadmap => roadmap.lanes.map(lane => {
+    const laneId = String(lane.id);
+    const barIds = roadmap.bars.filter(bar => String(bar.lane) === laneId).map(item => String(item.id));
+    return `${laneId}:${barIds.join("\u0000")}`;
+  }).join("\u0001");
   return laneOrder(original) !== laneOrder(preview) || barOrder(original) !== barOrder(preview);
 }
 
-function captureRoadmapPointer(event) {
-  const target = event.currentTarget;
+function captureRoadmapPointer(event, target = event.currentTarget) {
   try {
     target?.setPointerCapture?.(event.pointerId);
   } catch {
@@ -2960,6 +2964,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
 
   function startLaneDrag(event, lane) {
     if (reorderPending) return;
+    if (!canStartRoadmapPointerDrag({ event, activeSession: dragSessionRef.current })) return;
     event.preventDefault();
     event.stopPropagation();
     const nextSession = {
@@ -2968,7 +2973,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
       startClientX: event.clientX,
       startClientY: event.clientY,
       pointerId: event.pointerId,
-      captureTarget: captureRoadmapPointer(event),
+      captureTarget: captureRoadmapPointer(event, boardRef.current),
       intent: null,
       previewRoadmap: null,
       dropTarget: null,
@@ -2979,6 +2984,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
 
   function startBarDrag(event, bar) {
     if (reorderPending) return;
+    if (!canStartRoadmapPointerDrag({ event, activeSession: dragSessionRef.current })) return;
     event.preventDefault();
     event.stopPropagation();
     const nextSession = {
@@ -2987,7 +2993,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
       startClientX: event.clientX,
       startClientY: event.clientY,
       pointerId: event.pointerId,
-      captureTarget: captureRoadmapPointer(event),
+      captureTarget: captureRoadmapPointer(event, boardRef.current),
       intent: null,
       previewRoadmap: null,
       dropTarget: null,
@@ -3208,6 +3214,7 @@ function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false })
 
   function startBarDrag(event, item) {
     if (reorderPending) return;
+    if (!canStartRoadmapPointerDrag({ event, activeSession: dragSessionRef.current })) return;
     event.preventDefault();
     event.stopPropagation();
     const nextSession = {
@@ -3216,7 +3223,7 @@ function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false })
       startClientX: event.clientX,
       startClientY: event.clientY,
       pointerId: event.pointerId,
-      captureTarget: captureRoadmapPointer(event),
+      captureTarget: captureRoadmapPointer(event, boardRef.current),
       intent: null,
       previewRoadmap: null,
       dropTarget: null,

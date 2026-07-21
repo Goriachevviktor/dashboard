@@ -127,6 +127,13 @@ test('NNL commits only when the final visual bucket order changed', () => {
   assert.match(nnlSource, /roadmapPlanningChanged\(latest\.rm, current\.previewRoadmap, planningToday\)/);
 });
 
+test('roadmap change detection compares canonical per-lane card order', () => {
+  const changedSource = source.slice(source.indexOf('function roadmapOrderChanged'), source.indexOf('function captureRoadmapPointer'));
+  assert.match(changedSource, /roadmap\.lanes\.map/);
+  assert.match(changedSource, /roadmap\.bars\.filter\(bar => String\(bar\.lane\) === laneId\)/);
+  assert.doesNotMatch(changedSource, /roadmap\.bars\.map\(bar/);
+});
+
 test('board drags retain pointer ownership, release coordinates, cancellation, and pending guards', () => {
   const swimSource = componentSource('SwimlanesView', '// ── Now / Next / Later');
   const nnlSource = componentSource('NNLView', '// ── Детальный вид');
@@ -137,6 +144,11 @@ test('board drags retain pointer ownership, release coordinates, cancellation, a
     assert.match(boardSource, /lostpointercapture/);
     assert.match(boardSource, /window\.addEventListener\("blur"/);
     assert.match(boardSource, /if \(reorderPending\) return/);
+    assert.match(boardSource, /canStartRoadmapPointerDrag\(\{ event, activeSession: dragSessionRef\.current \}\)/);
+    assert.match(boardSource, /captureRoadmapPointer\(event, boardRef\.current\)/);
+    assert.doesNotMatch(boardSource, /captureRoadmapPointer\(event\)/);
+    const cleanupSource = boardSource.slice(boardSource.indexOf('return () => {'));
+    assert.match(cleanupSource, /const current = dragSessionRef\.current;[\s\S]*dragSessionRef\.current = null;[\s\S]*releaseRoadmapPointerCapture\(current\)/);
   }
 });
 

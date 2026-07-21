@@ -1,5 +1,11 @@
 export const ROADMAP_DRAG_THRESHOLD_PX = 6;
 
+export function canStartRoadmapPointerDrag({ event, activeSession }) {
+  if (activeSession || event?.isPrimary === false) return false;
+  if (event?.pointerType === 'mouse' && event.button !== 0) return false;
+  return true;
+}
+
 export function resolveRoadmapDragIntent({ deltaX, deltaY, lockedIntent, forcedIntent }) {
   if (forcedIntent) return forcedIntent;
   if (lockedIntent) return lockedIntent;

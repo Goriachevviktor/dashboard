@@ -5,6 +5,27 @@ const isPlanningBucket = value => PLANNING_BUCKETS.includes(value);
 const isPlanningRank = value => Number.isInteger(value) && value >= 0;
 const hasSameOrder = (left, right) => left.length === right.length && left.every((item, index) => item === right[index]);
 
+function hasSameBarOrderByLane(left, right) {
+  if (left.length !== right.length) return false;
+  const groupByLane = items => {
+    const grouped = new Map();
+    items.forEach(item => {
+      const laneId = idOf(item.lane);
+      const laneItems = grouped.get(laneId) || [];
+      laneItems.push(idOf(item.id));
+      grouped.set(laneId, laneItems);
+    });
+    return grouped;
+  };
+  const leftGroups = groupByLane(left);
+  const rightGroups = groupByLane(right);
+  if (leftGroups.size !== rightGroups.size) return false;
+  return [...leftGroups].every(([laneId, itemIds]) => {
+    const rightIds = rightGroups.get(laneId);
+    return rightIds && hasSameOrder(itemIds, rightIds);
+  });
+}
+
 function insertRelative(items, item, targetId, position, getId) {
   if (!targetId) return [...items, item];
   const targetIndex = items.findIndex(candidate => getId(candidate) === idOf(targetId));
@@ -43,13 +64,13 @@ export function moveRoadmapBar(bars, request) {
     ), -1);
     const insertionIndex = lastTargetIndex + 1 || remaining.length;
     const result = [...remaining.slice(0, insertionIndex), moved, ...remaining.slice(insertionIndex)];
-    return hasSameOrder(result, bars) ? bars : result;
+    return hasSameBarOrderByLane(result, bars) ? bars : result;
   }
 
   const targetIndex = remaining.findIndex(item => idOf(item.id) === idOf(targetBarId));
   const insertionIndex = targetIndex + (request?.position === 'after' ? 1 : 0);
   const result = [...remaining.slice(0, insertionIndex), moved, ...remaining.slice(insertionIndex)];
-  return hasSameOrder(result, bars) ? bars : result;
+  return hasSameBarOrderByLane(result, bars) ? bars : result;
 }
 
 function automaticPlanningBucket(bar, today) {
@@ -128,7 +149,7 @@ export function moveRoadmapPlanningBar(bars, request) {
   if (isVisualNoOp) return bars;
 
   const affected = new Map();
-  for (const bucket of new Set([sourceBucket, targetBucket])) {
+  for (const bucket of PLANNING_BUCKETS) {
     updatedGroups[bucket].forEach((bar, planningRank) => {
       affected.set(idOf(bar.id), { planningBucket: bucket, planningRank });
     });

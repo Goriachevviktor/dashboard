@@ -65,6 +65,26 @@ test('returns bars unchanged for visually identical neighboring and end placemen
   assert.equal(moveRoadmapBar(bars, { barId: 'a2', targetLaneId: 'lane-a', targetBarId: null, position: 'after' }), bars);
 });
 
+test('uses canonical per-lane order for no-ops when global bars are interleaved', () => {
+  const interleaved = [bars[0], bars[2], bars[1], bars[3]];
+  assert.equal(moveRoadmapBar(interleaved, {
+    barId: 'a2', targetLaneId: 'lane-a', targetBarId: null, position: 'after',
+  }), interleaved);
+  assert.equal(moveRoadmapBar(interleaved, {
+    barId: 'b2', targetLaneId: 'lane-b', targetBarId: 'b1', position: 'after',
+  }), interleaved);
+
+  const singletonInterleaved = [bars[0], bars[2], bars[1]];
+  assert.equal(moveRoadmapBar(singletonInterleaved, {
+    barId: 'b1', targetLaneId: 'lane-b', targetBarId: null, position: 'after',
+  }), singletonInterleaved);
+
+  const moved = moveRoadmapBar(interleaved, {
+    barId: 'a2', targetLaneId: 'lane-a', targetBarId: 'a1', position: 'before',
+  });
+  assert.deepEqual(moved.filter(item => item.lane === 'lane-a').map(item => item.id), ['a2', 'a1']);
+});
+
 test('keeps legacy automatic grouping until a manual move', () => {
   const grouped = resolveRoadmapPlanningGroups(bars, { today });
   assert.deepEqual(grouped.now.map(item => item.id), ['b1']);
@@ -111,4 +131,34 @@ test('returns legacy planning bars unchanged for visually identical placements',
   assert.equal(neighboringPlacement, bars);
   assert.equal(Object.hasOwn(bars[0], 'planningBucket'), false);
   assert.equal(Object.hasOwn(bars[2], 'planningRank'), false);
+});
+
+test('a first manual NNL move materializes all visible groups and freezes untouched Later', () => {
+  const legacy = [
+    { id: 'now', lane: 'lane-a', title: 'Now', status: 'progress', startDate: '2026-01-01', endDate: '2026-01-31' },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      id: `future-${index + 1}`,
+      lane: 'lane-a',
+      title: `Future ${index + 1}`,
+      status: 'planned',
+      startDate: `2026-0${index + 2}-01`,
+      endDate: `2026-0${index + 2}-15`,
+    })),
+  ];
+  const before = resolveRoadmapPlanningGroups(legacy, { today });
+  assert.deepEqual(before.next.map(item => item.id), ['future-1', 'future-2', 'future-3', 'future-4']);
+  assert.deepEqual(before.later.map(item => item.id), ['future-5', 'future-6']);
+
+  const result = moveRoadmapPlanningBar(legacy, {
+    barId: 'future-2', targetBucket: 'next', targetBarId: 'future-1', position: 'before', today,
+  });
+  const after = resolveRoadmapPlanningGroups(result, { today });
+
+  assert.deepEqual(after.now.map(item => item.id), ['now']);
+  assert.deepEqual(after.next.map(item => item.id), ['future-2', 'future-1', 'future-3', 'future-4']);
+  assert.deepEqual(after.later.map(item => item.id), before.later.map(item => item.id));
+  for (const bucket of ['now', 'next', 'later']) {
+    assert.deepEqual(after[bucket].map(item => item.planningBucket), after[bucket].map(() => bucket));
+    assert.deepEqual(after[bucket].map(item => item.planningRank), after[bucket].map((_, index) => index));
+  }
 });

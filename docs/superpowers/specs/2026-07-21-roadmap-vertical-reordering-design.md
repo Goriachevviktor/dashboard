@@ -35,7 +35,7 @@ The three ordering concerns remain independent:
 
 `planningBucket` is either `"now"`, `"next"`, `"later"`, or absent. `planningRank` is a non-negative integer or absent. A manual NNL reorder updates only these planning fields and never changes status, progress, start date, or end date.
 
-Existing bars without planning fields continue to use the current automatic grouping rules. When a user first reorders a source or target NNL column, the visible non-completed items in each affected column receive explicit `planningBucket` and contiguous `planningRank` values. This freezes the order the user saw before applying the requested move. Completed tasks remain excluded from NNL.
+Existing bars without planning fields continue to use the current automatic grouping rules. On the first changing manual NNL reorder, the visible non-completed items in all three current columns receive explicit `planningBucket` and contiguous `planningRank` values before the requested move is applied. This freezes the complete Now · Next · Later snapshot the user saw, so an untouched column cannot fall back to automatic grouping and move after another column is reordered. Completed tasks remain excluded from NNL.
 
 Malformed planning values are ignored. Duplicate or sparse ranks are normalized deterministically from the visible array order when a manual move is applied.
 

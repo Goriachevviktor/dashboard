@@ -1,11 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canStartRoadmapPointerDrag,
   ROADMAP_DRAG_THRESHOLD_PX,
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
 } from './roadmapDragIntent.js';
+
+test('starts only one primary pointer and rejects non-left mouse buttons', () => {
+  const primaryMouse = { isPrimary: true, pointerType: 'mouse', button: 0 };
+  assert.equal(canStartRoadmapPointerDrag({ event: primaryMouse, activeSession: null }), true);
+  assert.equal(canStartRoadmapPointerDrag({ event: primaryMouse, activeSession: { pointerId: 1 } }), false);
+  assert.equal(canStartRoadmapPointerDrag({ event: { ...primaryMouse, isPrimary: false }, activeSession: null }), false);
+  assert.equal(canStartRoadmapPointerDrag({ event: { ...primaryMouse, button: 2 }, activeSession: null }), false);
+  assert.equal(canStartRoadmapPointerDrag({ event: { isPrimary: true, pointerType: 'touch', button: 0 }, activeSession: null }), true);
+  assert.equal(canStartRoadmapPointerDrag({ event: { isPrimary: true, pointerType: 'pen', button: 2 }, activeSession: null }), true);
+});
 
 test('waits for six pixels and locks the dominant axis', () => {
   assert.equal(ROADMAP_DRAG_THRESHOLD_PX, 6);

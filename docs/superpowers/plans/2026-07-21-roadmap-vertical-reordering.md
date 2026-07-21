@@ -152,7 +152,7 @@ export function moveRoadmapLane(lanes, request) {
 
 Extract the existing automatic date/status rules into `automaticPlanningBucket(bar, today)`. Resolve explicit valid buckets before automatic ones, ignore completed tasks, sort explicit ranks deterministically, and retain the existing automatic date sort for legacy bars.
 
-For `moveRoadmapPlanningBar`, resolve the visible groups first, remove the moved task, insert it into the target group, then assign every visible task in the affected source and target groups explicit contiguous ranks from zero. Merge the planning fields back into the original `bars` array without changing array order.
+For `moveRoadmapPlanningBar`, resolve and freeze the complete visible Now, Next, and Later snapshot first. Remove the moved task, insert it into the target group, then assign every visible task in all three groups an explicit `planningBucket` and contiguous `planningRank` from zero. Merge only those planning fields back into the original `bars` array without changing array order. This prevents an untouched bucket from falling back to automatic grouping after the first manual move.
 
 - [ ] **Step 6: Run focused tests to verify GREEN**
 
