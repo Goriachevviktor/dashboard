@@ -33,6 +33,8 @@ test('moves lanes forward and backward without changing lane objects', () => {
 
 test('returns lanes unchanged for no-op and invalid lane requests', () => {
   assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-a', targetLaneId: 'lane-a', position: 'before' }), lanes);
+  assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-b', targetLaneId: 'lane-a', position: 'after' }), lanes);
+  assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-b', targetLaneId: 'lane-c', position: 'before' }), lanes);
   assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'missing', targetLaneId: 'lane-a', position: 'before' }), lanes);
   assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-a', targetLaneId: 'missing', position: 'before' }), lanes);
 });
@@ -56,6 +58,11 @@ test('moves a bar into an empty lane and returns bars unchanged for invalid requ
   assert.deepEqual(moved.filter(item => item.lane === 'lane-c').map(item => item.id), ['a1']);
   assert.equal(moveRoadmapBar(bars, { barId: 'missing', targetLaneId: 'lane-b', targetBarId: null, position: 'before' }), bars);
   assert.equal(moveRoadmapBar(bars, { barId: 'a1', targetLaneId: 'lane-b', targetBarId: 'missing', position: 'before' }), bars);
+});
+
+test('returns bars unchanged for visually identical neighboring and end placements', () => {
+  assert.equal(moveRoadmapBar(bars, { barId: 'a2', targetLaneId: 'lane-a', targetBarId: 'a1', position: 'after' }), bars);
+  assert.equal(moveRoadmapBar(bars, { barId: 'a2', targetLaneId: 'lane-a', targetBarId: null, position: 'after' }), bars);
 });
 
 test('keeps legacy automatic grouping until a manual move', () => {
@@ -91,4 +98,17 @@ test('moves an NNL bar and assigns contiguous ranks without changing roadmap lan
   assert.deepEqual(grouped.next.map(item => item.planningRank), [0, 1]);
   assert.equal(result.find(item => item.id === 'b2').lane, 'lane-b');
   assert.equal(result.find(item => item.id === 'b2').startDate, '2026-08-01');
+});
+
+test('returns legacy planning bars unchanged for visually identical placements', () => {
+  const endPlacement = moveRoadmapPlanningBar(bars, {
+    barId: 'b1', targetBucket: 'now', targetBarId: null, position: 'after', today,
+  });
+  const neighboringPlacement = moveRoadmapPlanningBar(bars, {
+    barId: 'a2', targetBucket: 'next', targetBarId: 'a1', position: 'after', today,
+  });
+  assert.equal(endPlacement, bars);
+  assert.equal(neighboringPlacement, bars);
+  assert.equal(Object.hasOwn(bars[0], 'planningBucket'), false);
+  assert.equal(Object.hasOwn(bars[2], 'planningRank'), false);
 });

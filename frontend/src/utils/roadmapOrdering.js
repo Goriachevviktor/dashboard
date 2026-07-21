@@ -3,6 +3,7 @@ export const PLANNING_BUCKETS = Object.freeze(['now', 'next', 'later']);
 const idOf = value => String(value ?? '');
 const isPlanningBucket = value => PLANNING_BUCKETS.includes(value);
 const isPlanningRank = value => Number.isInteger(value) && value >= 0;
+const hasSameOrder = (left, right) => left.length === right.length && left.every((item, index) => item === right[index]);
 
 function insertRelative(items, item, targetId, position, getId) {
   if (!targetId) return [...items, item];
@@ -18,7 +19,8 @@ export function moveRoadmapLane(lanes, request) {
   const source = lanes.find(item => idOf(item.id) === sourceId);
   if (!source || sourceId === targetId) return lanes;
   const remaining = lanes.filter(item => idOf(item.id) !== sourceId);
-  return insertRelative(remaining, source, request?.targetLaneId, request?.position, item => idOf(item.id)) || lanes;
+  const result = insertRelative(remaining, source, request?.targetLaneId, request?.position, item => idOf(item.id));
+  return !result || hasSameOrder(result, lanes) ? lanes : result;
 }
 
 export function moveRoadmapBar(bars, request) {
@@ -40,12 +42,14 @@ export function moveRoadmapBar(bars, request) {
       idOf(item.lane) === targetLaneId ? index : last
     ), -1);
     const insertionIndex = lastTargetIndex + 1 || remaining.length;
-    return [...remaining.slice(0, insertionIndex), moved, ...remaining.slice(insertionIndex)];
+    const result = [...remaining.slice(0, insertionIndex), moved, ...remaining.slice(insertionIndex)];
+    return hasSameOrder(result, bars) ? bars : result;
   }
 
   const targetIndex = remaining.findIndex(item => idOf(item.id) === idOf(targetBarId));
   const insertionIndex = targetIndex + (request?.position === 'after' ? 1 : 0);
-  return [...remaining.slice(0, insertionIndex), moved, ...remaining.slice(insertionIndex)];
+  const result = [...remaining.slice(0, insertionIndex), moved, ...remaining.slice(insertionIndex)];
+  return hasSameOrder(result, bars) ? bars : result;
 }
 
 function automaticPlanningBucket(bar, today) {
@@ -120,6 +124,8 @@ export function moveRoadmapPlanningBar(bars, request) {
   ]));
   const inserted = insertRelative(updatedGroups[targetBucket], source, targetBarId, request?.position, item => idOf(item.id));
   updatedGroups[targetBucket] = inserted;
+  const isVisualNoOp = PLANNING_BUCKETS.every(bucket => hasSameOrder(updatedGroups[bucket], groups[bucket]));
+  if (isVisualNoOp) return bars;
 
   const affected = new Map();
   for (const bucket of new Set([sourceBucket, targetBucket])) {
