@@ -2558,6 +2558,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
     function handleLostPointerCapture(event) {
       if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      if (dragSessionRef.current?.intent === "vertical") return;
       clearSession();
     }
 

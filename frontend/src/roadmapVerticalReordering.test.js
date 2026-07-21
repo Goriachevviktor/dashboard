@@ -69,6 +69,12 @@ test('timeline drag owns one captured pointer and cancels on capture loss or blu
   assert.match(source, /window\.addEventListener\("blur"/);
 });
 
+test('timeline keeps vertical reorder alive when preview remounts the captured element', () => {
+  const effectSource = roadmapListenerEffectSource();
+  const lostCaptureSource = effectSource.slice(effectSource.indexOf('function handleLostPointerCapture'), effectSource.indexOf('function handleWindowBlur'));
+  assert.match(lostCaptureSource, /if \(dragSessionRef\.current\?\.intent === "vertical"\) return/);
+});
+
 test('timeline starts only one primary pointer through the shared pointer guard', () => {
   const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
   const startSource = timelineSource.slice(timelineSource.indexOf('function startBarPointerAction'));
