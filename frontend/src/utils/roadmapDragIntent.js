@@ -6,6 +6,12 @@ export function canStartRoadmapPointerDrag({ event, activeSession }) {
   return true;
 }
 
+export function isRoadmapPointerInsideRect({ clientX, clientY, rect }) {
+  if (!rect) return false;
+  return clientX >= rect.left && clientX <= rect.right
+    && clientY >= rect.top && clientY <= rect.bottom;
+}
+
 export function resolveRoadmapDragIntent({ deltaX, deltaY, lockedIntent, forcedIntent }) {
   if (forcedIntent) return forcedIntent;
   if (lockedIntent) return lockedIntent;

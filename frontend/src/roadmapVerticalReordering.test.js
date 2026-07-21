@@ -69,6 +69,41 @@ test('timeline drag owns one captured pointer and cancels on capture loss or blu
   assert.match(source, /window\.addEventListener\("blur"/);
 });
 
+test('timeline starts only one primary pointer through the shared pointer guard', () => {
+  const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
+  const startSource = timelineSource.slice(timelineSource.indexOf('function startBarPointerAction'));
+  assert.equal(
+    [...startSource.matchAll(/canStartRoadmapPointerDrag\(\{ event, activeSession: dragSessionRef\.current \}\)/g)].length,
+    2,
+  );
+});
+
+test('reorder views clear invalid targets and never commit without a valid drop target', () => {
+  const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
+  const swimSource = componentSource('SwimlanesView', '// ── Now / Next / Later');
+  const nnlSource = componentSource('NNLView', '// ── Детальный вид');
+  const closestSource = source.slice(source.indexOf('function closestRoadmapColumn'), source.indexOf('function TimelineView'));
+  assert.doesNotMatch(closestSource, /\.reduce\(/);
+  for (const viewSource of [timelineSource, swimSource, nnlSource]) {
+    assert.match(viewSource, /isRoadmapPointerInsideRect/);
+    assert.match(viewSource, /if \(!current\.dropTarget\) return/);
+  }
+});
+
+test('every roadmap drag source and drop zone exposes a descriptive accessible state', () => {
+  const ganttSource = componentSource('GanttBar', 'function roadmapOrderChanged');
+  const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
+  const swimSource = componentSource('SwimlanesView', '// ── Now / Next / Later');
+  const nnlSource = componentSource('NNLView', '// ── Детальный вид');
+  assert.match(ganttSource, /aria-label=\{`Переместить задачу/);
+  assert.match(ganttSource, /aria-grabbed=\{isDragging\}/);
+  assert.match(timelineSource, /aria-label=\{`Зона перемещения/);
+  assert.match(swimSource, /aria-label=\{`Переместить задачу/);
+  assert.match(swimSource, /aria-label=\{`Дорожка .*зона перемещения задач/);
+  assert.match(nnlSource, /aria-label=\{`Переместить задачу/);
+  assert.match(nnlSource, /aria-label=\{`Колонка .*зона перемещения задач/);
+});
+
 test('below-threshold task release opens edit for move and resize starts', () => {
   const pointerUpSource = roadmapPointerUpSource();
   assert.match(pointerUpSource, /if \(!current\.intent\)[\s\S]*if \(current\.kind === "bar"\)[\s\S]*onBarClick\?\./);

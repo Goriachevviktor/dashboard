@@ -2,11 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   canStartRoadmapPointerDrag,
+  isRoadmapPointerInsideRect,
   ROADMAP_DRAG_THRESHOLD_PX,
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
 } from './roadmapDragIntent.js';
+
+test('accepts only pointer coordinates inside a valid drop rectangle', () => {
+  const rect = { left: 10, right: 110, top: 20, bottom: 220 };
+  assert.equal(isRoadmapPointerInsideRect({ clientX: 10, clientY: 20, rect }), true);
+  assert.equal(isRoadmapPointerInsideRect({ clientX: 110, clientY: 220, rect }), true);
+  assert.equal(isRoadmapPointerInsideRect({ clientX: 9, clientY: 100, rect }), false);
+  assert.equal(isRoadmapPointerInsideRect({ clientX: 50, clientY: 221, rect }), false);
+  assert.equal(isRoadmapPointerInsideRect({ clientX: 50, clientY: 100, rect: null }), false);
+});
 
 test('starts only one primary pointer and rejects non-left mouse buttons', () => {
   const primaryMouse = { isPrimary: true, pointerType: 'mouse', button: 0 };

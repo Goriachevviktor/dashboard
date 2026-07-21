@@ -10,6 +10,7 @@ import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import { resolveRoadmapBarInitialDates } from '../utils/roadmapDateDefaults.js';
 import {
   canStartRoadmapPointerDrag,
+  isRoadmapPointerInsideRect,
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
@@ -2045,6 +2046,9 @@ function GanttBar({
       <div
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
         onPointerDown={event => !linkMode && !dragDisabled && onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
+        aria-label={`Переместить задачу «${b.title}»`}
+        aria-grabbed={isDragging}
+        aria-disabled={linkMode || dragDisabled}
         onMouseEnter={() => setHover(String(b.id))}
         onMouseLeave={() => setHover(null)}
         style={{
@@ -2131,17 +2135,12 @@ function roadmapPlanningChanged(original, preview, today) {
   return planningOrder(original) !== planningOrder(preview);
 }
 
-function closestRoadmapColumn(container, selector, clientX) {
+function closestRoadmapColumn(container, selector, clientX, clientY) {
   const columns = Array.from(container?.querySelectorAll(selector) || []);
-  if (columns.length === 0) return null;
   return columns.find(column => {
     const rect = column.getBoundingClientRect();
-    return clientX >= rect.left && clientX <= rect.right;
-  }) || columns.reduce((closest, column) => {
-    const rect = column.getBoundingClientRect();
-    const distance = Math.abs(clientX - (rect.left + rect.right) / 2);
-    return !closest || distance < closest.distance ? { column, distance } : closest;
-  }, null)?.column || null;
+    return isRoadmapPointerInsideRect({ clientX, clientY, rect });
+  }) || null;
 }
 
 function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag, linkMode = false, linkSourceId = "", onLinkTaskSelect, onReorder, reorderPending = false }) {
@@ -2354,11 +2353,21 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       setDragSession(null);
     }
 
-    function updateVerticalPreview(current, clientY) {
+    function updateVerticalPreview(current, clientX, clientY) {
       const bodyRect = bodyRef.current?.getBoundingClientRect();
+      const scrollRect = scrollContainerRef.current?.getBoundingClientRect();
       const currentRows = rowsRef.current;
       const currentLayout = layoutRef.current;
-      if (!bodyRect || currentRows.length === 0 || currentLayout.length === 0) return current;
+      const visibleBodyRect = bodyRect && scrollRect ? {
+        left: Math.max(bodyRect.left, scrollRect.left),
+        right: Math.min(bodyRect.right, scrollRect.right),
+        top: Math.max(bodyRect.top, scrollRect.top),
+        bottom: Math.min(bodyRect.bottom, scrollRect.bottom),
+      } : null;
+      if (!isRoadmapPointerInsideRect({ clientX, clientY, rect: visibleBodyRect })
+        || currentRows.length === 0 || currentLayout.length === 0) {
+        return { ...current, intent: "vertical", previewRoadmap: null, dropTarget: null };
+      }
       const coordinate = clientY - bodyRect.top;
       const preview = current.previewRoadmap || latestRoadmapDragValuesRef.current.rm;
 
@@ -2434,7 +2443,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       if (!resolvedIntent) return;
 
       if (resolvedIntent === "vertical") {
-        updateSession(updateVerticalPreview(current, clientY));
+        updateSession(updateVerticalPreview(current, clientX, clientY));
         return;
       }
 
@@ -2504,6 +2513,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         return;
       }
       if (current.intent === "vertical") {
+        if (!current.dropTarget) return;
         if (roadmapOrderChanged(latest.rm, current.previewRoadmap)) latest.onReorder?.(current.previewRoadmap);
         return;
       }
@@ -2569,6 +2579,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
   function startBarPointerAction(event, bar, idx, mode) {
     if (linkMode || reorderPending) return;
+    if (!canStartRoadmapPointerDrag({ event, activeSession: dragSessionRef.current })) return;
     event.preventDefault();
     event.stopPropagation();
     const left = percentFromTimelineDate(bar.startDate, timeline);
@@ -2602,6 +2613,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
   function startLanePointerAction(event, lane) {
     if (linkMode || reorderPending) return;
+    if (!canStartRoadmapPointerDrag({ event, activeSession: dragSessionRef.current })) return;
     event.preventDefault();
     event.stopPropagation();
     const captureTarget = captureRoadmapPointer(event);
@@ -2762,7 +2774,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 {r.type === "lane" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />}
                 {r.type === "lane" ? r.lane.name : r.b.title}
               </div>
-              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT, position: "relative", background: isTargetRow ? "rgba(0,122,255,.08)" : r.type === "lane" ? "rgba(118,118,128,.04)" : undefined, opacity: isSourceRow || isSourceLane ? 0.45 : 1, ...rowBoundaryStyle }}>
+              <div
+                ref={registerRow(r.key)}
+                aria-label={`Зона перемещения ${r.type === "lane" ? `дорожки «${r.lane.name}»` : `задачи «${r.b.title}»`}${isTargetRow ? ", выбранная цель" : ""}`}
+                style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT, position: "relative", background: isTargetRow ? "rgba(0,122,255,.08)" : r.type === "lane" ? "rgba(118,118,128,.04)" : undefined, opacity: isSourceRow || isSourceLane ? 0.45 : 1, ...rowBoundaryStyle }}
+              >
                 {r.type === "bar" && (
                   <GanttBar
                     b={r.b} idx={r.idx} hover={hover} setHover={setHover}
@@ -2858,6 +2874,12 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
         lockedIntent: current.intent,
       });
       if (!crossedThreshold) return;
+      const intent = current.kind === "lane" ? "horizontal" : "vertical";
+      const boardRect = boardRef.current?.getBoundingClientRect();
+      if (!isRoadmapPointerInsideRect({ clientX, clientY, rect: boardRect })) {
+        updateSession({ ...current, intent, previewRoadmap: null, dropTarget: null });
+        return;
+      }
       const preview = current.previewRoadmap || latestValuesRef.current.rm;
 
       if (current.kind === "lane") {
@@ -2873,16 +2895,19 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
         });
         updateSession({
           ...current,
-          intent: "horizontal",
+          intent,
           previewRoadmap: nextLanes === preview.lanes ? preview : { ...preview, lanes: nextLanes },
           dropTarget: { targetLaneId: target.targetId, position: target.position },
         });
         return;
       }
 
-      const laneColumn = closestRoadmapColumn(boardRef.current, '[data-roadmap-lane-drop-zone]', clientX);
+      const laneColumn = closestRoadmapColumn(boardRef.current, '[data-roadmap-lane-drop-zone]', clientX, clientY);
       const targetLaneId = laneColumn?.dataset.roadmapLaneDropZone;
-      if (!targetLaneId) return;
+      if (!targetLaneId) {
+        updateSession({ ...current, intent, previewRoadmap: null, dropTarget: null });
+        return;
+      }
       const barItems = Array.from(laneColumn.querySelectorAll('[data-roadmap-bar-id]')).map(element => {
         const rect = element.getBoundingClientRect();
         return { id: element.dataset.roadmapBarId, start: rect.top, end: rect.bottom };
@@ -2896,7 +2921,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
       });
       updateSession({
         ...current,
-        intent: "vertical",
+        intent,
         previewRoadmap: nextBars === preview.bars ? preview : { ...preview, bars: nextBars },
         dropTarget: { targetLaneId, targetBarId: target.targetId, position: target.position },
       });
@@ -2921,6 +2946,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
         }
         return;
       }
+      if (!current.dropTarget) return;
       if (roadmapOrderChanged(latest.rm, current.previewRoadmap)) latest.onReorder?.(current.previewRoadmap);
     }
 
@@ -3034,6 +3060,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
             </div>
             <div
               data-roadmap-lane-drop-zone={String(lane.id)}
+              aria-label={`Дорожка «${lane.name}»: зона перемещения задач${isTargetLane ? ", выбранная цель" : ""}`}
               style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 64, padding: 4, margin: -4, borderRadius: 10, background: isTargetLane ? "rgba(0,122,255,.06)" : undefined }}
             >
               {bars.length === 0 && <div style={{ textAlign: "center", color: "#a1a1a6", fontSize: 12, padding: 20, border: `1.5px dashed ${isTargetLane ? "#007aff" : "#d6deeb"}`, borderRadius: 8 }}>Пусто</div>}
@@ -3051,6 +3078,7 @@ function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = fa
                     key={b.id}
                     data-roadmap-bar-id={String(b.id)}
                     onPointerDown={event => startBarDrag(event, b)}
+                    aria-label={`Переместить задачу «${b.title}»`}
                     aria-grabbed={isSource}
                     aria-disabled={reorderPending}
                     style={{ background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderTop: showBefore ? "2px solid #007aff" : "1px solid rgba(15,23,42,.08)", borderBottom: showAfter ? "2px solid #007aff" : "1px solid rgba(15,23,42,.08)", borderRadius: 10, padding: "13px 14px", boxShadow: "0 1px 3px rgba(37,99,235,.05)", cursor: reorderPending ? "not-allowed" : isSource ? "grabbing" : "grab", touchAction: "none", opacity: isSource ? 0.45 : 1 }}
@@ -3130,9 +3158,17 @@ function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false })
         lockedIntent: current.intent,
       });
       if (!crossedThreshold) return;
-      const bucketColumn = closestRoadmapColumn(boardRef.current, '[data-roadmap-planning-bucket]', clientX);
+      const boardRect = boardRef.current?.getBoundingClientRect();
+      if (!isRoadmapPointerInsideRect({ clientX, clientY, rect: boardRect })) {
+        updateSession({ ...current, intent: "vertical", previewRoadmap: null, dropTarget: null });
+        return;
+      }
+      const bucketColumn = closestRoadmapColumn(boardRef.current, '[data-roadmap-planning-bucket]', clientX, clientY);
       const targetBucket = bucketColumn?.dataset.roadmapPlanningBucket;
-      if (!targetBucket) return;
+      if (!targetBucket) {
+        updateSession({ ...current, intent: "vertical", previewRoadmap: null, dropTarget: null });
+        return;
+      }
       const barItems = Array.from(bucketColumn.querySelectorAll('[data-roadmap-planning-bar-id]')).map(element => {
         const rect = element.getBoundingClientRect();
         return { id: element.dataset.roadmapPlanningBarId, start: rect.top, end: rect.bottom };
@@ -3171,6 +3207,7 @@ function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false })
         if (index >= 0) latest.onBarClick?.(latest.rm.bars[index], index);
         return;
       }
+      if (!current.dropTarget) return;
       if (roadmapPlanningChanged(latest.rm, current.previewRoadmap, planningToday)) latest.onReorder?.(current.previewRoadmap);
     }
 
@@ -3235,7 +3272,7 @@ function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false })
   return (
     <div ref={boardRef} style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, padding: 20, userSelect: dragSession ? "none" : undefined }}>
       {cols.map(col => (
-        <div key={col.key} data-roadmap-planning-bucket={col.key} style={{ background: dragSession?.dropTarget?.targetBucket === col.key ? "rgba(0,122,255,.08)" : "rgba(118,118,128,.04)", borderRadius: 12, padding: 14, minHeight: 120 }}>
+        <div key={col.key} data-roadmap-planning-bucket={col.key} aria-label={`Колонка ${col.label}: зона перемещения задач${dragSession?.dropTarget?.targetBucket === col.key ? ", выбранная цель" : ""}`} style={{ background: dragSession?.dropTarget?.targetBucket === col.key ? "rgba(0,122,255,.08)" : "rgba(118,118,128,.04)", borderRadius: 12, padding: 14, minHeight: 120 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px 12px", color: col.color }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
             <span style={{ fontSize: 15, fontWeight: 700 }}>{col.label}</span>
@@ -3256,7 +3293,7 @@ function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false })
               const showAfter = dragSession?.dropTarget?.targetBarId === String(item.id) && dragSession.dropTarget.position === "after"
                 || !dragSession?.dropTarget?.targetBarId && dragSession?.dropTarget?.targetBucket === col.key && item === grouped[col.key].at(-1);
               return (
-              <div key={item.id} data-roadmap-planning-bar-id={String(item.id)} onPointerDown={event => startBarDrag(event, item)} aria-grabbed={isSource} aria-disabled={reorderPending} style={{
+              <div key={item.id} data-roadmap-planning-bar-id={String(item.id)} onPointerDown={event => startBarDrag(event, item)} aria-label={`Переместить задачу «${item.title}»`} aria-grabbed={isSource} aria-disabled={reorderPending} style={{
                 display: "flex", flexDirection: "column", gap: 9,
                 background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderTop: showBefore ? "2px solid #007aff" : `3px solid ${col.color}`, borderBottom: showAfter ? "2px solid #007aff" : "1px solid rgba(15,23,42,.08)",
                 borderRadius: 8, padding: "12px 13px", fontSize: 13, fontWeight: 600, color: "#1d1d1f",

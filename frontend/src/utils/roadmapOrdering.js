@@ -38,7 +38,7 @@ export function moveRoadmapLane(lanes, request) {
   const sourceId = idOf(request?.sourceLaneId);
   const targetId = idOf(request?.targetLaneId);
   const source = lanes.find(item => idOf(item.id) === sourceId);
-  if (!source || sourceId === targetId) return lanes;
+  if (!source || !targetId || sourceId === targetId) return lanes;
   const remaining = lanes.filter(item => idOf(item.id) !== sourceId);
   const result = insertRelative(remaining, source, request?.targetLaneId, request?.position, item => idOf(item.id));
   return !result || hasSameOrder(result, lanes) ? lanes : result;

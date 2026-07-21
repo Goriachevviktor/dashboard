@@ -37,6 +37,7 @@ test('returns lanes unchanged for no-op and invalid lane requests', () => {
   assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-b', targetLaneId: 'lane-c', position: 'before' }), lanes);
   assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'missing', targetLaneId: 'lane-a', position: 'before' }), lanes);
   assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-a', targetLaneId: 'missing', position: 'before' }), lanes);
+  assert.equal(moveRoadmapLane(lanes, { sourceLaneId: 'lane-a', targetLaneId: null, position: 'before' }), lanes);
 });
 
 test('inserts a bar before, after, and at the end while preserving fields', () => {
