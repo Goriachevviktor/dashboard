@@ -10,6 +10,11 @@ function roadmapPointerUpSource() {
   return source.slice(start, source.indexOf('function handlePointerCancel', start));
 }
 
+function roadmapListenerEffectSource() {
+  const start = source.indexOf('const isRoadmapDragging');
+  return source.slice(start, source.indexOf('function startMilestoneDrag', start));
+}
+
 test('timeline locks task gesture to horizontal dates or vertical reorder', () => {
   assert.match(source, /resolveRoadmapDragIntent/);
   assert.match(source, /moveRoadmapBar/);
@@ -63,4 +68,18 @@ test('below-threshold task release opens edit for move and resize starts', () =>
   const pointerUpSource = roadmapPointerUpSource();
   assert.match(pointerUpSource, /if \(!current\.intent\)[\s\S]*if \(current\.kind === "bar"\)[\s\S]*onBarClick\?\./);
   assert.doesNotMatch(pointerUpSource, /current\.mode === "move"/);
+});
+
+test('global roadmap pointer listeners stay stable across parent identity churn', () => {
+  const effectSource = roadmapListenerEffectSource();
+  const dependencyList = effectSource.slice(effectSource.lastIndexOf('}, ['));
+  assert.match(source, /latestRoadmapDragValuesRef/);
+  assert.match(effectSource, /latestRoadmapDragValuesRef\.current/);
+  assert.doesNotMatch(dependencyList, /onBarClick|onBarDrag|onReorder|\brm\b|\btimeline\b/);
+});
+
+test('listener cleanup invalidates the active session before releasing capture', () => {
+  const effectSource = roadmapListenerEffectSource();
+  const cleanupSource = effectSource.slice(effectSource.lastIndexOf('return () => {'));
+  assert.match(cleanupSource, /const current = dragSessionRef\.current;[\s\S]*dragSessionRef\.current = null;[\s\S]*releaseRoadmapPointerCapture\(current\)/);
 });

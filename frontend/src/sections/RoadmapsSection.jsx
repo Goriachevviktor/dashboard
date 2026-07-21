@@ -2224,10 +2224,14 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   const stickyTop = 0;
   const rowsRef = useRef(rows);
   const layoutRef = useRef(layout);
+  const latestRoadmapDragValuesRef = useRef({ rm, timeline, onBarClick, onBarDrag, onReorder });
   useEffect(() => {
     rowsRef.current = rows;
     layoutRef.current = layout;
   }, [layout, rows]);
+  useEffect(() => {
+    latestRoadmapDragValuesRef.current = { rm, timeline, onBarClick, onBarDrag, onReorder };
+  }, [onBarClick, onBarDrag, onReorder, rm, timeline]);
 
   useEffect(() => {
     if (!milestoneDrag) return undefined;
@@ -2325,7 +2329,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       const currentLayout = layoutRef.current;
       if (!bodyRect || currentRows.length === 0 || currentLayout.length === 0) return current;
       const coordinate = clientY - bodyRect.top;
-      const preview = current.previewRoadmap || rm;
+      const preview = current.previewRoadmap || latestRoadmapDragValuesRef.current.rm;
 
       if (current.kind === "lane") {
         const laneItems = currentRows.flatMap((row, index) => {
@@ -2458,25 +2462,26 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       if (event.pointerId !== dragSessionRef.current?.pointerId) return;
       updatePointer(event.clientX, event.clientY);
       const current = dragSessionRef.current;
+      const latest = latestRoadmapDragValuesRef.current;
       clearSession();
       if (!current) return;
       if (!current.intent) {
         if (current.kind === "bar") {
-          const persistedIndex = rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
-          if (persistedIndex >= 0) onBarClick?.(rm.bars[persistedIndex], persistedIndex);
+          const persistedIndex = latest.rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
+          if (persistedIndex >= 0) latest.onBarClick?.(latest.rm.bars[persistedIndex], persistedIndex);
         }
         return;
       }
       if (current.intent === "vertical") {
-        if (roadmapOrderChanged(rm, current.previewRoadmap)) onReorder?.(current.previewRoadmap);
+        if (roadmapOrderChanged(latest.rm, current.previewRoadmap)) latest.onReorder?.(current.previewRoadmap);
         return;
       }
-      const persistedIndex = rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
+      const persistedIndex = latest.rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
       if (persistedIndex < 0) return;
-      const nextStartDate = timelineDateFromPercent(current.previewLeft, timeline);
+      const nextStartDate = timelineDateFromPercent(current.previewLeft, latest.timeline);
       const endPct = current.previewLeft + current.previewWidth;
-      const nextEndDate = timelineDateFromPercent(endPct, timeline, true);
-      onBarDrag?.(persistedIndex, { ...rm.bars[persistedIndex], startDate: nextStartDate, endDate: nextEndDate });
+      const nextEndDate = timelineDateFromPercent(endPct, latest.timeline, true);
+      latest.onBarDrag?.(persistedIndex, { ...latest.rm.bars[persistedIndex], startDate: nextStartDate, endDate: nextEndDate });
     }
 
     function handlePointerCancel(event) {
@@ -2512,9 +2517,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("blur", handleWindowBlur);
       captureTarget?.removeEventListener("lostpointercapture", handleLostPointerCapture);
-      releaseRoadmapPointerCapture(dragSessionRef.current);
+      const current = dragSessionRef.current;
+      dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
     };
-  }, [bodyRef, isRoadmapDragging, linkMode, onBarClick, onBarDrag, onReorder, reorderPending, rm, timeline, timelineNodeRef]);
+  }, [bodyRef, isRoadmapDragging, linkMode, reorderPending, timelineNodeRef]);
 
   function startMilestoneDrag(event, milestone, idx, milestonePct) {
     event.preventDefault();
