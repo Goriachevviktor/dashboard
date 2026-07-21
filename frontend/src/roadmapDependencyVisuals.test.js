@@ -36,6 +36,13 @@ test("timeline routes dependencies from shared rendered bar rectangles", () => {
   }
 });
 
+test("timeline preview order drives dependency state and rendered rectangle geometry", () => {
+  assert.match(timelineSource, /const displayedRoadmap = previewRoadmap \|\| rm/);
+  assert.match(timelineSource, /buildDependencyState\(displayedRoadmap\.bars\)/);
+  assert.match(timelineSource, /new Map\(displayedRoadmap\.bars\.flatMap/);
+  assert.match(timelineSource, /displayedRoadmap\.bars\.forEach\(target =>/);
+});
+
 test("timeline uses the shared source-bridge route serializer", () => {
   const printSource = timelineSource.slice(
     timelineSource.indexOf("function layoutPrintDependencies()"),

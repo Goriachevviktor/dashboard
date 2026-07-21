@@ -8,6 +8,12 @@ import { useRenderedTimelineWidth } from '../hooks/useRenderedTimelineWidth.js';
 import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import { resolveRoadmapBarInitialDates } from '../utils/roadmapDateDefaults.js';
+import {
+  resolveRoadmapAutoScrollDelta,
+  resolveRoadmapDragIntent,
+  resolveRoadmapDropTarget,
+} from '../utils/roadmapDragIntent.js';
+import { moveRoadmapBar, moveRoadmapLane } from '../utils/roadmapOrdering.js';
 import { createRoadmapReorderLock, persistRoadmapReorder } from '../utils/roadmapReorderPersistence.js';
 import {
   applyDependencySchedule,
@@ -2005,7 +2011,6 @@ function GanttBar({
   hover,
   setHover,
   idx,
-  onBarClick,
   onBarPointerStart,
   onBarLinkClick,
   members,
@@ -2013,6 +2018,7 @@ function GanttBar({
   previewWidth = null,
   isDragging = false,
   linkMode = false,
+  dragDisabled = false,
   isLinked = false,
   isHighlighted = false,
   showIncomingPort = false,
@@ -2023,7 +2029,7 @@ function GanttBar({
   const c = BAR_COL[b.status] || BAR_COL.planned;
   const left = previewLeft ?? percentFromTimelineDate(b.startDate, b.timeline);
   const width = previewWidth ?? Math.max(0.9, percentFromTimelineDate(b.endDate, b.timeline, true) - left);
-  const isHov = hover === idx || isHighlighted;
+  const isHov = hover === String(b.id) || isHighlighted;
   const ownerMember = getMemberById(members, b.owner);
   const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
   return (
@@ -2031,16 +2037,15 @@ function GanttBar({
       {showIncomingPort && rect && <RoadmapDependencyPort anchorX={rect.left} />}
       {showOutgoingPort && outgoingAnchorX != null && <RoadmapDependencyPort anchorX={outgoingAnchorX} />}
       <div
-        onDoubleClick={() => !linkMode && !isDragging && onBarClick && onBarClick(b, idx)}
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
-        onPointerDown={event => !linkMode && onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
-        onMouseEnter={() => setHover(idx)}
+        onPointerDown={event => !linkMode && !dragDisabled && onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
+        onMouseEnter={() => setHover(String(b.id))}
         onMouseLeave={() => setHover(null)}
         style={{
           position: "absolute", height: 30, borderRadius: 9,
           left: left + "%", width: width + "%",
           background: c.bar, display: "flex", alignItems: "center",
-          padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : isDragging ? "grabbing" : "grab",
+          padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : dragDisabled ? "not-allowed" : isDragging ? "grabbing" : "grab",
           boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
           transition: "box-shadow .15s", zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
           minWidth: 8,
@@ -2049,7 +2054,7 @@ function GanttBar({
           outline: linkMode && isLinked ? "2px solid rgba(255,255,255,.72)" : "none",
         }}
       >
-        {!linkMode && isHov && width > 2.5 && (
+        {!linkMode && !dragDisabled && isHov && width > 2.5 && (
           <>
             <span
               onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "resize-start")}
@@ -2080,11 +2085,25 @@ function GanttBar({
   );
 }
 
-function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag, linkMode = false, linkSourceId = "", onLinkTaskSelect }) {
+function roadmapOrderChanged(original, preview) {
+  if (!preview) return false;
+  const laneOrder = roadmap => roadmap.lanes.map(lane => String(lane.id)).join("\u0000");
+  const barOrder = roadmap => roadmap.bars.map(bar => `${String(bar.id)}:${String(bar.lane)}`).join("\u0000");
+  return laneOrder(original) !== laneOrder(preview) || barOrder(original) !== barOrder(preview);
+}
+
+function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag, linkMode = false, linkSourceId = "", onLinkTaskSelect, onReorder, reorderPending = false }) {
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
-  const [barDrag, setBarDrag] = useState(null);
-  const timeline = rm.timeline;
+  const [dragSession, setDragSession] = useState(null);
+  const dragSessionRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const autoScrollFrameRef = useRef(0);
+  const previewRoadmap = dragSession?.previewRoadmap || null;
+  const displayedRoadmap = previewRoadmap || rm;
+  const barDrag = dragSession?.kind === "bar" ? dragSession : null;
+  const laneDrag = dragSession?.kind === "lane" ? dragSession : null;
+  const timeline = displayedRoadmap.timeline || rm.timeline;
   const today = new Date();
   const todayIso = toIsoDate(today);
   const todayPct = percentFromTimelineDate(todayIso, timeline);
@@ -2094,35 +2113,36 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
   const rows = useMemo(() => {
     const ordered = [];
-    rm.lanes.forEach(lane => {
+    displayedRoadmap.lanes.forEach(lane => {
       const laneRow = { type: "lane", lane };
       ordered.push({ ...laneRow, key: timelineRowKey(laneRow) });
-      rm.bars.forEach((b, idx) => {
+      displayedRoadmap.bars.forEach(b => {
         if (b.lane !== lane.id) return;
+        const idx = rm.bars.findIndex(item => String(item.id) === String(b.id));
         const barRow = { type: "bar", b: { ...b, timeline }, idx };
         ordered.push({ ...barRow, key: timelineRowKey(barRow) });
       });
     });
     return ordered;
-  }, [rm.bars, rm.lanes, timeline]);
+  }, [displayedRoadmap.bars, displayedRoadmap.lanes, rm.bars, timeline]);
   const chartWidth = Math.max(720, timeline.months.length * 110);
   const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
   const { renderedWidth, timelineNodeRef, timelineRef } = useRenderedTimelineWidth(chartWidth);
-  const dependencyState = useMemo(() => buildDependencyState(rm.bars), [rm.bars]);
+  const dependencyState = useMemo(() => buildDependencyState(displayedRoadmap.bars), [displayedRoadmap.bars]);
   const dependencyVisualState = useMemo(() => {
-    const hoveredTaskId = hover == null ? '' : rm.bars[hover]?.id;
+    const hoveredTaskId = hover || '';
     const activeTaskId = linkSourceId || hoveredTaskId;
     return resolveActiveDependencyVisualState({
       activeTaskId,
       predecessorsById: dependencyState.predecessorsById,
       successorsById: dependencyState.successorsById,
     });
-  }, [dependencyState, hover, linkSourceId, rm.bars]);
+  }, [dependencyState, hover, linkSourceId]);
   const renderedBarRectById = useMemo(() => {
     const rowByTaskId = new Map(
       layout.filter(row => row.type === 'bar').map(row => [String(row.b.id), row]),
     );
-    return new Map(rm.bars.flatMap((bar, taskIndex) => {
+    return new Map(displayedRoadmap.bars.flatMap(bar => {
       const row = rowByTaskId.get(String(bar.id));
       if (!row) return [];
       const persistedLeft = percentFromTimelineDate(bar.startDate, timeline);
@@ -2130,7 +2150,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         0.9,
         percentFromTimelineDate(bar.endDate, timeline, true) - persistedLeft,
       );
-      const isPreviewed = barDrag?.idx === taskIndex;
+      const isPreviewed = barDrag?.sourceBarId === String(bar.id) && barDrag.intent !== "vertical";
       const leftPct = isPreviewed ? barDrag.previewLeft : persistedLeft;
       const widthPct = isPreviewed ? barDrag.previewWidth : persistedWidth;
       return [[String(bar.id), resolveRenderedBarRect({
@@ -2141,11 +2161,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         rowHeight: row.height,
       })]];
     }));
-  }, [barDrag, layout, renderedWidth, rm.bars, timeline]);
+  }, [barDrag, displayedRoadmap.bars, layout, renderedWidth, timeline]);
   const dependencyRouteEdges = useMemo(() => {
     const edges = [];
 
-    rm.bars.forEach(target => {
+    displayedRoadmap.bars.forEach(target => {
       const targetId = String(target.id);
       const targetRect = renderedBarRectById.get(targetId);
       if (!targetRect) return;
@@ -2168,7 +2188,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       });
     });
     return edges;
-  }, [renderedBarRectById, renderedWidth, rm.bars]);
+  }, [displayedRoadmap.bars, renderedBarRectById, renderedWidth]);
   const dependencyEdges = useMemo(() => dependencyRouteEdges
     .filter(edge => isDependencyRouteRenderable(edge.route))
     .map(edge => ({
@@ -2181,6 +2201,12 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
   const sideW = 340;
   const stickyTop = 0;
+  const rowsRef = useRef(rows);
+  const layoutRef = useRef(layout);
+  useEffect(() => {
+    rowsRef.current = rows;
+    layoutRef.current = layout;
+  }, [layout, rows]);
 
   useEffect(() => {
     if (!milestoneDrag) return undefined;
@@ -2233,59 +2259,218 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     };
   }, [milestoneDrag, onMilestoneClick, onMilestoneDrag, timeline, timelineNodeRef]);
 
+  const isRoadmapDragging = dragSession !== null;
   useEffect(() => {
-    if (!barDrag || linkMode) return undefined;
+    if (!isRoadmapDragging) return undefined;
+    if (linkMode || reorderPending) {
+      if (autoScrollFrameRef.current) {
+        window.cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = 0;
+      }
+      const clearFrame = window.requestAnimationFrame(() => {
+        dragSessionRef.current = null;
+        setDragSession(null);
+      });
+      return () => window.cancelAnimationFrame(clearFrame);
+    }
 
-    function computePct(clientX) {
+    let lastPointer = null;
+
+    function updateSession(next) {
+      dragSessionRef.current = next;
+      setDragSession(next);
+    }
+
+    function stopAutoScroll() {
+      if (autoScrollFrameRef.current) {
+        window.cancelAnimationFrame(autoScrollFrameRef.current);
+        autoScrollFrameRef.current = 0;
+      }
+    }
+
+    function clearSession() {
+      stopAutoScroll();
+      dragSessionRef.current = null;
+      setDragSession(null);
+    }
+
+    function updateVerticalPreview(current, clientY) {
+      const bodyRect = bodyRef.current?.getBoundingClientRect();
+      const currentRows = rowsRef.current;
+      const currentLayout = layoutRef.current;
+      if (!bodyRect || currentRows.length === 0 || currentLayout.length === 0) return current;
+      const coordinate = clientY - bodyRect.top;
+      const preview = current.previewRoadmap || rm;
+
+      if (current.kind === "lane") {
+        const laneItems = currentRows.flatMap((row, index) => {
+          if (row.type !== "lane") return [];
+          const rowLayout = currentLayout[index];
+          const nextLaneIndex = currentRows.findIndex((candidate, candidateIndex) => candidateIndex > index && candidate.type === "lane");
+          const end = nextLaneIndex >= 0
+            ? currentLayout[nextLaneIndex].top
+            : currentLayout.at(-1).top + currentLayout.at(-1).height;
+          return [{ id: String(row.lane.id), start: rowLayout.top, end }];
+        });
+        const target = resolveRoadmapDropTarget({ coordinate, items: laneItems, sourceId: current.sourceLaneId });
+        const nextLanes = moveRoadmapLane(preview.lanes, {
+          sourceLaneId: current.sourceLaneId,
+          targetLaneId: target.targetId,
+          position: target.position,
+        });
+        const nextPreview = nextLanes === preview.lanes ? preview : { ...preview, lanes: nextLanes };
+        return {
+          ...current,
+          intent: "vertical",
+          previewRoadmap: nextPreview,
+          dropTarget: { kind: "lane", targetLaneId: target.targetId, position: target.position },
+        };
+      }
+
+      const pointedIndex = currentLayout.findIndex(row => coordinate >= row.top && coordinate <= row.top + row.height);
+      const boundedIndex = pointedIndex >= 0 ? pointedIndex : coordinate < 0 ? 0 : currentRows.length - 1;
+      const pointedRow = currentRows[boundedIndex];
+      const targetLaneId = String(pointedRow.type === "lane" ? pointedRow.lane.id : pointedRow.b.lane);
+      const taskItems = currentRows.flatMap((row, index) => {
+        if (row.type !== "bar" || String(row.b.lane) !== targetLaneId) return [];
+        const rowLayout = currentLayout[index];
+        return [{ id: String(row.b.id), start: rowLayout.top, end: rowLayout.top + rowLayout.height }];
+      });
+      const target = resolveRoadmapDropTarget({ coordinate, items: taskItems, sourceId: current.sourceBarId });
+      const nextBars = moveRoadmapBar(preview.bars, {
+        barId: current.sourceBarId,
+        targetLaneId,
+        targetBarId: target.targetId,
+        position: target.position,
+      });
+      const nextPreview = nextBars === preview.bars ? preview : { ...preview, bars: nextBars };
+      return {
+        ...current,
+        intent: "vertical",
+        previewRoadmap: nextPreview,
+        dropTarget: {
+          kind: "bar",
+          targetLaneId,
+          targetBarId: target.targetId,
+          position: target.position,
+        },
+      };
+    }
+
+    function updatePointer(clientX, clientY) {
+      const current = dragSessionRef.current;
+      if (!current) return;
+      const deltaX = clientX - current.startClientX;
+      const deltaY = clientY - current.startClientY;
+      if (current.forcedIntent && Math.hypot(deltaX, deltaY) < 6) return;
+      const resolvedIntent = current.kind === "lane"
+        ? (resolveRoadmapDragIntent({ deltaX, deltaY, lockedIntent: current.intent }) ? "vertical" : null)
+        : resolveRoadmapDragIntent({
+          deltaX,
+          deltaY,
+          lockedIntent: current.intent,
+          forcedIntent: current.forcedIntent,
+        });
+      if (!resolvedIntent) return;
+
+      if (resolvedIntent === "vertical") {
+        updateSession(updateVerticalPreview(current, clientY));
+        return;
+      }
+
       const rect = timelineNodeRef.current?.getBoundingClientRect();
-      if (!rect || rect.width <= 0) return barDrag.left;
-      return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+      const currentPct = rect && rect.width > 0
+        ? Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100))
+        : current.left;
+      const deltaPct = currentPct - current.startPct;
+      if (current.mode === "move") {
+        const nextLeft = Math.max(0, Math.min(100 - current.width, current.left + deltaPct));
+        updateSession({ ...current, intent: "horizontal", previewLeft: nextLeft, previewWidth: current.width });
+        return;
+      }
+      if (current.mode === "resize-start") {
+        const rightEdge = current.left + current.width;
+        const nextLeft = Math.max(0, Math.min(rightEdge - 0.9, current.left + deltaPct));
+        updateSession({ ...current, intent: resolvedIntent, previewLeft: nextLeft, previewWidth: Math.max(0.9, rightEdge - nextLeft) });
+        return;
+      }
+      const nextWidth = Math.max(0.9, Math.min(100 - current.left, current.width + deltaPct));
+      updateSession({ ...current, intent: resolvedIntent, previewLeft: current.left, previewWidth: nextWidth });
+    }
+
+    function runAutoScroll() {
+      autoScrollFrameRef.current = 0;
+      const container = scrollContainerRef.current;
+      const current = dragSessionRef.current;
+      if (!container || !current || current.intent !== "vertical" || !lastPointer) return;
+      const rect = container.getBoundingClientRect();
+      const delta = resolveRoadmapAutoScrollDelta({
+        pointer: lastPointer.clientY,
+        start: rect.top,
+        end: rect.bottom,
+        edgeSize: 48,
+        maxStep: 18,
+      });
+      if (!delta) return;
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      const nextScrollTop = Math.max(0, Math.min(maxScrollTop, container.scrollTop + delta));
+      if (nextScrollTop === container.scrollTop) return;
+      container.scrollTop = nextScrollTop;
+      updatePointer(lastPointer.clientX, lastPointer.clientY);
+      autoScrollFrameRef.current = window.requestAnimationFrame(runAutoScroll);
     }
 
     function handlePointerMove(event) {
-      const currentPct = computePct(event.clientX);
-      const deltaPct = currentPct - barDrag.startPct;
-      setBarDrag(current => {
-        if (!current) return current;
-        const moved = current.moved || Math.abs(event.clientX - current.startClientX) >= 5;
-        if (current.mode === "move") {
-          const nextLeft = Math.max(0, Math.min(100 - current.width, current.left + deltaPct));
-          return { ...current, previewLeft: nextLeft, previewWidth: current.width, moved };
-        }
-        if (current.mode === "resize-start") {
-          const rightEdge = current.left + current.width;
-          const nextLeft = Math.max(0, Math.min(rightEdge - 0.9, current.left + deltaPct));
-          return { ...current, previewLeft: nextLeft, previewWidth: Math.max(0.9, rightEdge - nextLeft), moved };
-        }
-        const nextWidth = Math.max(0.9, Math.min(100 - current.left, current.width + deltaPct));
-        return { ...current, previewLeft: current.left, previewWidth: nextWidth, moved };
-      });
+      lastPointer = { clientX: event.clientX, clientY: event.clientY };
+      updatePointer(event.clientX, event.clientY);
+      if (dragSessionRef.current?.intent === "vertical" && !autoScrollFrameRef.current) {
+        autoScrollFrameRef.current = window.requestAnimationFrame(runAutoScroll);
+      }
     }
 
     function handlePointerUp() {
-      const current = barDrag;
-      setBarDrag(null);
+      const current = dragSessionRef.current;
+      clearSession();
       if (!current) return;
-      if (!current.moved) return;
+      if (!current.intent) {
+        if (current.kind === "bar" && current.mode === "move") {
+          const persistedIndex = rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
+          if (persistedIndex >= 0) onBarClick?.(rm.bars[persistedIndex], persistedIndex);
+        }
+        return;
+      }
+      if (current.intent === "vertical") {
+        if (roadmapOrderChanged(rm, current.previewRoadmap)) onReorder?.(current.previewRoadmap);
+        return;
+      }
+      const persistedIndex = rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
+      if (persistedIndex < 0) return;
       const nextStartDate = timelineDateFromPercent(current.previewLeft, timeline);
       const endPct = current.previewLeft + current.previewWidth;
       const nextEndDate = timelineDateFromPercent(endPct, timeline, true);
-      onBarDrag && onBarDrag(current.idx, { ...current.bar, startDate: nextStartDate, endDate: nextEndDate });
+      onBarDrag?.(persistedIndex, { ...rm.bars[persistedIndex], startDate: nextStartDate, endDate: nextEndDate });
     }
 
     function handlePointerCancel() {
-      setBarDrag(null);
+      clearSession();
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") clearSession();
     }
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
+      stopAutoScroll();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [barDrag, linkMode, onBarClick, onBarDrag, timeline, timelineNodeRef]);
+  }, [bodyRef, isRoadmapDragging, linkMode, onBarClick, onBarDrag, onReorder, reorderPending, rm, timeline, timelineNodeRef]);
 
   function startMilestoneDrag(event, milestone, idx, milestonePct) {
     event.preventDefault();
@@ -2301,30 +2486,55 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   }
 
   function startBarPointerAction(event, bar, idx, mode) {
-    if (linkMode) return;
+    if (linkMode || reorderPending) return;
     event.preventDefault();
     event.stopPropagation();
     const left = percentFromTimelineDate(bar.startDate, timeline);
     const width = Math.max(0.9, percentFromTimelineDate(bar.endDate, timeline, true) - left);
     const rect = timelineNodeRef.current?.getBoundingClientRect();
     const startPct = rect && rect.width > 0 ? Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)) : left;
-    setBarDrag({
+    const nextSession = {
+      kind: "bar",
       idx,
       mode,
       bar,
+      sourceBarId: String(bar.id),
       left,
       width,
       previewLeft: left,
       previewWidth: width,
       startPct,
       startClientX: event.clientX,
-      moved: false,
-    });
+      startClientY: event.clientY,
+      intent: null,
+      forcedIntent: mode === "move" ? null : mode,
+      previewRoadmap: null,
+      dropTarget: null,
+    };
+    dragSessionRef.current = nextSession;
+    setDragSession(nextSession);
+  }
+
+  function startLanePointerAction(event, lane) {
+    if (linkMode || reorderPending) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextSession = {
+      kind: "lane",
+      sourceLaneId: String(lane.id),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      intent: null,
+      previewRoadmap: null,
+      dropTarget: null,
+    };
+    dragSessionRef.current = nextSession;
+    setDragSession(nextSession);
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      <div style={{ overflow: "auto", maxHeight: "min(70vh, 960px)" }}>
+      <div ref={scrollContainerRef} style={{ overflow: "auto", maxHeight: "min(70vh, 960px)" }}>
         {/* Шапка */}
         <div style={{ display: "flex", borderBottom: "1px solid rgba(15,23,42,.06)", position: "sticky", top: stickyTop, background: "#fff", zIndex: 8 }}>
           <div style={{
@@ -2363,7 +2573,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         </div>
 
         {/* Тело */}
-        <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: rows.length ? undefined : 120, userSelect: milestoneDrag ? "none" : undefined, cursor: milestoneDrag ? "grabbing" : linkMode ? "crosshair" : undefined }}>
+        <div ref={bodyRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `${sideW}px minmax(${chartWidth}px, 1fr)`, minWidth: sideW + chartWidth, minHeight: rows.length ? undefined : 120, userSelect: milestoneDrag || dragSession ? "none" : undefined, cursor: milestoneDrag || dragSession ? "grabbing" : linkMode ? "crosshair" : undefined }}>
           {/* Сетка и оверлеи Gantt */}
           <div ref={timelineRef} style={{ position: "absolute", top: 0, left: sideW, width: `calc(100% - ${sideW}px)`, height: totalHeight, pointerEvents: "none" }}>
             {/* Вертикальные линии */}
@@ -2389,7 +2599,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
               </div>
             )}
             {/* Вехи */}
-            {rm.milestones.map((m, i) => {
+            {displayedRoadmap.milestones.map((m, i) => {
               const milestoneColor = m.color || DEFAULT_MILESTONE_COLOR;
               const milestonePct = milestoneDrag?.idx === i ? milestoneDrag.pct : percentFromTimelineDate(m.date, timeline);
               return (
@@ -2418,30 +2628,60 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           </div>
 
           {/* Парные строки: одна grid-дорожка для подписи и диаграммы */}
-          {rows.map(r => (
+          {rows.map((r, rowIndex) => {
+            const rowLaneId = String(r.type === "lane" ? r.lane.id : r.b.lane);
+            const rowBarId = r.type === "bar" ? String(r.b.id) : "";
+            const isSourceRow = barDrag?.intent === "vertical" && rowBarId === barDrag.sourceBarId;
+            const isSourceLane = laneDrag?.intent === "vertical" && rowLaneId === laneDrag.sourceLaneId;
+            const taskTarget = barDrag?.dropTarget?.kind === "bar" ? barDrag.dropTarget : null;
+            const laneTarget = laneDrag?.dropTarget?.kind === "lane" ? laneDrag.dropTarget : null;
+            const isTargetRow = taskTarget
+              ? (taskTarget.targetBarId ? rowBarId === taskTarget.targetBarId : r.type === "lane" && rowLaneId === taskTarget.targetLaneId)
+              : laneTarget ? rowLaneId === laneTarget.targetLaneId : false;
+            const nextRow = rows[rowIndex + 1];
+            const isLastRowInLane = !nextRow || String(nextRow.type === "lane" ? nextRow.lane.id : nextRow.b.lane) !== rowLaneId;
+            const showInsertionBefore = taskTarget?.position === "before" && rowBarId === taskTarget.targetBarId
+              || laneTarget?.position === "before" && r.type === "lane" && rowLaneId === laneTarget.targetLaneId;
+            const showInsertionAfter = taskTarget?.position === "after" && rowBarId === taskTarget.targetBarId
+              || taskTarget && !taskTarget.targetBarId && taskTarget.targetLaneId === rowLaneId && isLastRowInLane
+              || laneTarget?.position === "after" && rowLaneId === laneTarget.targetLaneId && isLastRowInLane;
+            const rowBoundaryStyle = {
+              borderTop: showInsertionBefore ? "2px solid #007aff" : undefined,
+              borderBottom: showInsertionAfter ? "2px solid #007aff" : undefined,
+            };
+            return (
             <div key={r.key} style={{ display: "contents" }}>
-              <div style={{
+              <div
+                onPointerDown={r.type === "lane" ? event => startLanePointerAction(event, r.lane) : undefined}
+                aria-label={r.type === "lane" ? `Переместить дорожку «${r.lane.name}»` : undefined}
+                aria-grabbed={r.type === "lane" ? laneDrag?.sourceLaneId === String(r.lane.id) : undefined}
+                aria-disabled={r.type === "lane" ? linkMode || reorderPending : undefined}
+                style={{
                 minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT,
                 padding: r.type === "lane" ? "0 20px" : "7px 20px 7px 28px",
                 display: "flex", alignItems: "center", gap: 8,
                 borderRight: "1px solid rgba(15,23,42,.06)", position: "sticky", left: 0, zIndex: 6,
-                width: sideW, background: r.type === "lane" ? "rgba(118,118,128,.04)" : "#fff",
+                width: sideW, background: isTargetRow ? "rgba(0,122,255,.08)" : r.type === "lane" ? "rgba(118,118,128,.04)" : "#fff",
                 boxShadow: "8px 0 16px rgba(15,23,42,.04)", fontSize: r.type === "lane" ? 12 : 13,
                 lineHeight: 1.25, fontWeight: r.type === "lane" ? 700 : 400,
                 color: r.type === "lane" ? "#1d1d1f" : "#3a3a3c",
                 whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere",
+                cursor: r.type === "lane" ? linkMode || reorderPending ? "not-allowed" : laneDrag?.sourceLaneId === String(r.lane.id) ? "grabbing" : "grab" : undefined,
+                touchAction: r.type === "lane" ? "none" : undefined,
+                opacity: isSourceRow || isSourceLane ? 0.45 : 1,
+                ...rowBoundaryStyle,
               }} title={r.type === "bar" ? r.b.title : undefined}>
                 {r.type === "lane" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />}
                 {r.type === "lane" ? r.lane.name : r.b.title}
               </div>
-              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT, position: "relative", background: r.type === "lane" ? "rgba(118,118,128,.04)" : undefined }}>
+              <div ref={registerRow(r.key)} style={{ minHeight: r.type === "lane" ? TIMELINE_LANE_MIN_HEIGHT : TIMELINE_TASK_MIN_HEIGHT, position: "relative", background: isTargetRow ? "rgba(0,122,255,.08)" : r.type === "lane" ? "rgba(118,118,128,.04)" : undefined, opacity: isSourceRow || isSourceLane ? 0.45 : 1, ...rowBoundaryStyle }}>
                 {r.type === "bar" && (
                   <GanttBar
-                    b={r.b} idx={r.idx} hover={hover} setHover={setHover} onBarClick={onBarClick}
+                    b={r.b} idx={r.idx} hover={hover} setHover={setHover}
                     onBarPointerStart={startBarPointerAction} onBarLinkClick={onLinkTaskSelect} members={members}
-                    previewLeft={barDrag?.idx === r.idx ? barDrag.previewLeft : null}
-                    previewWidth={barDrag?.idx === r.idx ? barDrag.previewWidth : null}
-                    isDragging={barDrag?.idx === r.idx} linkMode={linkMode}
+                    previewLeft={barDrag?.sourceBarId === String(r.b.id) && barDrag.intent !== "vertical" ? barDrag.previewLeft : null}
+                    previewWidth={barDrag?.sourceBarId === String(r.b.id) && barDrag.intent !== "vertical" ? barDrag.previewWidth : null}
+                    isDragging={barDrag?.sourceBarId === String(r.b.id)} linkMode={linkMode} dragDisabled={reorderPending}
                     isLinked={linkSourceId === r.b.id}
                     isHighlighted={linkSourceId === r.b.id}
                     showIncomingPort={dependencyVisualState.incomingPortTaskIds.has(String(r.b.id))}
@@ -2455,7 +2695,8 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
