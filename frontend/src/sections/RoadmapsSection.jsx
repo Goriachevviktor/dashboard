@@ -8,6 +8,7 @@ import { useRenderedTimelineWidth } from '../hooks/useRenderedTimelineWidth.js';
 import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import { resolveRoadmapBarInitialDates } from '../utils/roadmapDateDefaults.js';
+import { persistRoadmapReorder } from '../utils/roadmapReorderPersistence.js';
 import {
   applyDependencySchedule,
   buildDependencyState,
@@ -2684,7 +2685,7 @@ function LaneFormModal({ onClose, onSave }) {
   );
 }
 
-function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onUnlinkBar, onLinkOrdinaryTask, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks }) {
+function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, onBack, onEdit, onExportJson, onExportCsv, onExportXls, onExportPdf, onSaveBar, onDeleteBar, onUnlinkBar, onLinkOrdinaryTask, onSaveMilestone, onDeleteMilestone, onSaveLane, onLinkTasks, onReorder, reorderPending }) {
   const [tab, setTab]               = useState("timeline");
   const [barModal, setBarModal]     = useState(null); // null | "new" | { bar, idx }
   const [mileModal, setMileModal]   = useState(null); // null | "new" | { milestone, idx }
@@ -2921,9 +2922,9 @@ function RoadmapDetail({ rm, members, defaultOwnerId, availableTasks, taskById, 
 
       {/* Контент вкладки */}
       <div style={{ background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 16, overflow: "visible", boxShadow: "0 1px 4px rgba(37,99,235,.05)" }}>
-        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onBarDrag={(idx, data) => onSaveBar(idx, data)} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} onMilestoneDrag={(idx, data) => onSaveMilestone(idx, data)} linkMode={linkMode} linkSourceId={linkSourceId} onLinkTaskSelect={handleLinkTaskSelect} />}
-        {tab === "swim"     && <SwimlanesView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
-        {tab === "nnl"      && <NNLView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} />}
+        {tab === "timeline" && <TimelineView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onBarDrag={(idx, data) => onSaveBar(idx, data)} onMilestoneClick={(milestone, idx) => setMileModal({ milestone, idx })} onMilestoneDrag={(idx, data) => onSaveMilestone(idx, data)} linkMode={linkMode} linkSourceId={linkSourceId} onLinkTaskSelect={handleLinkTaskSelect} onReorder={onReorder} reorderPending={reorderPending} />}
+        {tab === "swim"     && <SwimlanesView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onReorder={onReorder} reorderPending={reorderPending} />}
+        {tab === "nnl"      && <NNLView rm={rm} members={members} onBarClick={(b, idx) => setBarModal({ bar: b, idx })} onReorder={onReorder} reorderPending={reorderPending} />}
       </div>
     </div>
   );
@@ -3547,6 +3548,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
   const [userDirectory, setUserDirectory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [reorderPendingId, setReorderPendingId] = useState('');
   const members = useMemo(() => buildMemberRegistry(userDirectory.length ? userDirectory : team, currentUser), [userDirectory, team, currentUser]);
   const defaultOwnerId = memberKey(currentUser?.id || members[0]?.id || "viktor");
   const taskById = useMemo(() => new Map(tasks.map(task => [String(task.id), task])), [tasks]);
@@ -3761,6 +3763,24 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
     await updateOpenRoadmap(roadmap => ({ ...roadmap, lanes: [...roadmap.lanes, data] }));
   }
 
+  async function handleReorderRoadmap(nextRoadmap) {
+    const previousRoadmap = roadmaps.find(item => item.id === nextRoadmap?.id);
+    if (!previousRoadmap || reorderPendingId === previousRoadmap.id) return null;
+    setReorderPendingId(previousRoadmap.id);
+    try {
+      return await persistRoadmapReorder({
+        previousRoadmap,
+        nextRoadmap: recalc(nextRoadmap),
+        patchRoadmap: (id, roadmap) => api.patchRoadmap(id, roadmap),
+        replaceRoadmap,
+        normalizeRoadmap: recalc,
+        onError,
+      });
+    } finally {
+      setReorderPendingId('');
+    }
+  }
+
   async function handleLinkTasks(sourceId, targetId) {
     const currentRoadmap = roadmaps.find(item => item.id === openId);
     if (!currentRoadmap) return { ok: false, message: "Карта не найдена" };
@@ -3823,6 +3843,8 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
           onDeleteMilestone={handleDeleteMilestone}
           onSaveLane={handleSaveLane}
           onLinkTasks={handleLinkTasks}
+          onReorder={handleReorderRoadmap}
+          reorderPending={reorderPendingId === rm.id}
         />
       </>
     );
