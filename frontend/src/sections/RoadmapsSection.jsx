@@ -2147,6 +2147,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
   const [dragSession, setDragSession] = useState(null);
+  const [collapsedLaneIds, setCollapsedLaneIds] = useState(() => new Set());
   const dragSessionRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const autoScrollFrameRef = useRef(0);
@@ -2162,24 +2163,34 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     && today >= parseIsoDate(timeline.startDate)
     && today <= addDays(parseIsoDate(timeline.endDate), 1);
 
+  const visibleBarsByLaneId = useMemo(() => {
+    const grouped = new Map();
+    displayedRoadmap.lanes.forEach(lane => {
+      const laneId = String(lane.id);
+      if (collapsedLaneIds.has(laneId)) return;
+      grouped.set(laneId, displayedRoadmap.bars.filter(b => String(b.lane) === laneId));
+    });
+    return grouped;
+  }, [collapsedLaneIds, displayedRoadmap.bars, displayedRoadmap.lanes]);
+  const visibleBars = useMemo(() => [...visibleBarsByLaneId.values()].flat(), [visibleBarsByLaneId]);
+
   const rows = useMemo(() => {
     const ordered = [];
     displayedRoadmap.lanes.forEach(lane => {
       const laneRow = { type: "lane", lane };
       ordered.push({ ...laneRow, key: timelineRowKey(laneRow) });
-      displayedRoadmap.bars.forEach(b => {
-        if (b.lane !== lane.id) return;
+      (visibleBarsByLaneId.get(String(lane.id)) || []).forEach(b => {
         const idx = rm.bars.findIndex(item => String(item.id) === String(b.id));
         const barRow = { type: "bar", b: { ...b, timeline }, idx };
         ordered.push({ ...barRow, key: timelineRowKey(barRow) });
       });
     });
     return ordered;
-  }, [displayedRoadmap.bars, displayedRoadmap.lanes, rm.bars, timeline]);
+  }, [displayedRoadmap.lanes, rm.bars, timeline, visibleBarsByLaneId]);
   const chartWidth = Math.max(720, timeline.months.length * 110);
   const { bodyRef, registerRow, layout, totalHeight } = useTimelineRowLayout(rows);
   const { renderedWidth, timelineNodeRef, timelineRef } = useRenderedTimelineWidth(chartWidth);
-  const dependencyState = useMemo(() => buildDependencyState(displayedRoadmap.bars), [displayedRoadmap.bars]);
+  const dependencyState = useMemo(() => buildDependencyState(visibleBars), [visibleBars]);
   const dependencyVisualState = useMemo(() => {
     const hoveredTaskId = hover || '';
     const activeTaskId = linkSourceId || hoveredTaskId;
@@ -2193,7 +2204,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     const rowByTaskId = new Map(
       layout.filter(row => row.type === 'bar').map(row => [String(row.b.id), row]),
     );
-    return new Map(displayedRoadmap.bars.flatMap(bar => {
+    return new Map(visibleBars.flatMap(bar => {
       const row = rowByTaskId.get(String(bar.id));
       if (!row) return [];
       const persistedLeft = percentFromTimelineDate(bar.startDate, timeline);
@@ -2212,11 +2223,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         rowHeight: row.height,
       })]];
     }));
-  }, [barDrag, displayedRoadmap.bars, layout, renderedWidth, timeline]);
+  }, [barDrag, layout, renderedWidth, timeline, visibleBars]);
   const dependencyRouteEdges = useMemo(() => {
     const edges = [];
 
-    displayedRoadmap.bars.forEach(target => {
+    visibleBars.forEach(target => {
       const targetId = String(target.id);
       const targetRect = renderedBarRectById.get(targetId);
       if (!targetRect) return;
@@ -2239,7 +2250,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       });
     });
     return edges;
-  }, [displayedRoadmap.bars, renderedBarRectById, renderedWidth]);
+  }, [renderedBarRectById, renderedWidth, visibleBars]);
   const dependencyEdges = useMemo(() => dependencyRouteEdges
     .filter(edge => isDependencyRouteRenderable(edge.route))
     .map(edge => ({
@@ -2632,6 +2643,19 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     setDragSession(nextSession);
   }
 
+  function toggleLaneCollapsed(laneId) {
+    const normalizedLaneId = String(laneId);
+    setCollapsedLaneIds(current => {
+      const next = new Set(current);
+      if (next.has(normalizedLaneId)) {
+        next.delete(normalizedLaneId);
+      } else {
+        next.add(normalizedLaneId);
+      }
+      return next;
+    });
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <div ref={scrollContainerRef} style={{ overflow: "auto", maxHeight: "min(70vh, 960px)" }}>
@@ -2731,6 +2755,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
           {rows.map((r, rowIndex) => {
             const rowLaneId = String(r.type === "lane" ? r.lane.id : r.b.lane);
             const rowBarId = r.type === "bar" ? String(r.b.id) : "";
+            const isCollapsedLane = r.type === "lane" && collapsedLaneIds.has(rowLaneId);
             const isSourceRow = barDrag?.intent === "vertical" && rowBarId === barDrag.sourceBarId;
             const isSourceLane = laneDrag?.intent === "vertical" && rowLaneId === laneDrag.sourceLaneId;
             const taskTarget = barDrag?.dropTarget?.kind === "bar" ? barDrag.dropTarget : null;
@@ -2772,7 +2797,37 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                 ...rowBoundaryStyle,
               }} title={r.type === "bar" ? r.b.title : undefined}>
                 {r.type === "lane" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.lane.color, flexShrink: 0 }} />}
-                {r.type === "lane" ? r.lane.name : r.b.title}
+                <span style={{ flex: 1 }}>{r.type === "lane" ? r.lane.name : r.b.title}</span>
+                {r.type === "lane" && (
+                  <button
+                    type="button"
+                    aria-expanded={!isCollapsedLane}
+                    aria-label={isCollapsedLane ? `Показать задачи дорожки «${r.lane.name}»` : `Скрыть задачи дорожки «${r.lane.name}»`}
+                    title={isCollapsedLane ? "Показать задачи дорожки" : "Скрыть задачи дорожки"}
+                    onPointerDown={event => event.stopPropagation()}
+                    onClick={event => {
+                      event.stopPropagation();
+                      toggleLaneCollapsed(rowLaneId);
+                    }}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      border: "1px solid rgba(15,23,42,.12)",
+                      borderRadius: 6,
+                      background: "#fff",
+                      color: "#6e6e73",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 14,
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isCollapsedLane ? "▸" : "▾"}
+                  </button>
+                )}
               </div>
               <div
                 ref={registerRow(r.key)}

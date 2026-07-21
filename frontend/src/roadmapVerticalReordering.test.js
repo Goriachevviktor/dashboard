@@ -32,7 +32,7 @@ test('timeline preview drives rows and dependency geometry together', () => {
   assert.match(source, /const displayedRoadmap = previewRoadmap \|\| rm/);
   assert.match(source, /displayedRoadmap\.lanes/);
   assert.match(source, /displayedRoadmap\.bars/);
-  assert.match(source, /buildDependencyState\(displayedRoadmap\.bars\)/);
+  assert.match(source, /buildDependencyState\(visibleBars\)/);
 });
 
 test('resize and link mode remain isolated from reorder', () => {
@@ -194,4 +194,18 @@ test('timeline print and CSV follow lane and stored bar order without an indepen
   assert.doesNotMatch(printSource, /\.sort\(/);
   assert.match(csvSource, /\(roadmap\.lanes \|\| \[\]\)\.forEach\([\s\S]*\(roadmap\.bars \|\| \[\]\)\.filter\(bar => bar\.lane === lane\.id\)[\s\S]*laneBars\.forEach/);
   assert.doesNotMatch(csvSource, /\.sort\(/);
+});
+
+test('timeline can collapse lane tasks without persisting UI state', () => {
+  const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
+  assert.match(timelineSource, /const \[collapsedLaneIds, setCollapsedLaneIds\] = useState\(\(\) => new Set\(\)\)/);
+  assert.match(timelineSource, /function toggleLaneCollapsed\(laneId\)/);
+  assert.match(timelineSource, /const visibleBarsByLaneId = useMemo/);
+  assert.match(timelineSource, /if \(collapsedLaneIds\.has\(laneId\)\) return/);
+  assert.match(timelineSource, /buildDependencyState\(visibleBars\)/);
+  assert.match(timelineSource, /displayedRoadmap\.milestones/);
+  assert.match(timelineSource, /aria-expanded=\{!isCollapsedLane\}/);
+  assert.match(timelineSource, /title=\{isCollapsedLane \? "Показать задачи дорожки" : "Скрыть задачи дорожки"\}/);
+  const reorderCommitSource = timelineSource.slice(timelineSource.indexOf('function handlePointerUp'), timelineSource.indexOf('function handlePointerCancel'));
+  assert.doesNotMatch(reorderCommitSource, /collapsedLaneIds/);
 });
