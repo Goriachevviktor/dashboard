@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { persistRoadmapReorder } from './roadmapReorderPersistence.js';
+import { createRoadmapReorderLock, persistRoadmapReorder } from './roadmapReorderPersistence.js';
 
 test('installs optimistic order and replaces it with the normalized server response', async () => {
   const installed = [];
@@ -60,4 +60,39 @@ test('restores the exact previous roadmap and reports once after PATCH failure',
   assert.equal(result, null);
   assert.equal(patchCalls, 1);
   assert.equal(errorCalls, 1);
+});
+
+test('prevents two immediate reorder calls from starting more than one PATCH per roadmap', async () => {
+  const lock = createRoadmapReorderLock();
+  const previousRoadmap = { id: 'r1', lanes: [{ id: 'a' }, { id: 'b' }] };
+  const nextRoadmap = { ...previousRoadmap, lanes: [{ id: 'b' }, { id: 'a' }] };
+  let patchCalls = 0;
+  let releasePatch;
+  const patchPending = new Promise(resolve => { releasePatch = resolve; });
+
+  async function runReorder() {
+    if (!lock.acquire(nextRoadmap.id)) return null;
+    try {
+      return await persistRoadmapReorder({
+        previousRoadmap,
+        nextRoadmap,
+        patchRoadmap: async () => {
+          patchCalls += 1;
+          return patchPending;
+        },
+        replaceRoadmap: () => {},
+        normalizeRoadmap: roadmap => roadmap,
+      });
+    } finally {
+      lock.release(nextRoadmap.id);
+    }
+  }
+
+  const first = runReorder();
+  const second = runReorder();
+  assert.equal(patchCalls, 1);
+  assert.equal(await second, null);
+  releasePatch(nextRoadmap);
+  assert.equal(await first, nextRoadmap);
+  assert.equal(lock.acquire(nextRoadmap.id), true);
 });

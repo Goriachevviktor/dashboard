@@ -1,3 +1,17 @@
+export function createRoadmapReorderLock() {
+  const pendingIds = new Set();
+  return {
+    acquire(roadmapId) {
+      if (pendingIds.has(roadmapId)) return false;
+      pendingIds.add(roadmapId);
+      return true;
+    },
+    release(roadmapId) {
+      pendingIds.delete(roadmapId);
+    },
+  };
+}
+
 export async function persistRoadmapReorder({
   previousRoadmap,
   nextRoadmap,

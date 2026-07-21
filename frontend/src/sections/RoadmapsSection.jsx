@@ -8,7 +8,7 @@ import { useRenderedTimelineWidth } from '../hooks/useRenderedTimelineWidth.js';
 import { useTimelineRowLayout } from '../hooks/useTimelineRowLayout.js';
 import { buildRoadmapWorkbookXlsxBuffer } from '../utils/roadmapWorkbook.js';
 import { resolveRoadmapBarInitialDates } from '../utils/roadmapDateDefaults.js';
-import { persistRoadmapReorder } from '../utils/roadmapReorderPersistence.js';
+import { createRoadmapReorderLock, persistRoadmapReorder } from '../utils/roadmapReorderPersistence.js';
 import {
   applyDependencySchedule,
   buildDependencyState,
@@ -3549,6 +3549,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [reorderPendingId, setReorderPendingId] = useState('');
+  const reorderLocks = useRef(createRoadmapReorderLock());
   const members = useMemo(() => buildMemberRegistry(userDirectory.length ? userDirectory : team, currentUser), [userDirectory, team, currentUser]);
   const defaultOwnerId = memberKey(currentUser?.id || members[0]?.id || "viktor");
   const taskById = useMemo(() => new Map(tasks.map(task => [String(task.id), task])), [tasks]);
@@ -3765,7 +3766,7 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
 
   async function handleReorderRoadmap(nextRoadmap) {
     const previousRoadmap = roadmaps.find(item => item.id === nextRoadmap?.id);
-    if (!previousRoadmap || reorderPendingId === previousRoadmap.id) return null;
+    if (!previousRoadmap || !reorderLocks.current.acquire(previousRoadmap.id)) return null;
     setReorderPendingId(previousRoadmap.id);
     try {
       return await persistRoadmapReorder({
@@ -3777,7 +3778,8 @@ export default function RoadmapsSection({ tasks = [], team = [], api, currentUse
         onError,
       });
     } finally {
-      setReorderPendingId('');
+      reorderLocks.current.release(previousRoadmap.id);
+      setReorderPendingId(current => current === previousRoadmap.id ? '' : current);
     }
   }
 
