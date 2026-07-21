@@ -2092,6 +2092,27 @@ function roadmapOrderChanged(original, preview) {
   return laneOrder(original) !== laneOrder(preview) || barOrder(original) !== barOrder(preview);
 }
 
+function captureRoadmapPointer(event) {
+  const target = event.currentTarget;
+  try {
+    target?.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Window-level listeners remain the fallback when capture is unavailable.
+  }
+  return target;
+}
+
+function releaseRoadmapPointerCapture(session) {
+  const target = session?.captureTarget;
+  if (!target?.releasePointerCapture) return;
+  if (target.hasPointerCapture?.(session.pointerId) === false) return;
+  try {
+    target.releasePointerCapture?.(session.pointerId);
+  } catch {
+    // Capture can already be released by the browser before cleanup runs.
+  }
+}
+
 function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag, linkMode = false, linkSourceId = "", onLinkTaskSelect, onReorder, reorderPending = false }) {
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
@@ -2267,8 +2288,10 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         window.cancelAnimationFrame(autoScrollFrameRef.current);
         autoScrollFrameRef.current = 0;
       }
+      const current = dragSessionRef.current;
+      dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
       const clearFrame = window.requestAnimationFrame(() => {
-        dragSessionRef.current = null;
         setDragSession(null);
       });
       return () => window.cancelAnimationFrame(clearFrame);
@@ -2290,7 +2313,9 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
     function clearSession() {
       stopAutoScroll();
+      const current = dragSessionRef.current;
       dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
       setDragSession(null);
     }
 
@@ -2421,6 +2446,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     }
 
     function handlePointerMove(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
       lastPointer = { clientX: event.clientX, clientY: event.clientY };
       updatePointer(event.clientX, event.clientY);
       if (dragSessionRef.current?.intent === "vertical" && !autoScrollFrameRef.current) {
@@ -2428,12 +2454,14 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       }
     }
 
-    function handlePointerUp() {
+    function handlePointerUp(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      updatePointer(event.clientX, event.clientY);
       const current = dragSessionRef.current;
       clearSession();
       if (!current) return;
       if (!current.intent) {
-        if (current.kind === "bar" && current.mode === "move") {
+        if (current.kind === "bar") {
           const persistedIndex = rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
           if (persistedIndex >= 0) onBarClick?.(rm.bars[persistedIndex], persistedIndex);
         }
@@ -2451,7 +2479,17 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       onBarDrag?.(persistedIndex, { ...rm.bars[persistedIndex], startDate: nextStartDate, endDate: nextEndDate });
     }
 
-    function handlePointerCancel() {
+    function handlePointerCancel(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      clearSession();
+    }
+
+    function handleLostPointerCapture(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      clearSession();
+    }
+
+    function handleWindowBlur() {
       clearSession();
     }
 
@@ -2463,12 +2501,18 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
+    const captureTarget = dragSessionRef.current?.captureTarget;
+    captureTarget?.addEventListener("lostpointercapture", handleLostPointerCapture);
     return () => {
       stopAutoScroll();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
+      captureTarget?.removeEventListener("lostpointercapture", handleLostPointerCapture);
+      releaseRoadmapPointerCapture(dragSessionRef.current);
     };
   }, [bodyRef, isRoadmapDragging, linkMode, onBarClick, onBarDrag, onReorder, reorderPending, rm, timeline, timelineNodeRef]);
 
@@ -2493,6 +2537,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     const width = Math.max(0.9, percentFromTimelineDate(bar.endDate, timeline, true) - left);
     const rect = timelineNodeRef.current?.getBoundingClientRect();
     const startPct = rect && rect.width > 0 ? Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)) : left;
+    const captureTarget = captureRoadmapPointer(event);
     const nextSession = {
       kind: "bar",
       idx,
@@ -2506,6 +2551,8 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       startPct,
       startClientX: event.clientX,
       startClientY: event.clientY,
+      pointerId: event.pointerId,
+      captureTarget,
       intent: null,
       forcedIntent: mode === "move" ? null : mode,
       previewRoadmap: null,
@@ -2519,11 +2566,14 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     if (linkMode || reorderPending) return;
     event.preventDefault();
     event.stopPropagation();
+    const captureTarget = captureRoadmapPointer(event);
     const nextSession = {
       kind: "lane",
       sourceLaneId: String(lane.id),
       startClientX: event.clientX,
       startClientY: event.clientY,
+      pointerId: event.pointerId,
+      captureTarget,
       intent: null,
       previewRoadmap: null,
       dropTarget: null,
