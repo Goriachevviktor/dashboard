@@ -13,7 +13,12 @@ import {
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
 } from '../utils/roadmapDragIntent.js';
-import { moveRoadmapBar, moveRoadmapLane } from '../utils/roadmapOrdering.js';
+import {
+  moveRoadmapBar,
+  moveRoadmapLane,
+  moveRoadmapPlanningBar,
+  resolveRoadmapPlanningGroups,
+} from '../utils/roadmapOrdering.js';
 import { createRoadmapReorderLock, persistRoadmapReorder } from '../utils/roadmapReorderPersistence.js';
 import {
   applyDependencySchedule,
@@ -2113,6 +2118,28 @@ function releaseRoadmapPointerCapture(session) {
   }
 }
 
+function roadmapPlanningChanged(original, preview, today) {
+  if (!preview) return false;
+  const planningOrder = roadmap => {
+    const groups = resolveRoadmapPlanningGroups(roadmap.bars || [], { today });
+    return ["now", "next", "later"].map(bucket => groups[bucket].map(bar => String(bar.id)).join("\u0000")).join("\u0001");
+  };
+  return planningOrder(original) !== planningOrder(preview);
+}
+
+function closestRoadmapColumn(container, selector, clientX) {
+  const columns = Array.from(container?.querySelectorAll(selector) || []);
+  if (columns.length === 0) return null;
+  return columns.find(column => {
+    const rect = column.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right;
+  }) || columns.reduce((closest, column) => {
+    const rect = column.getBoundingClientRect();
+    const distance = Math.abs(clientX - (rect.left + rect.right) / 2);
+    return !closest || distance < closest.distance ? { column, distance } : closest;
+  }, null)?.column || null;
+}
+
 function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, onMilestoneDrag, linkMode = false, linkSourceId = "", onLinkTaskSelect, onReorder, reorderPending = false }) {
   const [hover, setHover] = useState(null);
   const [milestoneDrag, setMilestoneDrag] = useState(null);
@@ -2786,26 +2813,242 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
 // ── Swimlanes ──────────────────────────────────────────────────────────────
 
-function SwimlanesView({ rm, members, onBarClick }) {
+function SwimlanesView({ rm, members, onBarClick, onReorder, reorderPending = false }) {
+  const [dragSession, setDragSession] = useState(null);
+  const dragSessionRef = useRef(null);
+  const boardRef = useRef(null);
+  const latestValuesRef = useRef({ rm, onBarClick, onReorder });
+  const displayedRoadmap = dragSession?.previewRoadmap || rm;
+
+  useEffect(() => {
+    latestValuesRef.current = { rm, onBarClick, onReorder };
+  }, [onBarClick, onReorder, rm]);
+
+  const isDragging = dragSession !== null;
+  useEffect(() => {
+    if (!isDragging) return undefined;
+
+    function updateSession(next) {
+      dragSessionRef.current = next;
+      setDragSession(next);
+    }
+
+    function clearSession() {
+      const current = dragSessionRef.current;
+      dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
+      setDragSession(null);
+    }
+
+    if (reorderPending) {
+      clearSession();
+      return undefined;
+    }
+
+    function updatePointer(clientX, clientY) {
+      const current = dragSessionRef.current;
+      if (!current) return;
+      const crossedThreshold = resolveRoadmapDragIntent({
+        deltaX: clientX - current.startClientX,
+        deltaY: clientY - current.startClientY,
+        lockedIntent: current.intent,
+      });
+      if (!crossedThreshold) return;
+      const preview = current.previewRoadmap || latestValuesRef.current.rm;
+
+      if (current.kind === "lane") {
+        const laneItems = Array.from(boardRef.current?.querySelectorAll('[data-roadmap-lane-id]') || []).map(element => {
+          const rect = element.getBoundingClientRect();
+          return { id: element.dataset.roadmapLaneId, start: rect.left, end: rect.right };
+        });
+        const target = resolveRoadmapDropTarget({ coordinate: clientX, items: laneItems, sourceId: current.sourceLaneId });
+        const nextLanes = moveRoadmapLane(preview.lanes, {
+          sourceLaneId: current.sourceLaneId,
+          targetLaneId: target.targetId,
+          position: target.position,
+        });
+        updateSession({
+          ...current,
+          intent: "horizontal",
+          previewRoadmap: nextLanes === preview.lanes ? preview : { ...preview, lanes: nextLanes },
+          dropTarget: { targetLaneId: target.targetId, position: target.position },
+        });
+        return;
+      }
+
+      const laneColumn = closestRoadmapColumn(boardRef.current, '[data-roadmap-lane-drop-zone]', clientX);
+      const targetLaneId = laneColumn?.dataset.roadmapLaneDropZone;
+      if (!targetLaneId) return;
+      const barItems = Array.from(laneColumn.querySelectorAll('[data-roadmap-bar-id]')).map(element => {
+        const rect = element.getBoundingClientRect();
+        return { id: element.dataset.roadmapBarId, start: rect.top, end: rect.bottom };
+      });
+      const target = resolveRoadmapDropTarget({ coordinate: clientY, items: barItems, sourceId: current.sourceBarId });
+      const nextBars = moveRoadmapBar(preview.bars, {
+        barId: current.sourceBarId,
+        targetLaneId,
+        targetBarId: target.targetId,
+        position: target.position,
+      });
+      updateSession({
+        ...current,
+        intent: "vertical",
+        previewRoadmap: nextBars === preview.bars ? preview : { ...preview, bars: nextBars },
+        dropTarget: { targetLaneId, targetBarId: target.targetId, position: target.position },
+      });
+    }
+
+    function handlePointerMove(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      updatePointer(event.clientX, event.clientY);
+    }
+
+    function handlePointerUp(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      updatePointer(event.clientX, event.clientY);
+      const current = dragSessionRef.current;
+      const latest = latestValuesRef.current;
+      clearSession();
+      if (!current) return;
+      if (!current.intent) {
+        if (current.kind === "bar") {
+          const index = latest.rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
+          if (index >= 0) latest.onBarClick?.(latest.rm.bars[index], index);
+        }
+        return;
+      }
+      if (roadmapOrderChanged(latest.rm, current.previewRoadmap)) latest.onReorder?.(current.previewRoadmap);
+    }
+
+    function handlePointerCancel(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      clearSession();
+    }
+
+    function handleLostPointerCapture(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      clearSession();
+    }
+
+    function handleWindowBlur() {
+      clearSession();
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") clearSession();
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
+    const captureTarget = dragSessionRef.current?.captureTarget;
+    captureTarget?.addEventListener("lostpointercapture", handleLostPointerCapture);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
+      captureTarget?.removeEventListener("lostpointercapture", handleLostPointerCapture);
+      const current = dragSessionRef.current;
+      dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
+    };
+  }, [isDragging, reorderPending]);
+
+  function startLaneDrag(event, lane) {
+    if (reorderPending) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextSession = {
+      kind: "lane",
+      sourceLaneId: String(lane.id),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      pointerId: event.pointerId,
+      captureTarget: captureRoadmapPointer(event),
+      intent: null,
+      previewRoadmap: null,
+      dropTarget: null,
+    };
+    dragSessionRef.current = nextSession;
+    setDragSession(nextSession);
+  }
+
+  function startBarDrag(event, bar) {
+    if (reorderPending) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextSession = {
+      kind: "bar",
+      sourceBarId: String(bar.id),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      pointerId: event.pointerId,
+      captureTarget: captureRoadmapPointer(event),
+      intent: null,
+      previewRoadmap: null,
+      dropTarget: null,
+    };
+    dragSessionRef.current = nextSession;
+    setDragSession(nextSession);
+  }
+
   return (
-    <div style={{ display: "flex", gap: 16, padding: 20, overflowX: "auto" }}>
-      {rm.lanes.map(lane => {
-        const bars = rm.bars.filter(b => b.lane === lane.id);
+    <div ref={boardRef} style={{ display: "flex", gap: 16, padding: 20, overflowX: "auto", userSelect: dragSession ? "none" : undefined }}>
+      {displayedRoadmap.lanes.map(lane => {
+        const bars = displayedRoadmap.bars.filter(b => b.lane === lane.id);
+        const laneTarget = dragSession?.kind === "lane" ? dragSession.dropTarget : null;
+        const barTarget = dragSession?.kind === "bar" ? dragSession.dropTarget : null;
+        const isLaneSource = dragSession?.kind === "lane" && dragSession.sourceLaneId === String(lane.id);
+        const isTargetLane = barTarget?.targetLaneId === String(lane.id);
         return (
-          <div key={lane.id} style={{ flexShrink: 0, width: 300, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(118,118,128,.04)", borderRadius: 10, borderLeft: `4px solid ${lane.color}` }}>
+          <div
+            key={lane.id}
+            data-roadmap-lane-id={String(lane.id)}
+            style={{
+              flexShrink: 0, width: 300, display: "flex", flexDirection: "column", gap: 12,
+              opacity: isLaneSource ? 0.45 : 1,
+              borderLeft: laneTarget?.targetLaneId === String(lane.id) && laneTarget.position === "before" ? "2px solid #007aff" : "2px solid transparent",
+              borderRight: laneTarget?.targetLaneId === String(lane.id) && laneTarget.position === "after" ? "2px solid #007aff" : "2px solid transparent",
+            }}
+          >
+            <div
+              onPointerDown={event => startLaneDrag(event, lane)}
+              aria-label={`Переместить дорожку «${lane.name}»`}
+              aria-grabbed={isLaneSource}
+              aria-disabled={reorderPending}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(118,118,128,.04)", borderRadius: 10, borderLeft: `4px solid ${lane.color}`, cursor: reorderPending ? "not-allowed" : isLaneSource ? "grabbing" : "grab", touchAction: "none" }}
+            >
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: lane.color }} />
               <span style={{ fontSize: 14, fontWeight: 700, color: "#1d1d1f", flex: 1 }}>{lane.name}</span>
               <span style={{ fontSize: 11, fontWeight: 700, color: "#a1a1a6", background: "#fff", padding: "2px 8px", borderRadius: 999 }}>{bars.length}</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {bars.map((b, i) => {
+            <div
+              data-roadmap-lane-drop-zone={String(lane.id)}
+              style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 64, padding: 4, margin: -4, borderRadius: 10, background: isTargetLane ? "rgba(0,122,255,.06)" : undefined }}
+            >
+              {bars.length === 0 && <div style={{ textAlign: "center", color: "#a1a1a6", fontSize: 12, padding: 20, border: `1.5px dashed ${isTargetLane ? "#007aff" : "#d6deeb"}`, borderRadius: 8 }}>Пусто</div>}
+              {bars.map(b => {
                 const c = BAR_COL[b.status] || BAR_COL.planned;
                 const label = b.status === "done" ? "Завершено" : b.status === "progress" ? b.progress + "%" : "Запланировано";
                 const ownerMember = getMemberById(members, b.owner);
                 const coExecutors = sanitizeMemberIds(b.memberIds, b.owner).map(id => getMemberById(members, id)).filter(Boolean);
+                const isSource = dragSession?.kind === "bar" && dragSession.sourceBarId === String(b.id);
+                const showBefore = barTarget?.targetBarId === String(b.id) && barTarget.position === "before";
+                const showAfter = barTarget?.targetBarId === String(b.id) && barTarget.position === "after"
+                  || !barTarget?.targetBarId && isTargetLane && b === bars.at(-1);
                 return (
-                  <div key={i} onClick={() => onBarClick && onBarClick(b, rm.bars.indexOf(b))} style={{ background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderRadius: 10, padding: "13px 14px", boxShadow: "0 1px 3px rgba(37,99,235,.05)", cursor: "pointer" }}>
+                  <div
+                    key={b.id}
+                    data-roadmap-bar-id={String(b.id)}
+                    onPointerDown={event => startBarDrag(event, b)}
+                    aria-grabbed={isSource}
+                    aria-disabled={reorderPending}
+                    style={{ background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderTop: showBefore ? "2px solid #007aff" : "1px solid rgba(15,23,42,.08)", borderBottom: showAfter ? "2px solid #007aff" : "1px solid rgba(15,23,42,.08)", borderRadius: 10, padding: "13px 14px", boxShadow: "0 1px 3px rgba(37,99,235,.05)", cursor: reorderPending ? "not-allowed" : isSource ? "grabbing" : "grab", touchAction: "none", opacity: isSource ? 0.45 : 1 }}
+                  >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f" }}>{b.title}</span>
                       <span style={{ display: "inline-flex", alignItems: "center" }}>
@@ -2833,46 +3076,159 @@ function SwimlanesView({ rm, members, onBarClick }) {
 
 // ── Now / Next / Later ─────────────────────────────────────────────────────
 
-function buildNowNextLater(rm) {
-  const today = startOfDay(new Date());
-  const active = [];
-  const upcoming = [];
-
-  (rm.bars || []).forEach((barItem, idx) => {
-    if (barItem.status === "done") return;
-    const item = { ...barItem, idx };
-    const startDate = parseIsoDate(barItem.startDate);
-    const endDate = parseIsoDate(barItem.endDate);
-    const startsNowOrPast = startDate && startDate <= today;
-    const endsFuture = endDate && endDate >= today;
-    if (barItem.status === "progress" || (startsNowOrPast && endsFuture)) {
-      active.push(item);
-      return;
-    }
-    upcoming.push(item);
-  });
-
-  active.sort((a, b) => String(a.endDate).localeCompare(String(b.endDate)) || String(a.startDate).localeCompare(String(b.startDate)));
-  upcoming.sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || String(a.endDate).localeCompare(String(b.endDate)));
-
-  return {
-    now: active,
-    next: upcoming.slice(0, 4),
-    later: upcoming.slice(4),
-  };
-}
-
-function NNLView({ rm, members, onBarClick }) {
-  const grouped = buildNowNextLater(rm);
+function NNLView({ rm, members, onBarClick, onReorder, reorderPending = false }) {
+  const [dragSession, setDragSession] = useState(null);
+  const dragSessionRef = useRef(null);
+  const boardRef = useRef(null);
+  const [planningToday] = useState(() => startOfDay(new Date()));
+  const latestValuesRef = useRef({ rm, onBarClick, onReorder });
+  const displayedRoadmap = dragSession?.previewRoadmap || rm;
+  const grouped = resolveRoadmapPlanningGroups(displayedRoadmap.bars || [], { today: planningToday });
   const cols = [
     { key: "now",   label: "Now",   sub: "Сейчас в работе", color: "#007aff" },
     { key: "next",  label: "Next",  sub: "Следующий шаг",   color: "#5856d6" },
     { key: "later", label: "Later", sub: "В перспективе",   color: "#8e8e93" },
   ];
+
+  useEffect(() => {
+    latestValuesRef.current = { rm, onBarClick, onReorder };
+  }, [onBarClick, onReorder, rm]);
+
+  const isDragging = dragSession !== null;
+  useEffect(() => {
+    if (!isDragging) return undefined;
+
+    function updateSession(next) {
+      dragSessionRef.current = next;
+      setDragSession(next);
+    }
+
+    function clearSession() {
+      const current = dragSessionRef.current;
+      dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
+      setDragSession(null);
+    }
+
+    if (reorderPending) {
+      clearSession();
+      return undefined;
+    }
+
+    function updatePointer(clientX, clientY) {
+      const current = dragSessionRef.current;
+      if (!current) return;
+      const crossedThreshold = resolveRoadmapDragIntent({
+        deltaX: clientX - current.startClientX,
+        deltaY: clientY - current.startClientY,
+        lockedIntent: current.intent,
+      });
+      if (!crossedThreshold) return;
+      const bucketColumn = closestRoadmapColumn(boardRef.current, '[data-roadmap-planning-bucket]', clientX);
+      const targetBucket = bucketColumn?.dataset.roadmapPlanningBucket;
+      if (!targetBucket) return;
+      const barItems = Array.from(bucketColumn.querySelectorAll('[data-roadmap-planning-bar-id]')).map(element => {
+        const rect = element.getBoundingClientRect();
+        return { id: element.dataset.roadmapPlanningBarId, start: rect.top, end: rect.bottom };
+      });
+      const target = resolveRoadmapDropTarget({ coordinate: clientY, items: barItems, sourceId: current.sourceBarId });
+      const preview = current.previewRoadmap || latestValuesRef.current.rm;
+      const nextBars = moveRoadmapPlanningBar(preview.bars, {
+        barId: current.sourceBarId,
+        targetBucket,
+        targetBarId: target.targetId,
+        position: target.position,
+        today: planningToday,
+      });
+      updateSession({
+        ...current,
+        intent: "vertical",
+        previewRoadmap: nextBars === preview.bars ? preview : { ...preview, bars: nextBars },
+        dropTarget: { targetBucket, targetBarId: target.targetId, position: target.position },
+      });
+    }
+
+    function handlePointerMove(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      updatePointer(event.clientX, event.clientY);
+    }
+
+    function handlePointerUp(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      updatePointer(event.clientX, event.clientY);
+      const current = dragSessionRef.current;
+      const latest = latestValuesRef.current;
+      clearSession();
+      if (!current) return;
+      if (!current.intent) {
+        const index = latest.rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
+        if (index >= 0) latest.onBarClick?.(latest.rm.bars[index], index);
+        return;
+      }
+      if (roadmapPlanningChanged(latest.rm, current.previewRoadmap, planningToday)) latest.onReorder?.(current.previewRoadmap);
+    }
+
+    function handlePointerCancel(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      clearSession();
+    }
+
+    function handleLostPointerCapture(event) {
+      if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      clearSession();
+    }
+
+    function handleWindowBlur() {
+      clearSession();
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") clearSession();
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
+    const captureTarget = dragSessionRef.current?.captureTarget;
+    captureTarget?.addEventListener("lostpointercapture", handleLostPointerCapture);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
+      captureTarget?.removeEventListener("lostpointercapture", handleLostPointerCapture);
+      const current = dragSessionRef.current;
+      dragSessionRef.current = null;
+      releaseRoadmapPointerCapture(current);
+    };
+  }, [isDragging, planningToday, reorderPending]);
+
+  function startBarDrag(event, item) {
+    if (reorderPending) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextSession = {
+      kind: "bar",
+      sourceBarId: String(item.id),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      pointerId: event.pointerId,
+      captureTarget: captureRoadmapPointer(event),
+      intent: null,
+      previewRoadmap: null,
+      dropTarget: null,
+    };
+    dragSessionRef.current = nextSession;
+    setDragSession(nextSession);
+  }
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, padding: 20 }}>
+    <div ref={boardRef} style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, padding: 20, userSelect: dragSession ? "none" : undefined }}>
       {cols.map(col => (
-        <div key={col.key} style={{ background: "rgba(118,118,128,.04)", borderRadius: 12, padding: 14 }}>
+        <div key={col.key} data-roadmap-planning-bucket={col.key} style={{ background: dragSession?.dropTarget?.targetBucket === col.key ? "rgba(0,122,255,.08)" : "rgba(118,118,128,.04)", borderRadius: 12, padding: 14, minHeight: 120 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px 12px", color: col.color }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
             <span style={{ fontSize: 15, fontWeight: 700 }}>{col.label}</span>
@@ -2883,17 +3239,21 @@ function NNLView({ rm, members, onBarClick }) {
             {grouped[col.key].length === 0 && (
               <div style={{ textAlign: "center", color: "#a1a1a6", fontSize: 12, padding: 20, border: "1.5px dashed #d6deeb", borderRadius: 8 }}>Пусто</div>
             )}
-            {grouped[col.key].map((item, i) => {
+            {grouped[col.key].map(item => {
               const statusColor = (BAR_COL[item.status] || BAR_COL.planned).bar;
               const label = item.status === "progress" ? `${item.progress}%` : "Запланировано";
               const ownerMember = getMemberById(members, item.owner);
               const coExecutors = sanitizeMemberIds(item.memberIds, item.owner).map(id => getMemberById(members, id)).filter(Boolean);
+              const isSource = dragSession?.sourceBarId === String(item.id);
+              const showBefore = dragSession?.dropTarget?.targetBarId === String(item.id) && dragSession.dropTarget.position === "before";
+              const showAfter = dragSession?.dropTarget?.targetBarId === String(item.id) && dragSession.dropTarget.position === "after"
+                || !dragSession?.dropTarget?.targetBarId && dragSession?.dropTarget?.targetBucket === col.key && item === grouped[col.key].at(-1);
               return (
-              <div key={i} onClick={() => onBarClick && onBarClick(item, item.idx)} style={{
+              <div key={item.id} data-roadmap-planning-bar-id={String(item.id)} onPointerDown={event => startBarDrag(event, item)} aria-grabbed={isSource} aria-disabled={reorderPending} style={{
                 display: "flex", flexDirection: "column", gap: 9,
-                background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderTop: `3px solid ${col.color}`,
+                background: "#fff", border: "1px solid rgba(15,23,42,.08)", borderTop: showBefore ? "2px solid #007aff" : `3px solid ${col.color}`, borderBottom: showAfter ? "2px solid #007aff" : "1px solid rgba(15,23,42,.08)",
                 borderRadius: 8, padding: "12px 13px", fontSize: 13, fontWeight: 600, color: "#1d1d1f",
-                boxShadow: "0 1px 3px rgba(37,99,235,.04)", cursor: "pointer",
+                boxShadow: "0 1px 3px rgba(37,99,235,.04)", cursor: reorderPending ? "not-allowed" : isSource ? "grabbing" : "grab", touchAction: "none", opacity: isSource ? 0.45 : 1,
               }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <span>{item.title}</span>
@@ -3391,34 +3751,34 @@ function buildRoadmapCsv(roadmap, members) {
       "",
       "",
     ]);
-  });
-
-  (roadmap.bars || []).forEach(bar => {
-    rows.push([
-      "task",
-      roadmap.id,
-      roadmap.title,
-      STATUS_META[roadmap.status]?.label || roadmap.status || "",
-      roadmap.tag || "",
-      roadmap.period || "",
-      bar.lane || "",
-      laneNameById(roadmap, bar.lane),
-      "task",
-      bar.id || "",
-      bar.title || "",
-      STATUS_OPTIONS.find(option => option.value === bar.status)?.label || bar.status || "",
-      bar.progress ?? "",
-      bar.startDate || roadmap.timeline?.startDate || "",
-      bar.endDate || roadmap.timeline?.endDate || "",
-      "",
-      sanitizePredecessorIds(bar.predecessors, bar.id).map(id => {
-        const predecessor = roadmap.bars.find(item => item.id === id);
-        return predecessor?.title || id;
-      }).join(", "),
-      roadmapOwnerName(members, bar.owner),
-      roadmapCoExecutorNames(members, bar.memberIds, bar.owner),
-      "",
-    ]);
+    const laneBars = (roadmap.bars || []).filter(bar => bar.lane === lane.id);
+    laneBars.forEach(bar => {
+      rows.push([
+        "task",
+        roadmap.id,
+        roadmap.title,
+        STATUS_META[roadmap.status]?.label || roadmap.status || "",
+        roadmap.tag || "",
+        roadmap.period || "",
+        bar.lane || "",
+        laneNameById(roadmap, bar.lane),
+        "task",
+        bar.id || "",
+        bar.title || "",
+        STATUS_OPTIONS.find(option => option.value === bar.status)?.label || bar.status || "",
+        bar.progress ?? "",
+        bar.startDate || roadmap.timeline?.startDate || "",
+        bar.endDate || roadmap.timeline?.endDate || "",
+        "",
+        sanitizePredecessorIds(bar.predecessors, bar.id).map(id => {
+          const predecessor = roadmap.bars.find(item => item.id === id);
+          return predecessor?.title || id;
+        }).join(", "),
+        roadmapOwnerName(members, bar.owner),
+        roadmapCoExecutorNames(members, bar.memberIds, bar.owner),
+        "",
+      ]);
+    });
   });
 
   (roadmap.milestones || []).forEach(milestone => {

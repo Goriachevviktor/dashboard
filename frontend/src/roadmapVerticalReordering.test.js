@@ -5,6 +5,11 @@ import test from "node:test";
 const source = await readFile(new URL("./sections/RoadmapsSection.jsx", import.meta.url), "utf8");
 const reorderEffectStart = source.indexOf('const isRoadmapDragging');
 
+function componentSource(name, nextMarker) {
+  const start = source.indexOf(`function ${name}`);
+  return source.slice(start, source.indexOf(nextMarker, start));
+}
+
 function roadmapPointerUpSource() {
   const start = source.indexOf('function handlePointerUp', reorderEffectStart);
   return source.slice(start, source.indexOf('function handlePointerCancel', start));
@@ -82,4 +87,64 @@ test('listener cleanup invalidates the active session before releasing capture',
   const effectSource = roadmapListenerEffectSource();
   const cleanupSource = effectSource.slice(effectSource.lastIndexOf('return () => {'));
   assert.match(cleanupSource, /const current = dragSessionRef\.current;[\s\S]*dragSessionRef\.current = null;[\s\S]*releaseRoadmapPointerCapture\(current\)/);
+});
+
+test('swimlanes reorder lane columns and cards through the shared reorder contract', () => {
+  const swimSource = componentSource('SwimlanesView', '// ── Now / Next / Later');
+  assert.match(swimSource, /function SwimlanesView\(\{ rm, members, onBarClick, onReorder, reorderPending = false \}\)/);
+  assert.match(swimSource, /moveRoadmapLane/);
+  assert.match(swimSource, /moveRoadmapBar/);
+  assert.match(swimSource, /resolveRoadmapDropTarget/);
+  assert.match(swimSource, /onReorder\?\./);
+  assert.match(swimSource, /data-roadmap-lane-id=/);
+  assert.match(swimSource, /data-roadmap-lane-drop-zone=/);
+});
+
+test('swimlanes use stable IDs for lane and card keys', () => {
+  const swimSource = componentSource('SwimlanesView', '// ── Now / Next / Later');
+  assert.match(swimSource, /key=\{lane\.id\}/);
+  assert.match(swimSource, /key=\{b\.id\}/);
+  assert.doesNotMatch(swimSource, /key=\{i\}/);
+});
+
+test('NNL uses shared planning groups and supports every bucket including empty drop zones', () => {
+  const nnlSource = componentSource('NNLView', '// ── Детальный вид');
+  assert.match(source, /moveRoadmapPlanningBar/);
+  assert.match(source, /resolveRoadmapPlanningGroups/);
+  assert.match(nnlSource, /function NNLView\(\{ rm, members, onBarClick, onReorder, reorderPending = false \}\)/);
+  assert.match(nnlSource, /moveRoadmapPlanningBar/);
+  assert.match(nnlSource, /onReorder\?\./);
+  assert.match(nnlSource, /data-roadmap-planning-bucket=\{col\.key\}/);
+  assert.match(nnlSource, /key=\{item\.id\}/);
+  assert.doesNotMatch(nnlSource, /key=\{i\}/);
+});
+
+test('NNL commits only when the final visual bucket order changed', () => {
+  const changedSource = source.slice(source.indexOf('function roadmapPlanningChanged'), source.indexOf('function closestRoadmapColumn'));
+  const nnlSource = componentSource('NNLView', '// ── Детальный вид');
+  assert.match(changedSource, /resolveRoadmapPlanningGroups/);
+  assert.match(changedSource, /\["now", "next", "later"\]/);
+  assert.match(nnlSource, /roadmapPlanningChanged\(latest\.rm, current\.previewRoadmap, planningToday\)/);
+});
+
+test('board drags retain pointer ownership, release coordinates, cancellation, and pending guards', () => {
+  const swimSource = componentSource('SwimlanesView', '// ── Now / Next / Later');
+  const nnlSource = componentSource('NNLView', '// ── Детальный вид');
+  for (const boardSource of [swimSource, nnlSource]) {
+    assert.match(boardSource, /pointerId: event\.pointerId/);
+    assert.match(boardSource, /event\.pointerId !== dragSessionRef\.current\?\.pointerId/);
+    assert.match(boardSource, /updatePointer\(event\.clientX, event\.clientY\);[\s\S]*const current = dragSessionRef\.current/);
+    assert.match(boardSource, /lostpointercapture/);
+    assert.match(boardSource, /window\.addEventListener\("blur"/);
+    assert.match(boardSource, /if \(reorderPending\) return/);
+  }
+});
+
+test('timeline print and CSV follow lane and stored bar order without an independent sort', () => {
+  const printSource = source.slice(source.indexOf('function buildTimelinePrintHtml'), source.indexOf('function openRoadmapPrintView'));
+  const csvSource = source.slice(source.indexOf('function buildRoadmapCsv'), source.indexOf('async function downloadRoadmapXls'));
+  assert.match(printSource, /roadmap\.lanes\.forEach\([\s\S]*roadmap\.bars\.filter\(b => b\.lane === lane\.id\)/);
+  assert.doesNotMatch(printSource, /\.sort\(/);
+  assert.match(csvSource, /\(roadmap\.lanes \|\| \[\]\)\.forEach\([\s\S]*\(roadmap\.bars \|\| \[\]\)\.filter\(bar => bar\.lane === lane\.id\)[\s\S]*laneBars\.forEach/);
+  assert.doesNotMatch(csvSource, /\.sort\(/);
 });

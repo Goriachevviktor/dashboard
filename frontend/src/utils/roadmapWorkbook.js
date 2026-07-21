@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { resolveRoadmapPlanningGroups } from "./roadmapOrdering.js";
 
 const MONTHS = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
 
@@ -57,29 +58,6 @@ function monthIndexFromTimeline(dateValue, timeline) {
   const first = timeline.months[0];
   const offset = (date.getFullYear() - first.year) * 12 + (date.getMonth() - first.month);
   return Math.max(0, Math.min(timeline.months.length - 1, offset));
-}
-
-function buildNowNextLater(roadmap) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const active = [];
-  const upcoming = [];
-
-  (roadmap.bars || []).forEach((bar, idx) => {
-    if (bar.status === "done") return;
-    const startDate = parseIsoDate(bar.startDate);
-    const endDate = parseIsoDate(bar.endDate);
-    const startsNowOrPast = startDate && startDate <= today;
-    const endsFuture = endDate && endDate >= today;
-    const item = { ...bar, idx };
-    if (bar.status === "progress" || (startsNowOrPast && endsFuture)) active.push(item);
-    else upcoming.push(item);
-  });
-
-  active.sort((a, b) => String(a.endDate).localeCompare(String(b.endDate)) || String(a.startDate).localeCompare(String(b.startDate)));
-  upcoming.sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || String(a.endDate).localeCompare(String(b.endDate)));
-
-  return { now: active, next: upcoming.slice(0, 4), later: upcoming.slice(4) };
 }
 
 function toArgb(hex, fallback = "FFFFFFFF") {
@@ -351,7 +329,7 @@ function buildSwimlanesSheet(workbook, roadmap, members) {
   }
 }
 
-function buildNowNextLaterSheet(workbook, roadmap, members) {
+function buildNowNextLaterSheet(workbook, roadmap, members, today) {
   const styles = baseStyles();
   const ws = workbook.addWorksheet("Now-Next-Later");
   applyBaseSheetView(ws);
@@ -362,7 +340,7 @@ function buildNowNextLaterSheet(workbook, roadmap, members) {
   ws.mergeCells(2, 1, 2, ws.columns.length);
   setCell(ws.getCell(2, 1), roadmap.desc || "", styles.subtitle);
 
-  const grouped = buildNowNextLater(roadmap);
+  const grouped = resolveRoadmapPlanningGroups(roadmap.bars || [], { today });
   const groups = [
     { key: "now", label: "Now · Сейчас в работе" },
     { key: "next", label: "Next · Следующий шаг" },
@@ -399,7 +377,7 @@ function buildNowNextLaterSheet(workbook, roadmap, members) {
   }
 }
 
-export async function buildRoadmapWorkbookXlsxBuffer(roadmap, members = []) {
+export async function buildRoadmapWorkbookXlsxBuffer(roadmap, members = [], { today = new Date() } = {}) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Codex";
   workbook.created = new Date();
@@ -407,7 +385,7 @@ export async function buildRoadmapWorkbookXlsxBuffer(roadmap, members = []) {
 
   buildTimelineSheet(workbook, roadmap, members);
   buildSwimlanesSheet(workbook, roadmap, members);
-  buildNowNextLaterSheet(workbook, roadmap, members);
+  buildNowNextLaterSheet(workbook, roadmap, members, today);
 
   return workbook.xlsx.writeBuffer();
 }
