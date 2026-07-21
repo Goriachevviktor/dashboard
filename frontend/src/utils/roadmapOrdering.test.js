@@ -26,8 +26,10 @@ const today = new Date(2026, 6, 21);
 test('moves lanes forward and backward without changing lane objects', () => {
   const backward = moveRoadmapLane(lanes, { sourceLaneId: 'lane-c', targetLaneId: 'lane-a', position: 'before' });
   const forward = moveRoadmapLane(lanes, { sourceLaneId: 'lane-a', targetLaneId: 'lane-c', position: 'after' });
+  const downOne = moveRoadmapLane(lanes, { sourceLaneId: 'lane-a', targetLaneId: 'lane-b', position: 'after' });
   assert.deepEqual(backward.map(item => item.id), ['lane-c', 'lane-a', 'lane-b']);
   assert.deepEqual(forward.map(item => item.id), ['lane-b', 'lane-c', 'lane-a']);
+  assert.deepEqual(downOne.map(item => item.id), ['lane-b', 'lane-a', 'lane-c']);
   assert.equal(backward[0], lanes[2]);
 });
 
@@ -44,9 +46,11 @@ test('inserts a bar before, after, and at the end while preserving fields', () =
   const before = moveRoadmapBar(bars, { barId: 'a2', targetLaneId: 'lane-b', targetBarId: 'b2', position: 'before' });
   const after = moveRoadmapBar(bars, { barId: 'a1', targetLaneId: 'lane-b', targetBarId: 'b1', position: 'after' });
   const end = moveRoadmapBar(bars, { barId: 'a1', targetLaneId: 'lane-b', targetBarId: null, position: 'after' });
+  const downOne = moveRoadmapBar(bars, { barId: 'b1', targetLaneId: 'lane-b', targetBarId: 'b2', position: 'after' });
   assert.deepEqual(before.filter(item => item.lane === 'lane-b').map(item => item.id), ['b1', 'a2', 'b2', 'done']);
   assert.deepEqual(after.filter(item => item.lane === 'lane-b').map(item => item.id), ['b1', 'a1', 'b2', 'done']);
   assert.deepEqual(end.filter(item => item.lane === 'lane-b').map(item => item.id), ['b1', 'b2', 'done', 'a1']);
+  assert.deepEqual(downOne.filter(item => item.lane === 'lane-b').map(item => item.id), ['b2', 'b1', 'done']);
   const moved = before.find(item => item.id === 'a2');
   assert.equal(moved.lane, 'lane-b');
   assert.equal(moved.linkedTaskId, 17);

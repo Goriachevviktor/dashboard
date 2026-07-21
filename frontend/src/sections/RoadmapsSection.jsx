@@ -2375,11 +2375,17 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         top: Math.max(bodyRect.top, scrollRect.top),
         bottom: Math.min(bodyRect.bottom, scrollRect.bottom),
       } : null;
-      if (!isRoadmapPointerInsideRect({ clientX, clientY, rect: visibleBodyRect })
+      const isVerticalReorderHorizontallyInside = visibleBodyRect
+        && clientX >= visibleBodyRect.left
+        && clientX <= visibleBodyRect.right;
+      if (!isVerticalReorderHorizontallyInside
         || currentRows.length === 0 || currentLayout.length === 0) {
         return { ...current, intent: "vertical", previewRoadmap: null, dropTarget: null };
       }
-      const coordinate = clientY - bodyRect.top;
+      const clampedVerticalClientY = visibleBodyRect
+        ? Math.max(visibleBodyRect.top, Math.min(visibleBodyRect.bottom, clientY))
+        : clientY;
+      const coordinate = clampedVerticalClientY - bodyRect.top;
       const preview = current.previewRoadmap || latestRoadmapDragValuesRef.current.rm;
 
       if (current.kind === "lane") {

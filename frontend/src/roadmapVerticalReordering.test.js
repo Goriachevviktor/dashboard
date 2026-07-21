@@ -84,10 +84,12 @@ test('reorder views clear invalid targets and never commit without a valid drop 
   const nnlSource = componentSource('NNLView', '// ── Детальный вид');
   const closestSource = source.slice(source.indexOf('function closestRoadmapColumn'), source.indexOf('function TimelineView'));
   assert.doesNotMatch(closestSource, /\.reduce\(/);
-  for (const viewSource of [timelineSource, swimSource, nnlSource]) {
+  assert.match(timelineSource, /isVerticalReorderHorizontallyInside/);
+  for (const viewSource of [swimSource, nnlSource]) {
     assert.match(viewSource, /isRoadmapPointerInsideRect/);
     assert.match(viewSource, /if \(!current\.dropTarget\) return/);
   }
+  assert.match(timelineSource, /if \(!current\.dropTarget\) return/);
 });
 
 test('every roadmap drag source and drop zone exposes a descriptive accessible state', () => {
@@ -208,4 +210,13 @@ test('timeline can collapse lane tasks without persisting UI state', () => {
   assert.match(timelineSource, /title=\{isCollapsedLane \? "Показать задачи дорожки" : "Скрыть задачи дорожки"\}/);
   const reorderCommitSource = timelineSource.slice(timelineSource.indexOf('function handlePointerUp'), timelineSource.indexOf('function handlePointerCancel'));
   assert.doesNotMatch(reorderCommitSource, /collapsedLaneIds/);
+});
+
+test('timeline vertical reorder keeps a drop target when dragging past the scroll edge', () => {
+  const effectSource = roadmapListenerEffectSource();
+  assert.match(effectSource, /const isVerticalReorderHorizontallyInside = visibleBodyRect/);
+  assert.match(effectSource, /const clampedVerticalClientY = visibleBodyRect/);
+  assert.match(effectSource, /Math\.max\(visibleBodyRect\.top, Math\.min\(visibleBodyRect\.bottom, clientY\)\)/);
+  assert.match(effectSource, /const coordinate = clampedVerticalClientY - bodyRect\.top/);
+  assert.doesNotMatch(effectSource, /isRoadmapPointerInsideRect\(\{ clientX, clientY, rect: visibleBodyRect \}\)/);
 });
