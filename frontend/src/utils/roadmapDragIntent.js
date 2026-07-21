@@ -33,6 +33,19 @@ export function resolveRoadmapDropTarget({ coordinate, items, sourceId }) {
   return { targetId: targets.at(-1).id, position: 'after' };
 }
 
+export function withoutRoadmapSourceGap(items, sourceId) {
+  const source = items.find(item => item.id === sourceId);
+  if (!source) return items;
+  const sourceSize = Math.max(0, source.end - source.start);
+  return items.flatMap(item => {
+    if (item.id === sourceId) return [];
+    if (item.start >= source.end) {
+      return [{ ...item, start: item.start - sourceSize, end: item.end - sourceSize }];
+    }
+    return [item];
+  });
+}
+
 export function resolveRoadmapAutoScrollDelta({ pointer, start, end, edgeSize, maxStep }) {
   if (pointer < start + edgeSize) {
     const progress = (start + edgeSize - pointer) / edgeSize;

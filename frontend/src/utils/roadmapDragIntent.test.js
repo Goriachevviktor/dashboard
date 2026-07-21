@@ -7,6 +7,7 @@ import {
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
+  withoutRoadmapSourceGap,
 } from './roadmapDragIntent.js';
 
 test('accepts only pointer coordinates inside a valid drop rectangle', () => {
@@ -55,6 +56,20 @@ test('excludes the source and handles an empty drop container', () => {
   assert.deepEqual(resolveRoadmapDropTarget({ coordinate: 15, items, sourceId: 'a' }), { targetId: 'b', position: 'before' });
   assert.deepEqual(resolveRoadmapDropTarget({ coordinate: 10, items: [], sourceId: 'a' }), { targetId: null, position: 'before' });
   assert.deepEqual(resolveRoadmapDropTarget({ coordinate: 10, items: [{ id: 'a', start: 10, end: 30 }], sourceId: 'a' }), { targetId: null, position: 'before' });
+});
+
+test('removes the source gap before resolving downward timeline drops', () => {
+  const items = [
+    { id: 'a', start: 0, end: 80 },
+    { id: 'b', start: 80, end: 160 },
+    { id: 'c', start: 160, end: 240 },
+  ];
+  const compacted = withoutRoadmapSourceGap(items, 'a');
+  assert.deepEqual(compacted, [
+    { id: 'b', start: 0, end: 80 },
+    { id: 'c', start: 80, end: 160 },
+  ]);
+  assert.deepEqual(resolveRoadmapDropTarget({ coordinate: 60, items: compacted, sourceId: 'a' }), { targetId: 'c', position: 'before' });
 });
 
 test('scales and bounds auto-scroll at each edge', () => {

@@ -14,6 +14,7 @@ import {
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
   resolveRoadmapDropTarget,
+  withoutRoadmapSourceGap,
 } from '../utils/roadmapDragIntent.js';
 import {
   moveRoadmapBar,
@@ -2398,7 +2399,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
             : currentLayout.at(-1).top + currentLayout.at(-1).height;
           return [{ id: String(row.lane.id), start: rowLayout.top, end }];
         });
-        const target = resolveRoadmapDropTarget({ coordinate, items: laneItems, sourceId: current.sourceLaneId });
+        const target = resolveRoadmapDropTarget({
+          coordinate,
+          items: withoutRoadmapSourceGap(laneItems, current.sourceLaneId),
+          sourceId: current.sourceLaneId,
+        });
         const nextLanes = moveRoadmapLane(preview.lanes, {
           sourceLaneId: current.sourceLaneId,
           targetLaneId: target.targetId,
@@ -2422,7 +2427,11 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         const rowLayout = currentLayout[index];
         return [{ id: String(row.b.id), start: rowLayout.top, end: rowLayout.top + rowLayout.height }];
       });
-      const target = resolveRoadmapDropTarget({ coordinate, items: taskItems, sourceId: current.sourceBarId });
+      const target = resolveRoadmapDropTarget({
+        coordinate,
+        items: withoutRoadmapSourceGap(taskItems, current.sourceBarId),
+        sourceId: current.sourceBarId,
+      });
       const nextBars = moveRoadmapBar(preview.bars, {
         barId: current.sourceBarId,
         targetLaneId,

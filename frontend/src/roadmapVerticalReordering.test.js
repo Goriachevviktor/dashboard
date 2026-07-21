@@ -220,3 +220,10 @@ test('timeline vertical reorder keeps a drop target when dragging past the scrol
   assert.match(effectSource, /const coordinate = clampedVerticalClientY - bodyRect\.top/);
   assert.doesNotMatch(effectSource, /isRoadmapPointerInsideRect\(\{ clientX, clientY, rect: visibleBodyRect \}\)/);
 });
+
+test('timeline resolves vertical drops after removing the dragged source gap', () => {
+  const effectSource = roadmapListenerEffectSource();
+  assert.match(source, /withoutRoadmapSourceGap/);
+  assert.match(effectSource, /items: withoutRoadmapSourceGap\(laneItems, current\.sourceLaneId\)/);
+  assert.match(effectSource, /items: withoutRoadmapSourceGap\(taskItems, current\.sourceBarId\)/);
+});
