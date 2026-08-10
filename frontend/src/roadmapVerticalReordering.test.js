@@ -35,9 +35,25 @@ test('timeline preview drives rows and dependency geometry together', () => {
   assert.match(source, /buildDependencyState\(visibleBars\)/);
 });
 
+test('timeline percent to date conversion is symmetrical with date to percent near the right edge', () => {
+  const dateFromPercentSource = source.slice(
+    source.indexOf('function timelineDateFromPercent'),
+    source.indexOf('function formatRoadmapMonthRange'),
+  );
+  assert.match(dateFromPercentSource, /Math\.round\(\(clampedPct \/ 100\) \* totalDays\)/);
+  assert.match(dateFromPercentSource, /Math\.min\(totalDays, Math\.round/);
+  assert.match(dateFromPercentSource, /Math\.min\(totalDays - 1, rawOffset\)/);
+});
+
 test('resize and link mode remain isolated from reorder', () => {
-  assert.match(source, /forcedIntent: mode === "move" \? null : mode/);
+  assert.match(source, /forcedIntent: mode === "move" \? "horizontal" : mode === "reorder" \? "vertical" : mode/);
   assert.match(source, /if \(linkMode \|\| reorderPending\) return/);
+});
+
+test('timeline uses a dedicated task handle for vertical reorder', () => {
+  const ganttSource = componentSource('GanttBar', 'function roadmapOrderChanged');
+  assert.match(ganttSource, /onBarPointerStart\(event, b, idx, "reorder"\)/);
+  assert.match(ganttSource, /aria-label=\{`Переместить задачу .* вверх\/вниз/);
 });
 
 test('timeline reorder includes cancellation and bounded animation-frame auto-scroll', () => {
@@ -73,6 +89,28 @@ test('timeline keeps vertical reorder alive when preview remounts the captured e
   const effectSource = roadmapListenerEffectSource();
   const lostCaptureSource = effectSource.slice(effectSource.indexOf('function handleLostPointerCapture'), effectSource.indexOf('function handleWindowBlur'));
   assert.match(lostCaptureSource, /if \(dragSessionRef\.current\?\.intent === "vertical"\) return/);
+});
+
+test('timeline keeps horizontal commit preview alive after pointer capture is lost', () => {
+  const effectSource = roadmapListenerEffectSource();
+  const lostCaptureSource = effectSource.slice(effectSource.indexOf('function handleLostPointerCapture'), effectSource.indexOf('function handleWindowBlur'));
+  const pointerUpSource = roadmapPointerUpSource();
+  assert.match(lostCaptureSource, /if \(dragSessionRef\.current\?\.commitPending\) return/);
+  assert.match(pointerUpSource, /commitPending: true/);
+});
+
+test('timeline hides dependency routes during horizontal date drag', () => {
+  const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
+  assert.match(timelineSource, /const isHorizontalBarDrag = barDrag\?\.intent === "horizontal"/);
+  assert.match(timelineSource, /isHorizontalBarDrag \? \[\] : dependencyRouteEdges/);
+});
+
+test('timeline horizontal date drag previews respect predecessor schedule bounds', () => {
+  const effectSource = roadmapListenerEffectSource();
+  assert.match(effectSource, /resolveDependencyMinStartDate/);
+  assert.match(effectSource, /const minDependencyStartPct = minDependencyStartDate/);
+  assert.match(effectSource, /Math\.max\(minDependencyStartPct, Math\.min\(100 - current\.width, current\.left \+ deltaPct\)\)/);
+  assert.match(effectSource, /Math\.max\(minDependencyStartPct, Math\.min\(rightEdge - 0\.9, current\.left \+ deltaPct\)\)/);
 });
 
 test('timeline starts only one primary pointer through the shared pointer guard', () => {
@@ -116,6 +154,47 @@ test('below-threshold task release opens edit for move and resize starts', () =>
   const pointerUpSource = roadmapPointerUpSource();
   assert.match(pointerUpSource, /if \(!current\.intent\)[\s\S]*if \(current\.kind === "bar"\)[\s\S]*onBarClick\?\./);
   assert.doesNotMatch(pointerUpSource, /current\.mode === "move"/);
+  assert.match(pointerUpSource, /current\.mode === "reorder"/);
+});
+
+test('horizontal task release settles unchanged dates before clearing preview', () => {
+  const pointerUpSource = roadmapPointerUpSource();
+  assert.match(pointerUpSource, /const isUnchangedHorizontalDate = nextStartDate === latest\.rm\.bars\[persistedIndex\]\.startDate && nextEndDate === latest\.rm\.bars\[persistedIndex\]\.endDate/);
+  assert.match(pointerUpSource, /const finalPreviewLeft = isUnchangedHorizontalDate[\s\S]*\? current\.left[\s\S]*: percentFromTimelineDate\(nextStartDate, latest\.timeline\)/);
+  assert.match(pointerUpSource, /if \(!isUnchangedHorizontalDate\) return latest\.onBarDrag\?\./);
+});
+
+test('horizontal move preview follows pointer continuously while release handles date rounding', () => {
+  const effectSource = roadmapListenerEffectSource();
+  assert.match(effectSource, /const rawPreviewLeft = Math\.max\(minDependencyStartPct, Math\.min\(100 - current\.width, current\.left \+ deltaPct\)\)/);
+  assert.match(effectSource, /const nextLeft = rawPreviewLeft/);
+  assert.doesNotMatch(effectSource, /hasPreviewDateChange/);
+});
+
+test('horizontal task release commits dates before clearing drag preview', () => {
+  const pointerUpSource = roadmapPointerUpSource();
+  const horizontalCommitIndex = pointerUpSource.indexOf('latest.onBarDrag?.');
+  const clearAfterHorizontalCommitIndex = pointerUpSource.indexOf('clearSession();', horizontalCommitIndex);
+  assert.ok(horizontalCommitIndex >= 0, 'horizontal release should call onBarDrag');
+  assert.ok(clearAfterHorizontalCommitIndex > horizontalCommitIndex, 'horizontal release should clear preview after committing dates');
+  assert.match(pointerUpSource, /const finalPreviewLeft = isUnchangedHorizontalDate[\s\S]*\? current\.left[\s\S]*: percentFromTimelineDate\(nextStartDate, latest\.timeline\)/);
+  assert.match(pointerUpSource, /commitPending: true/);
+  assert.match(pointerUpSource, /previewLeft: current\.left/);
+  assert.match(pointerUpSource, /previewTranslatePx: finalPreviewTranslatePx/);
+  assert.match(pointerUpSource, /window\.setTimeout\(resolve, 140\)/);
+});
+
+test('timeline horizontal move previews use transform instead of relayouting left', () => {
+  const ganttSource = componentSource('GanttBar', 'function roadmapOrderChanged');
+  const timelineSource = componentSource('TimelineView', '// ── Swimlanes');
+  assert.match(ganttSource, /previewTranslatePx = null/);
+  assert.match(ganttSource, /isCommitPending = false/);
+  assert.match(ganttSource, /translate3d\(\$\{previewTranslatePx\}px, 0, 0\)/);
+  assert.match(ganttSource, /isCommitPending \? "transform \.12s ease-out, box-shadow \.15s" : "box-shadow \.15s"/);
+  assert.match(ganttSource, /willChange: isDragging \? "transform" : undefined/);
+  assert.match(timelineSource, /previewTranslatePx=\{barDrag\?\.sourceBarId === String\(r\.b\.id\) && barDrag\.intent === "horizontal" \? barDrag\.previewTranslatePx : null\}/);
+  assert.match(timelineSource, /isCommitPending=\{barDrag\?\.sourceBarId === String\(r\.b\.id\) && barDrag\.commitPending\}/);
+  assert.match(timelineSource, /previewLeft=\{barDrag\?\.sourceBarId === String\(r\.b\.id\) && \(barDrag\.mode !== "move" \|\| barDrag\.commitPending\) && barDrag\.intent !== "vertical" \? barDrag\.previewLeft : null\}/);
 });
 
 test('global roadmap pointer listeners stay stable across parent identity churn', () => {

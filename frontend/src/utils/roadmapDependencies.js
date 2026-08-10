@@ -112,6 +112,21 @@ export function wouldCreateDependencyCycle(bars = [], sourceId, targetId) {
   return topologicalOrder(nextBars).hasCycle;
 }
 
+export function resolveDependencyMinStartDate(bars = [], barId = "") {
+  const { taskById, predecessorsById } = buildDependencyState(bars);
+  const id = taskId(barId);
+  const predecessors = predecessorsById.get(id) || [];
+  const minStartDate = predecessors.reduce((latest, predecessorId) => {
+    const predecessor = taskById.get(predecessorId);
+    const predecessorEnd = parseIsoDate(predecessor?.endDate);
+    if (!predecessorEnd) return latest;
+    const candidate = addDays(predecessorEnd, 1);
+    if (!latest || candidate > latest) return candidate;
+    return latest;
+  }, null);
+  return minStartDate ? toIsoDate(minStartDate) : "";
+}
+
 export function applyDependencySchedule(bars = []) {
   const normalizedBars = (Array.isArray(bars) ? bars : []).map(bar => ({
     ...bar,

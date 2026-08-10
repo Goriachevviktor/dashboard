@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   canStartRoadmapPointerDrag,
   isRoadmapPointerInsideRect,
+  ROADMAP_DRAG_AXIS_DOMINANCE_RATIO,
+  ROADMAP_DRAG_INTENT_LOCK_THRESHOLD_PX,
   ROADMAP_DRAG_THRESHOLD_PX,
   resolveRoadmapAutoScrollDelta,
   resolveRoadmapDragIntent,
@@ -29,16 +31,22 @@ test('starts only one primary pointer and rejects non-left mouse buttons', () =>
   assert.equal(canStartRoadmapPointerDrag({ event: { isPrimary: true, pointerType: 'pen', button: 2 }, activeSession: null }), true);
 });
 
-test('waits for six pixels and locks the dominant axis', () => {
+test('waits through a dead zone before locking the dominant axis', () => {
   assert.equal(ROADMAP_DRAG_THRESHOLD_PX, 6);
+  assert.equal(ROADMAP_DRAG_INTENT_LOCK_THRESHOLD_PX, 8);
+  assert.equal(ROADMAP_DRAG_AXIS_DOMINANCE_RATIO, 1.15);
   assert.equal(resolveRoadmapDragIntent({ deltaX: 5, deltaY: 0 }), null);
-  assert.equal(resolveRoadmapDragIntent({ deltaX: 6, deltaY: 2 }), 'horizontal');
-  assert.equal(resolveRoadmapDragIntent({ deltaX: 2, deltaY: 7 }), 'vertical');
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 7, deltaY: 0 }), null);
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 8, deltaY: 4 }), 'horizontal');
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 4, deltaY: 8 }), 'vertical');
   assert.equal(resolveRoadmapDragIntent({ deltaX: 50, deltaY: 1, lockedIntent: 'vertical' }), 'vertical');
 });
 
-test('prefers horizontal intent for equal deltas', () => {
-  assert.equal(resolveRoadmapDragIntent({ deltaX: 6, deltaY: 6 }), 'horizontal');
+test('keeps diagonal task drag undecided until one axis clearly dominates', () => {
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 8, deltaY: 8 }), null);
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 9, deltaY: 8 }), null);
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 10, deltaY: 8 }), 'horizontal');
+  assert.equal(resolveRoadmapDragIntent({ deltaX: 8, deltaY: 10 }), 'vertical');
 });
 
 test('forced resize intent cannot become reorder', () => {

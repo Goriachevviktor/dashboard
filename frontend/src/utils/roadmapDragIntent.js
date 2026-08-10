@@ -1,4 +1,6 @@
 export const ROADMAP_DRAG_THRESHOLD_PX = 6;
+export const ROADMAP_DRAG_INTENT_LOCK_THRESHOLD_PX = 8;
+export const ROADMAP_DRAG_AXIS_DOMINANCE_RATIO = 1.15;
 
 export function canStartRoadmapPointerDrag({ event, activeSession }) {
   if (activeSession || event?.isPrimary === false) return false;
@@ -15,8 +17,12 @@ export function isRoadmapPointerInsideRect({ clientX, clientY, rect }) {
 export function resolveRoadmapDragIntent({ deltaX, deltaY, lockedIntent, forcedIntent }) {
   if (forcedIntent) return forcedIntent;
   if (lockedIntent) return lockedIntent;
-  if (Math.hypot(deltaX, deltaY) < ROADMAP_DRAG_THRESHOLD_PX) return null;
-  return Math.abs(deltaX) >= Math.abs(deltaY) ? 'horizontal' : 'vertical';
+  const absX = Math.abs(deltaX);
+  const absY = Math.abs(deltaY);
+  if (Math.hypot(deltaX, deltaY) < ROADMAP_DRAG_INTENT_LOCK_THRESHOLD_PX) return null;
+  if (absX >= absY * ROADMAP_DRAG_AXIS_DOMINANCE_RATIO) return 'horizontal';
+  if (absY >= absX * ROADMAP_DRAG_AXIS_DOMINANCE_RATIO) return 'vertical';
+  return null;
 }
 
 export function resolveRoadmapDropTarget({ coordinate, items, sourceId }) {

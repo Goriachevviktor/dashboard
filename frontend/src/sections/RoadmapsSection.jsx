@@ -27,6 +27,7 @@ import {
   applyDependencySchedule,
   buildDependencyState,
   ensureRoadmapTaskIds,
+  resolveDependencyMinStartDate,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from '../utils/roadmapDependencies.js';
@@ -407,8 +408,8 @@ function timelineDateFromPercent(percentValue, timeline, endExclusive = false) {
   if (!timelineStart || !timelineEnd) return "";
   const clampedPct = Math.max(0, Math.min(100, Number(percentValue) || 0));
   const totalDays = Math.max(1, Math.round((addDays(timelineEnd, 1).getTime() - timelineStart.getTime()) / (24 * 60 * 60 * 1000)));
-  const rawOffset = Math.max(0, Math.min(totalDays - 1, Math.round((clampedPct / 100) * (totalDays - 1))));
-  const dayOffset = endExclusive ? Math.max(0, rawOffset - 1) : rawOffset;
+  const rawOffset = Math.max(0, Math.min(totalDays, Math.round((clampedPct / 100) * totalDays)));
+  const dayOffset = endExclusive ? Math.max(0, rawOffset - 1) : Math.min(totalDays - 1, rawOffset);
   return toIsoDate(addDays(timelineStart, dayOffset));
 }
 
@@ -2024,6 +2025,8 @@ function GanttBar({
   members,
   previewLeft = null,
   previewWidth = null,
+  previewTranslatePx = null,
+  isCommitPending = false,
   isDragging = false,
   linkMode = false,
   dragDisabled = false,
@@ -2047,7 +2050,7 @@ function GanttBar({
       <div
         onClick={() => linkMode && onBarLinkClick && onBarLinkClick(b, idx)}
         onPointerDown={event => !linkMode && !dragDisabled && onBarPointerStart && onBarPointerStart(event, b, idx, "move")}
-        aria-label={`Переместить задачу «${b.title}»`}
+        aria-label={`Изменить сроки задачи «${b.title}»`}
         aria-grabbed={isDragging}
         aria-disabled={linkMode || dragDisabled}
         onMouseEnter={() => setHover(String(b.id))}
@@ -2055,11 +2058,14 @@ function GanttBar({
         style={{
           position: "absolute", height: 30, borderRadius: 9,
           left: left + "%", width: width + "%",
+          transform: previewTranslatePx == null ? undefined : `translate3d(${previewTranslatePx}px, 0, 0)`,
           background: c.bar, display: "flex", alignItems: "center",
-          padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : dragDisabled ? "not-allowed" : isDragging ? "grabbing" : "grab",
+          padding: "0 10px", gap: 8, overflow: "visible", cursor: linkMode ? "crosshair" : dragDisabled ? "not-allowed" : isDragging ? "grabbing" : "ew-resize",
           boxShadow: isHov ? "0 8px 20px rgba(31,45,77,.24)" : "0 2px 6px rgba(31,45,77,.14)",
-          transition: "box-shadow .15s", zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
+          transition: isCommitPending ? "transform .12s ease-out, box-shadow .15s" : "box-shadow .15s",
+          zIndex: isHov ? 3 : TIMELINE_BAR_LAYER,
           minWidth: 8,
+          willChange: isDragging ? "transform" : undefined,
           userSelect: "none",
           touchAction: "none",
           outline: linkMode && isLinked ? "2px solid rgba(255,255,255,.72)" : "none",
@@ -2088,6 +2094,32 @@ function GanttBar({
         )}
         <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1 }}>{b.title}</span>
         <span style={{ marginLeft: "auto", zIndex: 1, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
+          {!linkMode && !dragDisabled && (
+            <span
+              onPointerDown={event => onBarPointerStart && onBarPointerStart(event, b, idx, "reorder")}
+              aria-label={`Переместить задачу «${b.title}» вверх/вниз`}
+              aria-grabbed={isDragging}
+              title="Переместить задачу вверх/вниз"
+              style={{
+                width: 18,
+                height: 18,
+                marginRight: 6,
+                borderRadius: 6,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "rgba(255,255,255,.82)",
+                cursor: isDragging ? "grabbing" : "grab",
+                fontSize: 13,
+                lineHeight: 1,
+                userSelect: "none",
+                touchAction: "none",
+                background: "rgba(255,255,255,.16)",
+              }}
+            >
+              ⋮⋮
+            </span>
+          )}
           <Avatar member={ownerMember} size={20} />
           <AvatarStack members={coExecutors} size={18} max={2} />
         </span>
@@ -2156,6 +2188,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
   const displayedRoadmap = previewRoadmap || rm;
   const barDrag = dragSession?.kind === "bar" ? dragSession : null;
   const laneDrag = dragSession?.kind === "lane" ? dragSession : null;
+  const isHorizontalBarDrag = barDrag?.intent === "horizontal";
   const timeline = displayedRoadmap.timeline || rm.timeline;
   const today = new Date();
   const todayIso = toIsoDate(today);
@@ -2252,7 +2285,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
     });
     return edges;
   }, [renderedBarRectById, renderedWidth, visibleBars]);
-  const dependencyEdges = useMemo(() => dependencyRouteEdges
+  const dependencyEdges = useMemo(() => (isHorizontalBarDrag ? [] : dependencyRouteEdges)
     .filter(edge => isDependencyRouteRenderable(edge.route))
     .map(edge => ({
       ...edge,
@@ -2260,7 +2293,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         edgeId: edge.id,
         activeEdgeIds: dependencyVisualState.activeEdgeIds,
       }),
-    })), [dependencyRouteEdges, dependencyVisualState.activeEdgeIds]);
+    })), [dependencyRouteEdges, dependencyVisualState.activeEdgeIds, isHorizontalBarDrag]);
 
   const sideW = 340;
   const stickyTop = 0;
@@ -2478,14 +2511,21 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         ? Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100))
         : current.left;
       const deltaPct = currentPct - current.startPct;
+      const latest = latestRoadmapDragValuesRef.current;
+      const minDependencyStartDate = resolveDependencyMinStartDate(latest.rm.bars, current.sourceBarId);
+      const minDependencyStartPct = minDependencyStartDate
+        ? percentFromTimelineDate(minDependencyStartDate, latest.timeline)
+        : 0;
       if (current.mode === "move") {
-        const nextLeft = Math.max(0, Math.min(100 - current.width, current.left + deltaPct));
-        updateSession({ ...current, intent: "horizontal", previewLeft: nextLeft, previewWidth: current.width });
+        const rawPreviewLeft = Math.max(minDependencyStartPct, Math.min(100 - current.width, current.left + deltaPct));
+        const nextLeft = rawPreviewLeft;
+        const previewTranslatePx = rect && rect.width > 0 ? ((nextLeft - current.left) / 100) * rect.width : 0;
+        updateSession({ ...current, intent: "horizontal", previewLeft: nextLeft, previewWidth: current.width, previewTranslatePx });
         return;
       }
       if (current.mode === "resize-start") {
         const rightEdge = current.left + current.width;
-        const nextLeft = Math.max(0, Math.min(rightEdge - 0.9, current.left + deltaPct));
+        const nextLeft = Math.max(minDependencyStartPct, Math.min(rightEdge - 0.9, current.left + deltaPct));
         updateSession({ ...current, intent: resolvedIntent, previewLeft: nextLeft, previewWidth: Math.max(0.9, rightEdge - nextLeft) });
         return;
       }
@@ -2524,14 +2564,15 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       }
     }
 
-    function handlePointerUp(event) {
+    async function handlePointerUp(event) {
       if (event.pointerId !== dragSessionRef.current?.pointerId) return;
       updatePointer(event.clientX, event.clientY);
       const current = dragSessionRef.current;
       const latest = latestRoadmapDragValuesRef.current;
-      clearSession();
       if (!current) return;
       if (!current.intent) {
+        clearSession();
+        if (current.mode === "reorder") return;
         if (current.kind === "bar") {
           const persistedIndex = latest.rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
           if (persistedIndex >= 0) latest.onBarClick?.(latest.rm.bars[persistedIndex], persistedIndex);
@@ -2539,16 +2580,41 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
         return;
       }
       if (current.intent === "vertical") {
+        clearSession();
         if (!current.dropTarget) return;
         if (roadmapOrderChanged(latest.rm, current.previewRoadmap)) latest.onReorder?.(current.previewRoadmap);
         return;
       }
       const persistedIndex = latest.rm.bars.findIndex(bar => String(bar.id) === current.sourceBarId);
-      if (persistedIndex < 0) return;
+      if (persistedIndex < 0) {
+        clearSession();
+        return;
+      }
       const nextStartDate = timelineDateFromPercent(current.previewLeft, latest.timeline);
       const endPct = current.previewLeft + current.previewWidth;
       const nextEndDate = timelineDateFromPercent(endPct, latest.timeline, true);
-      latest.onBarDrag?.(persistedIndex, { ...latest.rm.bars[persistedIndex], startDate: nextStartDate, endDate: nextEndDate });
+      try {
+        const rect = timelineNodeRef.current?.getBoundingClientRect();
+        const isUnchangedHorizontalDate = nextStartDate === latest.rm.bars[persistedIndex].startDate && nextEndDate === latest.rm.bars[persistedIndex].endDate;
+        const finalPreviewLeft = isUnchangedHorizontalDate
+          ? current.left
+          : percentFromTimelineDate(nextStartDate, latest.timeline);
+        const finalPreviewTranslatePx = rect && rect.width > 0
+          ? ((finalPreviewLeft - current.left) / 100) * rect.width
+          : current.previewTranslatePx;
+        const commitSession = { ...current, commitPending: true, previewLeft: current.left, previewWidth: current.width, previewTranslatePx: finalPreviewTranslatePx };
+        dragSessionRef.current = commitSession;
+        setDragSession(commitSession);
+        await Promise.all([
+          (async () => {
+            if (!isUnchangedHorizontalDate) return latest.onBarDrag?.(persistedIndex, { ...latest.rm.bars[persistedIndex], startDate: nextStartDate, endDate: nextEndDate });
+            return undefined;
+          })(),
+          new Promise(resolve => window.setTimeout(resolve, 140)),
+        ]);
+      } finally {
+        clearSession();
+      }
     }
 
     function handlePointerCancel(event) {
@@ -2558,6 +2624,7 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
 
     function handleLostPointerCapture(event) {
       if (event.pointerId !== dragSessionRef.current?.pointerId) return;
+      if (dragSessionRef.current?.commitPending) return;
       if (dragSessionRef.current?.intent === "vertical") return;
       clearSession();
     }
@@ -2630,9 +2697,10 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
       pointerId: event.pointerId,
       captureTarget,
       intent: null,
-      forcedIntent: mode === "move" ? null : mode,
+      forcedIntent: mode === "move" ? "horizontal" : mode === "reorder" ? "vertical" : mode,
       previewRoadmap: null,
       dropTarget: null,
+      previewTranslatePx: null,
     };
     dragSessionRef.current = nextSession;
     setDragSession(nextSession);
@@ -2854,8 +2922,10 @@ function TimelineView({ rm, members, onBarClick, onBarDrag, onMilestoneClick, on
                   <GanttBar
                     b={r.b} idx={r.idx} hover={hover} setHover={setHover}
                     onBarPointerStart={startBarPointerAction} onBarLinkClick={onLinkTaskSelect} members={members}
-                    previewLeft={barDrag?.sourceBarId === String(r.b.id) && barDrag.intent !== "vertical" ? barDrag.previewLeft : null}
+                    previewLeft={barDrag?.sourceBarId === String(r.b.id) && (barDrag.mode !== "move" || barDrag.commitPending) && barDrag.intent !== "vertical" ? barDrag.previewLeft : null}
                     previewWidth={barDrag?.sourceBarId === String(r.b.id) && barDrag.intent !== "vertical" ? barDrag.previewWidth : null}
+                    previewTranslatePx={barDrag?.sourceBarId === String(r.b.id) && barDrag.intent === "horizontal" ? barDrag.previewTranslatePx : null}
+                    isCommitPending={barDrag?.sourceBarId === String(r.b.id) && barDrag.commitPending}
                     isDragging={barDrag?.sourceBarId === String(r.b.id)} linkMode={linkMode} dragDisabled={reorderPending}
                     isLinked={linkSourceId === r.b.id}
                     isHighlighted={linkSourceId === r.b.id}

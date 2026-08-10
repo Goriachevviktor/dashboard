@@ -9,7 +9,7 @@ export default function StatCard({ label, value, sub, color, compact = false, on
     : { background: active ? "#eff6ff" : "#fff", borderRadius: compact ? 10 : 14, padding: compact ? "9px 10px" : "20px 22px", flex: 1, minWidth: compact ? 0 : 180, border: active ? "1.5px solid #2563eb" : "1.5px solid transparent", boxShadow: compact ? "0 1px 3px rgba(37,99,235,.05)" : "0 1px 3px rgba(37,99,235,.06), 0 4px 16px rgba(37,99,235,.05)", cursor: interactive ? "pointer" : "default" };
 
   const labelColor = tone ? tone.label : (active ? "#2563eb" : "#94a3b8");
-  const valueColor = tone ? tone.value : (color || "#1e3a6e");
+  const valueColor = color || (tone ? tone.value : "#1e3a6e");
   const subColor = tone ? tone.label : (active ? "#2563eb" : "#64748b");
 
   return (

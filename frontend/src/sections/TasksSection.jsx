@@ -933,7 +933,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
         {scopeControls}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
           <button onClick={() => setMobileColumn("all")} style={mobileStatButton(mobileStatusFilter === "all")}>
-            <StatCard compact label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#1e3a6e"/>
+            <StatCard compact label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#111827"/>
           </button>
           <button onClick={() => setMobileColumn("Беклог")} style={mobileStatButton(mobileStatusFilter === "Беклог")}>
             <StatCard compact label="Беклог" value={scopeTasks.filter(t=>t.column==="Беклог").length} sub="ожидают" color="#64748b"/>
@@ -1025,7 +1025,7 @@ function TasksSection({ initialTasks = [], team = [], api, onError, currentUser 
       {/* Stats */}
       {scopeControls}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(5, minmax(0, 1fr))" : "repeat(5, minmax(140px, 1fr))", gap: isMobile ? 6 : 14, flexShrink: 0 }}>
-        <StatCard compact={isMobile} pastel="blue" label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#1e3a6e"/>
+        <StatCard compact={isMobile} pastel="blue" label="Всего задач" value={activeScopeTasks.length} sub="на доске" color="#111827"/>
         <StatCard compact={isMobile} pastel="gray" label="Беклог" value={scopeTasks.filter(t=>t.column==="Беклог").length} sub="ожидают" color="#64748b"/>
         <StatCard compact={isMobile} pastel="indigo" label="В работе" value={scopeTasks.filter(t=>t.column==="В работе").length} sub="активных" color="#2563eb"/>
         <StatCard compact={isMobile} pastel="green" label="Готово" value={scopeTasks.filter(t=>isDoneColumn(t.column)).length} sub="7 дней" color="#10b981"/>

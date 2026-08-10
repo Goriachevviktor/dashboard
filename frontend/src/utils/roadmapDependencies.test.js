@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applyDependencySchedule,
   ensureRoadmapTaskIds,
+  resolveDependencyMinStartDate,
   sanitizePredecessorIds,
   wouldCreateDependencyCycle,
 } from "./roadmapDependencies.js";
@@ -48,6 +49,23 @@ test("applyDependencySchedule respects the latest predecessor finish", () => {
   ]);
   assert.equal(bars[2].startDate, "2026-07-13");
   assert.equal(bars[2].endDate, "2026-07-15");
+});
+
+test("resolveDependencyMinStartDate returns the day after the latest predecessor finish", () => {
+  const bars = [
+    { id: "a", startDate: "2026-07-01", endDate: "2026-07-08", predecessors: [] },
+    { id: "b", startDate: "2026-07-02", endDate: "2026-07-12", predecessors: [] },
+    { id: "c", startDate: "2026-07-20", endDate: "2026-07-22", predecessors: ["a", "b"] },
+  ];
+  assert.equal(resolveDependencyMinStartDate(bars, "c"), "2026-07-13");
+});
+
+test("resolveDependencyMinStartDate ignores invalid and missing predecessors", () => {
+  const bars = [
+    { id: "a", startDate: "2026-07-01", endDate: "bad-date", predecessors: [] },
+    { id: "b", startDate: "2026-07-20", endDate: "2026-07-22", predecessors: ["a", "missing"] },
+  ];
+  assert.equal(resolveDependencyMinStartDate(bars, "b"), "");
 });
 
 test("applyDependencySchedule keeps bars unchanged when no predecessor pushes dates", () => {
