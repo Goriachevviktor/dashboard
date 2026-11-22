@@ -9,6 +9,7 @@ import TasksSection from './sections/TasksSection.jsx';
 import TaskArchiveSection from './sections/TaskArchiveSection.jsx';
 import EventsSection from './sections/EventsSection.jsx';
 import SyncsSection from './sections/SyncsSection.jsx';
+import BrspSection from './sections/BrspSection.jsx';
 import UcpSection from './sections/UcpSection.jsx';
 import AmbpSection from './sections/AmbpSection.jsx';
 import PlanSection from './sections/PlanSection.jsx';
@@ -31,6 +32,7 @@ const SECTION_COMPONENTS = {
   mindmap: ({ api, onError }) => <MindMapSection api={api} onError={onError} />,
   diagrams:() => <BlockDiagramSection />,
   syncs:   ({ data, api, onError }) => <SyncsSection initialStickers={data.syncStickers} api={api} onError={onError} />,
+  brsp:    ({ api, onError }) => <BrspSection api={api} onError={onError} />,
   ucp:     ({ data, api, onError, currentUser }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   ambp:    ({ data, api, onError }) => <AmbpSection initialTopics={data.ambpTopics} api={api} onError={onError} />,
   plan:    ({ data, api, onError, currentUser }) => <PlanSection initialTasks={data.developmentTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
