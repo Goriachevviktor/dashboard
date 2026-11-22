@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 
 from .rate_limiter import limiter
 from .ambp import ambp_topic_json, router as ambp_router
+from .brsp import router as brsp_router
 from .auth import require_auth, router as auth_router
 from .config import CORS_ORIGINS, ENVIRONMENT, VERSION
 from .db import db, migrate_auth_schema, init_pool, close_pool
@@ -49,6 +50,7 @@ app.include_router(ambp_router)
 app.include_router(stickers_router)
 app.include_router(mindmaps_router)
 app.include_router(roadmaps_router)
+app.include_router(brsp_router)
 
 
 @app.on_event("startup")

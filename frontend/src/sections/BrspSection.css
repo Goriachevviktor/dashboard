@@ -1,0 +1,57 @@
+.brsp-section { color: #1e3a6e; font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+.brsp-section * { box-sizing: border-box; }
+.brsp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.brsp-toolbar-title { font-size: 14px; font-weight: 750; }
+.brsp-toolbar-title span { margin-left: 7px; color: #8a9aaf; }
+.brsp-button { min-height: 36px; padding: 7px 13px; border: 1px solid #d8e5f4; border-radius: 6px; background: #fff; color: #2563eb; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.brsp-button.brsp-primary { border-color: #2563eb; background: #2563eb; color: #fff; box-shadow: 0 3px 9px #2563eb2b; }
+.brsp-button:disabled, .brsp-link:disabled, .brsp-icon-button:disabled { opacity: .45; cursor: not-allowed; }
+.brsp-board { display: grid; grid-template-columns: 215px 290px minmax(310px,1fr); min-height: 660px; border: 1px solid #dce6f2; border-radius: 7px; background: #fff; overflow: hidden; }
+.brsp-column, .brsp-editor { min-width: 0; }
+.brsp-column + .brsp-column, .brsp-editor { border-left: 1px solid #e3ebf5; }
+.brsp-column-header { min-height: 68px; padding: 18px 17px; border-bottom: 1px solid #e3ebf5; }
+.brsp-column-header strong { display: block; color: #8193ad; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.brsp-column-header small { display: block; margin-top: 4px; color: #a1afc2; font-size: 12px; }
+.brsp-header-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.brsp-icon-button { width: 29px; height: 29px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid #d7e4f4; border-radius: 5px; background: #fff; color: #2563eb; font-size: 20px; line-height: 1; cursor: pointer; }
+.brsp-list-item { width: 100%; min-height: 74px; display: block; padding: 15px 17px; border: 0; border-bottom: 1px solid #eef2f7; background: #fff; color: #1e3a6e; text-align: left; cursor: pointer; }
+.brsp-list-item:hover { background: #f7faff; }
+.brsp-list-item.selected { background: #eff6ff; box-shadow: inset 3px 0 #2563eb; }
+.brsp-list-item strong { display: block; font-size: 13px; font-weight: 750; line-height: 1.35; overflow-wrap: anywhere; }
+.brsp-list-item small { display: block; margin-top: 6px; font-size: 11px; color: #8899af; line-height: 1.3; }
+.brsp-preview { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.brsp-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; }
+.brsp-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.brsp-status.draft { color: #af7417; }
+.brsp-status.done { color: #268a7b; }
+.brsp-editor { display: flex; flex-direction: column; }
+.brsp-editor-header { min-height: 68px; padding: 13px 20px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid #e3ebf5; }
+.brsp-editor-header small { display: block; color: #8a9bb2; font-size: 11px; font-weight: 750; text-transform: uppercase; }
+.brsp-editor-header h2 { margin: 3px 0 0; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+.brsp-link { padding: 5px 0; border: 0; background: none; color: #2563eb; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.brsp-link.danger { color: #b74949; }
+.brsp-editor-body { flex: 1; padding: 18px 20px; }
+.brsp-meta-fields { display: flex; align-items: end; gap: 18px; margin-bottom: 18px; }
+.brsp-meta-fields label { display: grid; gap: 6px; color: #8193ad; font-size: 11px; font-weight: 750; }
+.brsp-meta-fields input, .brsp-text-input, .brsp-modal input { height: 38px; padding: 7px 10px; border: 1px solid #d7e2f0; border-radius: 5px; background: #fcfdff; color: #1e3a6e; font: inherit; font-size: 13px; }
+.brsp-meta-fields .brsp-status { min-height: 38px; font-size: 12px; }
+.brsp-field-label { display: block; margin: 15px 0 8px; color: #8193ad; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.brsp-text-input { width: 100%; }
+.brsp-report-text, .brsp-note-text { width: 100%; display: block; padding: 13px; border: 1px solid #d7e2f0; border-radius: 6px; background: #fcfdff; color: #1e3a6e; font: inherit; font-size: 14px; line-height: 1.55; resize: vertical; }
+.brsp-report-text { min-height: 255px; }
+.brsp-note-text { min-height: 84px; }
+.brsp-report-text:focus, .brsp-note-text:focus, .brsp-text-input:focus, .brsp-meta-fields input:focus, .brsp-modal input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px #2563eb1f; }
+.brsp-editor-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid #e3ebf5; }
+.brsp-save-state { color: #8495aa; font-size: 12px; }
+.brsp-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.brsp-placeholder { margin: 0; padding: 17px; color: #8a9bb2; font-size: 13px; line-height: 1.5; }
+.brsp-modal-backdrop { position: fixed; inset: 0; z-index: 600; display: grid; place-items: center; padding: 14px; background: #142b4e80; }
+.brsp-modal { width: min(430px,100%); padding: 24px; border: 1px solid #dae4f1; border-radius: 8px; background: #fff; box-shadow: 0 22px 80px #172e5260; }
+.brsp-modal h2 { margin: 0 0 7px; font-size: 18px; }
+.brsp-modal p { margin: 0 0 20px; color: #8192a8; font-size: 13px; line-height: 1.45; }
+.brsp-modal label { display: block; margin-bottom: 7px; color: #8192a8; font-size: 12px; font-weight: 750; }
+.brsp-modal input { width: 100%; height: 40px; }
+.brsp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+@media (max-width: 1120px) { .brsp-board { grid-template-columns: 165px 220px minmax(260px,1fr); } .brsp-list-item { padding: 13px; } }
+@media (max-width: 800px) { .brsp-board { display: block; min-height: 0; } .brsp-column + .brsp-column, .brsp-editor { border-left: 0; border-top: 1px solid #e3ebf5; } .brsp-column-header { min-height: 52px; padding: 11px 14px; } .brsp-meeting-list, .brsp-topic-list { display: flex; overflow-x: auto; } .brsp-list-item { min-width: 168px; max-width: 205px; min-height: 68px; border-right: 1px solid #eef2f7; border-bottom: 0; } .brsp-editor-body { padding: 15px; } .brsp-editor-header, .brsp-editor-footer { padding: 13px 15px; } .brsp-editor-header { align-items: start; } .brsp-link { white-space: normal; } .brsp-report-text { min-height: 230px; } .brsp-toolbar-title { display: none; } .brsp-toolbar { justify-content: flex-end; } }
+@media (max-width: 460px) { .brsp-editor-footer { align-items: stretch; } .brsp-footer-actions { width: 100%; } .brsp-footer-actions .brsp-button { flex: 1; } .brsp-footer-actions .brsp-link { width: 100%; text-align: left; } }
