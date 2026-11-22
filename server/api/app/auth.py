@@ -50,6 +50,7 @@ def user_json(row: dict[str, Any]) -> dict[str, Any]:
         "displayName": row["display_name"],
         "role": row["role"],
         "isActive": row["is_active"],
+        "pendingRegistration": row.get("pending_registration", False),
     }
 
 
@@ -164,7 +165,7 @@ def require_auth(
 
     with db() as conn:
         user = conn.execute(
-            "SELECT * FROM users WHERE id = %s AND is_active = true",
+            "SELECT * FROM users WHERE id = %s AND is_active = true AND pending_registration = false",
             (int(payload["sub"]),),
         ).fetchone()
         if not user:
@@ -190,7 +191,7 @@ def refresh_user_from_cookie(conn, refresh_token: str | None) -> dict[str, Any]:
         WHERE refresh_token_hash = %s
           AND revoked_at IS NULL
           AND expires_at > now()
-          AND users.is_active = true
+          AND users.is_active = true AND users.pending_registration = false
         """,
         (hash_token(refresh_token),),
     ).fetchone()
@@ -226,7 +227,7 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Email and password are required")
     with db() as conn:
         user = conn.execute(
-            "SELECT * FROM users WHERE lower(email) = lower(%s) AND is_active = true",
+            "SELECT * FROM users WHERE lower(email) = lower(%s) AND is_active = true AND pending_registration = false",
             (email,),
         ).fetchone()
         if not user or not verify_password(password, user["password_hash"]):
@@ -277,7 +278,7 @@ async def mobile_login(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Email and password are required")
     with db() as conn:
         user = conn.execute(
-            "SELECT * FROM users WHERE lower(email) = lower(%s) AND is_active = true",
+            "SELECT * FROM users WHERE lower(email) = lower(%s) AND is_active = true AND pending_registration = false",
             (email,),
         ).fetchone()
         if not user or not verify_password(password, user["password_hash"]):
@@ -320,7 +321,7 @@ def list_users() -> list[dict[str, Any]]:
         rows = conn.execute(
             """
             SELECT
-              users.id, users.email, users.display_name, users.role, users.is_active,
+              users.id, users.email, users.display_name, users.role, users.is_active, users.pending_registration,
               users.created_at, users.last_login_at, users.login_count,
               users.last_seen_at, users.activity_count,
               COALESCE(activity_7d.activity_count, 0) AS activity_7d_count
@@ -379,8 +380,12 @@ async def update_user(
         raise HTTPException(status_code=400, detail="No fields to update")
     values.append(user_id)
     with db() as conn:
+        if payload.get("isActive") is True:
+            pending = conn.execute("SELECT pending_registration FROM users WHERE id = %s", (user_id,)).fetchone()
+            if pending and pending["pending_registration"]:
+                raise HTTPException(status_code=400, detail="Invitation must be accepted before activation")
         row = conn.execute(
-            f"UPDATE users SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING id, email, display_name, role, is_active, created_at, last_login_at, login_count, last_seen_at, activity_count",
+            f"UPDATE users SET {', '.join(fields)}, updated_at = now() WHERE id = %s RETURNING id, email, display_name, role, is_active, pending_registration, created_at, last_login_at, login_count, last_seen_at, activity_count",
             values,
         ).fetchone()
         if not row:
@@ -445,9 +450,14 @@ async def create_invite(
     token = secrets.token_urlsafe(32)
     expires_at = utcnow() + timedelta(days=7)
     with db() as conn:
-        existing = conn.execute("SELECT id FROM users WHERE lower(email) = lower(%s)", (email,)).fetchone()
-        if existing:
+        existing = conn.execute("SELECT id, pending_registration FROM users WHERE lower(email) = lower(%s)", (email,)).fetchone()
+        if existing and not existing["pending_registration"]:
             raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует")
+        if not existing:
+            conn.execute(
+                "INSERT INTO users (email, password_hash, display_name, role, is_active, pending_registration) VALUES (%s, %s, %s, %s, false, true)",
+                (email, hash_password(secrets.token_urlsafe(32)), email, role),
+            )
         row = conn.execute(
             "INSERT INTO invites (email, token_hash, role, created_by, expires_at) VALUES (%s, %s, %s, %s, %s) RETURNING *",
             (email, hash_token(token), role, user["id"], expires_at),
@@ -487,12 +497,18 @@ async def register(request: Request, response: Response) -> dict[str, Any]:
         ).fetchone()
         if not invite:
             raise HTTPException(status_code=404, detail="Приглашение не найдено или истекло")
-        existing = conn.execute("SELECT id FROM users WHERE lower(email) = lower(%s)", (invite["email"],)).fetchone()
-        if existing:
+        existing = conn.execute("SELECT id, pending_registration FROM users WHERE lower(email) = lower(%s) FOR UPDATE", (invite["email"],)).fetchone()
+        if existing and not existing["pending_registration"]:
             raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует")
-        user = conn.execute(
-            "INSERT INTO users (email, password_hash, display_name, role) VALUES (%s, %s, %s, %s) RETURNING *",
-            (invite["email"].lower(), hash_password(password), display_name, invite["role"]),
-        ).fetchone()
-        conn.execute("UPDATE invites SET used_at = now() WHERE id = %s", (invite["id"],))
+        if existing:
+            user = conn.execute(
+                "UPDATE users SET password_hash = %s, display_name = %s, role = %s, is_active = true, pending_registration = false, updated_at = now() WHERE id = %s RETURNING *",
+                (hash_password(password), display_name, invite["role"], existing["id"]),
+            ).fetchone()
+        else:
+            user = conn.execute(
+                "INSERT INTO users (email, password_hash, display_name, role) VALUES (%s, %s, %s, %s) RETURNING *",
+                (invite["email"].lower(), hash_password(password), display_name, invite["role"]),
+            ).fetchone()
+        conn.execute("UPDATE invites SET used_at = now() WHERE lower(email) = lower(%s) AND used_at IS NULL", (invite["email"],))
         return issue_auth_response(conn, response, user)

@@ -1,4 +1,5 @@
 import logging
+import secrets
 from contextlib import contextmanager
 from typing import Any
 
@@ -111,6 +112,21 @@ def migrate_auth_schema() -> None:
         conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS login_count integer NOT NULL DEFAULT 0")
         conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS last_seen_at timestamptz")
         conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS activity_count integer NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS pending_registration boolean NOT NULL DEFAULT false")
+        # Give existing unused invitations a stable assignee ID before registration.
+        pending_invites = conn.execute("""
+            SELECT DISTINCT ON (lower(email)) email, role
+            FROM invites
+            WHERE used_at IS NULL AND expires_at > now()
+              AND NOT EXISTS (SELECT 1 FROM users WHERE lower(users.email) = lower(invites.email))
+            ORDER BY lower(email), created_at DESC
+        """).fetchall()
+        for invite in pending_invites:
+            conn.execute("""
+                INSERT INTO users (email, password_hash, display_name, role, is_active, pending_registration)
+                VALUES (%s, %s, %s, %s, false, true)
+                ON CONFLICT (email) DO NOTHING
+            """, (invite["email"].lower(), hash_password(secrets.token_urlsafe(32)), invite["email"], invite["role"]))
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS user_activity_daily (

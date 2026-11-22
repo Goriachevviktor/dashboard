@@ -3,7 +3,6 @@
 
   @app_shell path / /index.html /dashboard.html
   header @app_shell Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
-  header @app_shell Clear-Site-Data "\"cache\""
 
   @pwa_assets path /service-worker.js /manifest.webmanifest
   handle @pwa_assets {

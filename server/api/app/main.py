@@ -74,7 +74,7 @@ def healthcheck() -> dict[str, str]:
 def bootstrap(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     with db() as conn:
         team = conn.execute(
-            "SELECT id, email, display_name as name FROM users WHERE is_active = true ORDER BY display_name, id"
+            "SELECT id, email, display_name as name, pending_registration AS pending FROM users WHERE is_active = true OR pending_registration = true ORDER BY display_name, id"
         ).fetchall()
         tasks = visible_tasks(conn, user)
         task_members = task_member_map(conn, [item["id"] for item in tasks])

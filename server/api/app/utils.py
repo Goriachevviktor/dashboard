@@ -47,7 +47,7 @@ def normalize_member_ids(conn, value: Any) -> list[int]:
     if not ids:
         return []
     rows = conn.execute(
-        "SELECT id FROM users WHERE is_active = true AND id = ANY(%s) ORDER BY id",
+        "SELECT id FROM users WHERE (is_active = true OR pending_registration = true) AND id = ANY(%s) ORDER BY id",
         (ids,),
     ).fetchall()
     valid = {row["id"] for row in rows}

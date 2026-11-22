@@ -101,7 +101,7 @@ function UserEditModal({ user, api, onError, onUserReset, onClose, onSave }) {
 }
 
 
-function UsersSection({ api, onError }) {
+function UsersSection({ api, onError, onInviteCreated }) {
   const { isMobile } = useViewportFlags();
   const [users, setUsers] = useState([]);
   const [invites, setInvites] = useState([]);
@@ -157,6 +157,7 @@ function UsersSection({ api, onError }) {
       setEmail("");
       setRole("member");
       await load();
+      await onInviteCreated?.();
     } catch (err) {
       onError(err);
     }
@@ -177,6 +178,7 @@ function UsersSection({ api, onError }) {
       {editUser && <UserEditModal key={editUser.id} user={editUser} api={api} onError={onError} onUserReset={resetUser => setUsers(rows => rows.map(row => row.id === resetUser.id ? { ...row, ...resetUser } : row))} onClose={() => setEditUser(null)} onSave={saveUser} />}
       <form onSubmit={createInvite} style={{ background: "#fff", border: "1px solid #e2edf8", borderRadius: 8, padding: 18, boxShadow: "0 2px 12px rgba(37,99,235,.06)" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#1e3a6e", marginBottom: 14 }}>Новое приглашение</div>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>Коллегу можно назначать на задачи сразу. Войти он сможет после принятия приглашения.</div>
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 7 }}>Email коллеги</label>
         <input value={email} onChange={e => setEmail(e.target.value)} type="email" required style={{ width: "100%", height: 40, border: "1.5px solid #dbeafe", borderRadius: 8, padding: "0 12px", fontFamily: "Inter", fontSize: 14, outline: "none", marginBottom: 12 }} />
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 7 }}>Роль</label>
@@ -204,7 +206,8 @@ function UsersSection({ api, onError }) {
             <div key={user.id} onClick={() => setEditUser(user)} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, padding: "10px 0", borderTop: "1px solid #eef5ff", alignItems: "center", cursor: "pointer" }}>
               <div style={{ width: 34, height: 34, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 800 }}>{initialsFromName(user.displayName, user.email)}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: user.isActive === false ? "#94a3b8" : "#1e3a6e", textDecoration: user.isActive === false ? "line-through" : "none" }}>{user.displayName}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: user.isActive === false && !user.pendingRegistration ? "#94a3b8" : "#1e3a6e", textDecoration: user.isActive === false && !user.pendingRegistration ? "line-through" : "none" }}>{user.displayName}</div>
+                {user.pendingRegistration && <div style={{ fontSize: 11, color: "#d97706" }}>Ожидает приглашения</div>}
                 <div style={{ fontSize: 12, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
                 <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>Входов: {user.loginCount || 0}</div>
                 <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Активность: {user.activityCount || 0} · 7 дней: {user.activity7dCount || 0}</div>

@@ -34,7 +34,7 @@ const SECTION_COMPONENTS = {
   ucp:     ({ data, api, onError, currentUser }) => <UcpSection initialTasks={data.ucpTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
   ambp:    ({ data, api, onError }) => <AmbpSection initialTopics={data.ambpTopics} api={api} onError={onError} />,
   plan:    ({ data, api, onError, currentUser }) => <PlanSection initialTasks={data.developmentTasks} team={data.team} api={api} onError={onError} currentUser={currentUser} />,
-  users:   ({ api, onError }) => <UsersSection api={api} onError={onError} />,
+  users:   ({ api, onError, onInviteCreated }) => <UsersSection api={api} onError={onError} onInviteCreated={onInviteCreated} />,
 };
 
 export default function App() {
@@ -154,6 +154,10 @@ export default function App() {
   }, [accessToken]);
 
   const api = useMemo(() => buildApi(authRequest), [authRequest]);
+  const onInviteCreated = useCallback(async () => {
+    const data = await api.bootstrap();
+    setDashboardData(current => current ? { ...current, team: data.team } : current);
+  }, [api]);
 
   useEffect(() => {
     let cancelled = false;
@@ -373,7 +377,7 @@ export default function App() {
             <DashboardSkeleton />
           ) : (
             <ErrorBoundary key={`${section.id}:${dashboardDataRevision}`}>
-              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId, onTaskUpdated, onTaskMutation })}
+              {SECTION_COMPONENTS[section.id]?.({ data: dashboardData, api, onError, currentUser, onInviteCreated, roadmapLinks: roadmapLinksByTaskId, onRoadmapLinksChange: setRoadmapLinksByTaskId, onTaskUpdated, onTaskMutation })}
             </ErrorBoundary>
           )}
         </div>
