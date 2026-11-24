@@ -47,6 +47,8 @@ export function buildApi(authRequest) {
     patchSticker: (id, payload) => authRequest(`/sync-stickers/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     deleteSticker: (id) => authRequest(`/sync-stickers/${id}`, { method: "DELETE" }),
     listBrspMeetings: () => authRequest("/brsp-meetings"),
+    listBrspTopics: () => authRequest("/brsp-topics"),
+    patchBrspTopic: (id, payload) => authRequest(`/brsp-topics/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     createBrspMeeting: (payload) => authRequest("/brsp-meetings", { method: "POST", body: JSON.stringify(payload) }),
     patchBrspMeeting: (id, payload) => authRequest(`/brsp-meetings/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     deleteBrspMeeting: (id) => authRequest(`/brsp-meetings/${id}`, { method: "DELETE" }),

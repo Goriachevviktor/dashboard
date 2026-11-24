@@ -57,6 +57,26 @@ def clone_topics(topics: list[dict[str, Any]]) -> list[dict[str, str]]:
     return [{"id": topic["id"], "name": topic["name"], "text": ""} for topic in topics]
 
 
+def clean_topic_ids(value: Any) -> list[str]:
+    if not isinstance(value, list) or len(value) > 100:
+        raise HTTPException(400, "Invalid topic selection")
+    try:
+        topic_ids = [str(UUID(topic_id)) for topic_id in value]
+    except (TypeError, ValueError, AttributeError):
+        raise HTTPException(400, "Invalid topic selection") from None
+    if len(set(topic_ids)) != len(topic_ids):
+        raise HTTPException(400, "Duplicate selected topic")
+    return topic_ids
+
+
+def topic_json(row: dict[str, Any]) -> dict[str, str]:
+    return {
+        "id": str(row["topic_id"]),
+        "name": row["name"],
+        "status": row["status"],
+    }
+
+
 def meeting_json(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -87,20 +107,54 @@ def list_brsp_meetings(user: dict[str, Any] = Depends(require_auth)) -> list[dic
         return [meeting_json(row) for row in rows]
 
 
+@router.get("/brsp-topics")
+def list_brsp_topics(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, str]]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM brsp_topics WHERE owner_id = %s ORDER BY sort_order, name, topic_id",
+            (user["id"],),
+        ).fetchall()
+        return [topic_json(row) for row in rows]
+
+
+@router.patch("/brsp-topics/{topic_id}")
+async def update_brsp_topic(topic_id: UUID, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, str]:
+    payload = await request.json()
+    if not isinstance(payload, dict) or set(payload) != {"status"} or payload["status"] not in ("active", "completed"):
+        raise HTTPException(400, "Invalid topic update")
+    with db() as conn:
+        row = conn.execute(
+            "UPDATE brsp_topics SET status = %s WHERE owner_id = %s AND topic_id = %s RETURNING *",
+            (payload["status"], user["id"], topic_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Topic not found")
+        return topic_json(row)
+
+
 @router.post("/brsp-meetings")
 async def create_brsp_meeting(request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or set(payload) - {"date", "topic_ids"}:
         raise HTTPException(400, "Invalid meeting")
     meeting_date = clean_meeting_payload({"date": payload.get("date")})["date"]
+    selected_ids = clean_topic_ids(payload["topic_ids"]) if "topic_ids" in payload else None
     with db() as conn:
-        latest = conn.execute(
-            "SELECT topics FROM brsp_meetings WHERE owner_id = %s AND meeting_date < %s ORDER BY meeting_date DESC, id DESC LIMIT 1",
-            (user["id"], meeting_date),
-        ).fetchone()
+        available = conn.execute(
+            "SELECT * FROM brsp_topics WHERE owner_id = %s AND status = 'active' ORDER BY sort_order, name, topic_id",
+            (user["id"],),
+        ).fetchall()
+        by_id = {str(row["topic_id"]): row for row in available}
+        if selected_ids is None:
+            selected_ids = list(by_id)
+        if any(topic_id not in by_id for topic_id in selected_ids):
+            raise HTTPException(400, "Selected topic is unavailable")
         values = clean_meeting_payload({
             "date": meeting_date,
-            "topics": clone_topics(latest["topics"]) if latest else [],
+            "topics": clone_topics([
+                {"id": topic_id, "name": by_id[topic_id]["name"]}
+                for topic_id in selected_ids
+            ]),
         })
         row = conn.execute(
             """
@@ -113,6 +167,14 @@ async def create_brsp_meeting(request: Request, user: dict[str, Any] = Depends(r
         ).fetchone()
         if not row:
             raise HTTPException(409, "Meeting already exists on this date")
+        for index, topic in enumerate(values["topics"]):
+            conn.execute(
+                """
+                UPDATE brsp_topics SET sort_order = %s, last_seen_date = %s
+                WHERE owner_id = %s AND topic_id = %s AND last_seen_date <= %s
+                """,
+                (index, meeting_date, user["id"], topic["id"], meeting_date),
+            )
         return meeting_json(row)
 
 
@@ -146,6 +208,19 @@ async def update_brsp_meeting(meeting_id: int, request: Request, user: dict[str,
         ).fetchone()
         if not row:
             raise HTTPException(409, "Meeting already exists on this date")
+        if "topics" in patch:
+            for index, topic in enumerate(values["topics"]):
+                conn.execute(
+                    """
+                    INSERT INTO brsp_topics (owner_id, topic_id, name, sort_order, last_seen_date)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (owner_id, topic_id)
+                    DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order,
+                      last_seen_date = EXCLUDED.last_seen_date
+                    WHERE brsp_topics.last_seen_date <= EXCLUDED.last_seen_date
+                    """,
+                    (user["id"], topic["id"], topic["name"], index, values["date"]),
+                )
         return meeting_json(row)
 
 
