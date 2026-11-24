@@ -12,6 +12,8 @@ export const SECTIONS = [
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M6 8h8M6 11h8M6 14h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { id: "ucp", label: "УПЦ", description: "Управление целевыми показателями",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16l3-4 3 2 3-5 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/><circle cx="10" cy="4" r="2" fill="currentColor" opacity=".5"/><path d="M10 6v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { id: "plan", label: "План развития", description: "Стратегический план и этапы развития",
+    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 14l4-4 3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M14 8h2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: "archive", label: "Архив", description: "Закрытые и завершённые задачи",
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 7h12v8.5A1.5 1.5 0 0 1 14.5 17h-9A1.5 1.5 0 0 1 4 15.5V7zM3 4h14v3H3zM8 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { id: "users", label: "Пользователи", description: "Команда, роли и приглашения",
