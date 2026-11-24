@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
-import { activeMeetingTopics, completedTopics, topicReports } from './brspState.js';
+import { activeMeetingTopics, catalogEntryForTopic, completedTopics, topicIds, topicReports } from './brspState.js';
 import './BrspSection.css';
 
 const formatDate = value => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -42,7 +42,7 @@ export default function BrspSection({ api, onError }) {
   const meeting = meetings.find(item => item.id === selectedId);
   const visibleTopics = topicTab === 'completed' ? completedTopics(catalog) : activeMeetingTopics(meeting, catalog);
   const topic = visibleTopics.find(item => item.id === selectedTopicId) || visibleTopics[0];
-  const reports = topic ? topicReports(meetings, topic.id, topicTab === 'completed' ? null : meeting?.date) : [];
+  const reports = topic ? topicReports(meetings, topicIds(catalog, topic.id), topicTab === 'completed' ? null : meeting?.date) : [];
   const isDirty = dirtyIds.includes(selectedId);
   const busy = savingId !== null;
 
@@ -132,14 +132,19 @@ export default function BrspSection({ api, onError }) {
         setMeetings(items => sortMeetings(items.map(item => item.id === saved.id ? saved : item)));
         setDirtyIds(ids => ids.filter(id => id !== saved.id));
       }
-      await api.patchBrspTopic(currentTopicId, { status: nextStatus });
+      const updated = await api.patchBrspTopic(currentTopicId, { status: nextStatus });
       setCatalog(await api.listBrspTopics());
-      if (nextStatus === 'active' && !meeting?.topics.some(item => item.id === currentTopicId)) {
-        const latest = meetings.find(item => item.topics.some(entry => entry.id === currentTopicId));
-        if (latest) setSelectedId(latest.id);
+      if (nextStatus === 'active') {
+        const relatedIds = [updated.id, ...(updated.aliases || [])];
+        const latest = meeting?.topics.some(item => relatedIds.includes(item.id)) ? meeting : meetings.find(item => item.topics.some(entry => relatedIds.includes(entry.id)));
+        if (latest) {
+          setSelectedId(latest.id);
+          setSelectedTopicId(latest.topics.find(item => relatedIds.includes(item.id)).id);
+        }
+      } else {
+        setSelectedTopicId(updated.id);
       }
       setTopicTab(nextStatus === 'completed' ? 'completed' : 'active');
-      setSelectedTopicId(currentTopicId);
     } catch (error) { onError(error); }
     finally { setSavingId(null); }
   }
@@ -192,14 +197,14 @@ export default function BrspSection({ api, onError }) {
         <div className="brsp-topic-list">
           {!visibleTopics.length && <p className="brsp-placeholder">{topicTab === 'completed' ? 'Завершённых тем пока нет.' : meeting ? 'Добавьте первую тему.' : 'Выберите встречу.'}</p>}
           {visibleTopics.map(item => {
-            const latest = topicReports(meetings, item.id, topicTab === 'completed' ? null : meeting?.date)[0];
+            const latest = topicReports(meetings, topicIds(catalog, item.id), topicTab === 'completed' ? null : meeting?.date)[0];
             const preview = topicTab === 'active' && item.text ? item.text : latest ? `Последний доклад · ${formatDate(latest.date)}` : 'Доклад не подготовлен';
             return <button key={item.id} type="button" className={`brsp-list-item ${item.id === topic?.id ? 'selected' : ''}`} onClick={() => setSelectedTopicId(item.id)}><strong>{item.name || 'Без названия'}</strong><small className="brsp-preview">{preview}</small></button>;
           })}
         </div>
       </section>
       <section className="brsp-editor" aria-label="Доклад">
-        <div className="brsp-editor-header"><div><small>{topicTab === 'completed' ? 'Завершённая тема' : meeting ? formatDate(meeting.date) : 'Доклад'}</small><h2>{topic?.name || 'Выберите или добавьте тему'}</h2></div><div className="brsp-header-links">{topicTab === 'active' && <button type="button" className="brsp-link danger" disabled={!topic || busy} onClick={removeTopic}>Убрать из встречи</button>}{topic && <button type="button" className="brsp-link" disabled={busy || !catalog.some(item => item.id === topic.id)} onClick={changeTopicStatus}>{topicTab === 'completed' ? 'Вернуть в активные' : 'Завершить тему'}</button>}</div></div>
+        <div className="brsp-editor-header"><div><small>{topicTab === 'completed' ? 'Завершённая тема' : meeting ? formatDate(meeting.date) : 'Доклад'}</small><h2>{topic?.name || 'Выберите или добавьте тему'}</h2></div><div className="brsp-header-links">{topicTab === 'active' && <button type="button" className="brsp-link danger" disabled={!topic || busy} onClick={removeTopic}>Убрать из встречи</button>}{topic && <button type="button" className="brsp-link" disabled={busy || !catalogEntryForTopic(catalog, topic.id)} onClick={changeTopicStatus}>{topicTab === 'completed' ? 'Вернуть в активные' : 'Завершить тему'}</button>}</div></div>
         <div className="brsp-editor-body">
           {meeting && topicTab === 'active' && <>
             <div className="brsp-meta-fields"><label>Дата встречи<input type="date" value={meeting.date} disabled={busy} onChange={event => changeMeeting({ date: event.target.value })} /></label><label>Состояние<span className={`brsp-status ${meeting.status}`}>{meeting.status === 'draft' ? 'Черновик' : 'Проведена'}</span></label></div>

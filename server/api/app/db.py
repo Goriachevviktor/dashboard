@@ -247,10 +247,12 @@ def migrate_auth_schema() -> None:
               status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed')),
               sort_order integer NOT NULL DEFAULT 0,
               last_seen_date date NOT NULL,
+              canonical_topic_id uuid,
               PRIMARY KEY (owner_id, topic_id)
             )
             """
         )
+        conn.execute("ALTER TABLE brsp_topics ADD COLUMN IF NOT EXISTS canonical_topic_id uuid")
         conn.execute(
             """
             INSERT INTO brsp_topics (owner_id, topic_id, name, sort_order, last_seen_date)
@@ -263,6 +265,23 @@ def migrate_auth_schema() -> None:
             ORDER BY meeting.owner_id, (topic.value->>'id')::uuid,
               meeting.meeting_date DESC, meeting.id DESC
             ON CONFLICT (owner_id, topic_id) DO NOTHING
+            """
+        )
+        conn.execute(
+            """
+            WITH ranked AS (
+              SELECT owner_id, topic_id,
+                first_value(topic_id) OVER (
+                  PARTITION BY owner_id, lower(trim(name))
+                  ORDER BY last_seen_date DESC, topic_id DESC
+                ) AS canonical_id
+              FROM brsp_topics
+              WHERE canonical_topic_id IS NULL
+            )
+            UPDATE brsp_topics topic SET canonical_topic_id = ranked.canonical_id
+            FROM ranked
+            WHERE topic.owner_id = ranked.owner_id AND topic.topic_id = ranked.topic_id
+              AND topic.topic_id <> ranked.canonical_id AND topic.canonical_topic_id IS NULL
             """
         )
         conn.execute(
