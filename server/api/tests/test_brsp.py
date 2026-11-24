@@ -30,6 +30,15 @@ class BrspValidationTest(unittest.TestCase):
         self.assertEqual([{"id": source[0]["id"], "name": "ОЕМ", "text": ""}], clone_topics(source))
         self.assertEqual("Старый доклад", source[0]["text"])
 
+    def test_topic_selection_rejects_invalid_and_duplicate_ids(self):
+        from app.brsp import clean_topic_ids
+
+        topic_id = "819f49b9-729e-4b19-a1c4-f3db583f14ce"
+        self.assertEqual([topic_id], clean_topic_ids([topic_id]))
+        for selection in ([topic_id, topic_id], ["bad"], "bad", list(range(101))):
+            with self.assertRaises(HTTPException):
+                clean_topic_ids(selection)
+
     def test_foreign_meeting_is_not_accessible_to_admin(self):
         from app.brsp import get_owned_meeting
 
