@@ -69,11 +69,12 @@ def clean_topic_ids(value: Any) -> list[str]:
     return topic_ids
 
 
-def topic_json(row: dict[str, Any]) -> dict[str, str]:
+def topic_json(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(row["topic_id"]),
         "name": row["name"],
         "status": row["status"],
+        "aliases": row.get("aliases", []),
     }
 
 
@@ -108,27 +109,46 @@ def list_brsp_meetings(user: dict[str, Any] = Depends(require_auth)) -> list[dic
 
 
 @router.get("/brsp-topics")
-def list_brsp_topics(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, str]]:
+def list_brsp_topics(user: dict[str, Any] = Depends(require_auth)) -> list[dict[str, Any]]:
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM brsp_topics WHERE owner_id = %s ORDER BY sort_order, name, topic_id",
+            """
+            SELECT topic.*, ARRAY(
+              SELECT alias.topic_id::text FROM brsp_topics alias
+              WHERE alias.owner_id = topic.owner_id AND alias.canonical_topic_id = topic.topic_id
+              ORDER BY alias.last_seen_date DESC, alias.topic_id
+            ) AS aliases
+            FROM brsp_topics topic
+            WHERE topic.owner_id = %s AND topic.canonical_topic_id IS NULL
+            ORDER BY topic.sort_order, topic.name, topic.topic_id
+            """,
             (user["id"],),
         ).fetchall()
         return [topic_json(row) for row in rows]
 
 
 @router.patch("/brsp-topics/{topic_id}")
-async def update_brsp_topic(topic_id: UUID, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, str]:
+async def update_brsp_topic(topic_id: UUID, request: Request, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     payload = await request.json()
     if not isinstance(payload, dict) or set(payload) != {"status"} or payload["status"] not in ("active", "completed"):
         raise HTTPException(400, "Invalid topic update")
     with db() as conn:
+        target = conn.execute(
+            "SELECT COALESCE(canonical_topic_id, topic_id) AS topic_id FROM brsp_topics WHERE owner_id = %s AND topic_id = %s",
+            (user["id"], topic_id),
+        ).fetchone()
+        if not target:
+            raise HTTPException(404, "Topic not found")
         row = conn.execute(
             "UPDATE brsp_topics SET status = %s WHERE owner_id = %s AND topic_id = %s RETURNING *",
-            (payload["status"], user["id"], topic_id),
+            (payload["status"], user["id"], target["topic_id"]),
         ).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
+        row["aliases"] = [str(item["topic_id"]) for item in conn.execute(
+            "SELECT topic_id FROM brsp_topics WHERE owner_id = %s AND canonical_topic_id = %s",
+            (user["id"], row["topic_id"]),
+        ).fetchall()]
         return topic_json(row)
 
 
@@ -141,7 +161,7 @@ async def create_brsp_meeting(request: Request, user: dict[str, Any] = Depends(r
     selected_ids = clean_topic_ids(payload["topic_ids"]) if "topic_ids" in payload else None
     with db() as conn:
         available = conn.execute(
-            "SELECT * FROM brsp_topics WHERE owner_id = %s AND status = 'active' ORDER BY sort_order, name, topic_id",
+            "SELECT * FROM brsp_topics WHERE owner_id = %s AND status = 'active' AND canonical_topic_id IS NULL ORDER BY sort_order, name, topic_id",
             (user["id"],),
         ).fetchall()
         by_id = {str(row["topic_id"]): row for row in available}
@@ -210,16 +230,25 @@ async def update_brsp_meeting(meeting_id: int, request: Request, user: dict[str,
             raise HTTPException(409, "Meeting already exists on this date")
         if "topics" in patch:
             for index, topic in enumerate(values["topics"]):
+                existing = conn.execute(
+                    """
+                    SELECT topic_id FROM brsp_topics
+                    WHERE owner_id = %s AND canonical_topic_id IS NULL AND lower(trim(name)) = lower(trim(%s))
+                    ORDER BY last_seen_date DESC LIMIT 1
+                    """,
+                    (user["id"], topic["name"]),
+                ).fetchone()
+                canonical_id = existing["topic_id"] if existing and str(existing["topic_id"]) != topic["id"] else None
                 conn.execute(
                     """
-                    INSERT INTO brsp_topics (owner_id, topic_id, name, sort_order, last_seen_date)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO brsp_topics (owner_id, topic_id, name, sort_order, last_seen_date, canonical_topic_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (owner_id, topic_id)
                     DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order,
                       last_seen_date = EXCLUDED.last_seen_date
                     WHERE brsp_topics.last_seen_date <= EXCLUDED.last_seen_date
                     """,
-                    (user["id"], topic["id"], topic["name"], index, values["date"]),
+                    (user["id"], topic["id"], topic["name"], index, values["date"], canonical_id),
                 )
         return meeting_json(row)
 

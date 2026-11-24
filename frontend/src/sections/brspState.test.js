@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { activeMeetingTopics, completedTopics, topicReports } from './brspState.js';
+import { activeMeetingTopics, completedTopics, topicIds, topicReports } from './brspState.js';
 
 const catalog = [
   { id: 'a', name: 'ОЕМ', status: 'active' },
@@ -24,4 +24,17 @@ test('reports are newest first and current meeting is not duplicated', () => {
     { date: '2026-11-11', text: 'Старый' },
   ]);
   assert.deepEqual(topicReports(meetings, 'b'), [{ date: '2026-11-18', text: 'Закрыто' }]);
+});
+
+test('historical aliases share status and report history', () => {
+  const withAlias = [{ id: 'a', aliases: ['old-a'], name: 'ОЕМ', status: 'completed' }];
+  const history = [
+    { date: '2026-11-18', topics: [{ id: 'a', name: 'ОЕМ', text: 'Новый' }] },
+    { date: '2026-09-16', topics: [{ id: 'old-a', name: 'ОЕМ', text: 'Старый' }] },
+  ];
+  assert.deepEqual(activeMeetingTopics(history[1], withAlias), []);
+  assert.deepEqual(topicReports(history, topicIds(withAlias, 'a')), [
+    { date: '2026-11-18', text: 'Новый' },
+    { date: '2026-09-16', text: 'Старый' },
+  ]);
 });
