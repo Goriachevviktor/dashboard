@@ -49,3 +49,30 @@ retry_until() {
   done
   return 1
 }
+
+install_frontend_artifact() {
+  local archive=${1:?frontend archive is required}
+  local release_dir=${2:?release directory is required}
+  local staging
+  staging=$(mktemp -d "$release_dir/.frontend.XXXXXX") || return 1
+
+  if ! tar -xzf "$archive" -C "$staging"; then
+    rm -rf -- "$staging"
+    return 1
+  fi
+  if [[ ! -s $staging/index.html ]] ||
+    [[ -z $(find "$staging/assets" -maxdepth 1 -type f -name '*.js' -print -quit 2>/dev/null) ]]; then
+    rm -rf -- "$staging"
+    return 1
+  fi
+
+  if [[ -d $release_dir/frontend-dist ]]; then
+    if ! diff -qr "$staging" "$release_dir/frontend-dist" >/dev/null; then
+      rm -rf -- "$staging"
+      return 1
+    fi
+    rm -rf -- "$staging"
+  else
+    mv "$staging" "$release_dir/frontend-dist"
+  fi
+}

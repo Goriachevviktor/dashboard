@@ -114,6 +114,17 @@ def test_frontend_security_and_workbook_gates() -> None:
     assert "Lint changed frontend files" not in content
 
 
+def test_frontend_artifact_follows_exact_ci_run() -> None:
+    ci = workflow("ci.yml")
+    test_deploy = workflow("deploy-test.yml")
+    production = workflow("deploy-production.yml")
+    require(ci, "actions/upload-artifact@v4", "frontend-dist-${{ github.sha }}", "if-no-files-found: error")
+    require(test_deploy, "actions: read", "actions/download-artifact@v4", "github.event.workflow_run.id", "frontend-dist-${{ github.event.workflow_run.head_sha }}")
+    require(production, "actions: read", "actions/download-artifact@v4", "head_sha", "frontend-dist-${{ inputs.sha }}")
+    for content in (test_deploy, production):
+        require(content, "dashboard-frontend-$RELEASE_SHA.tar.gz", "deploy-release.sh")
+
+
 def test_backup_monitoring_and_restore_drill() -> None:
     content = workflow("backup-monitor.yml")
     require(
@@ -148,5 +159,6 @@ if __name__ == "__main__":
     test_no_embedded_credentials()
     test_actions_use_node_24_runtimes()
     test_frontend_security_and_workbook_gates()
+    test_frontend_artifact_follows_exact_ci_run()
     test_backup_monitoring_and_restore_drill()
     print("all workflow contract assertions passed")
