@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: deploy-production
@@ -54,9 +55,29 @@ jobs:
           for value in "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_USER" "$RELEASE_ROOT" "$SHARED_CONFIG_DIR" "$PUBLIC_HEALTH_URL"; do
             [[ -n "$value" && "$value" =~ ^[A-Za-z0-9_./:@-]+$ ]]
           done
+      - name: Find successful CI build for exact SHA
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$RELEASE_SHA" -f event=push -f status=success -f per_page=100 |
+            jq -r --arg sha "$RELEASE_SHA" \
+              '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success")] | .[0].id // empty')
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download tested frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist-${{ inputs.sha }}
+          run-id: ${{ steps.ci.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: frontend-dist
       - name: Package exact release
         run: |
+          test -s frontend-dist/index.html
           git archive --format=tar.gz --output="/tmp/dashboard-$RELEASE_SHA.tar.gz" "$RELEASE_SHA"
+          tar -czf "/tmp/dashboard-frontend-$RELEASE_SHA.tar.gz" -C frontend-dist .
           tar -czf "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" ops/deploy-release.sh ops/lib/release_helpers.sh
       - uses: webfactory/ssh-agent@v0.10.0
         with:
@@ -68,7 +89,7 @@ jobs:
       - name: Upload and deploy with backup
         run: |
           scp -P "$DEPLOY_PORT" \
-            "/tmp/dashboard-$RELEASE_SHA.tar.gz" "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" \
+            "/tmp/dashboard-$RELEASE_SHA.tar.gz" "/tmp/dashboard-frontend-$RELEASE_SHA.tar.gz" "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" \
             "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
           ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "rm -rf /tmp/dashboard-deploy-$RELEASE_SHA && mkdir /tmp/dashboard-deploy-$RELEASE_SHA && \
@@ -76,7 +97,7 @@ jobs:
              RELEASE_ROOT='$RELEASE_ROOT' SHARED_CONFIG_DIR='$SHARED_CONFIG_DIR' \
              PUBLIC_HEALTH_URL='$PUBLIC_HEALTH_URL' CREATE_DB_BACKUP=true \
              bash /tmp/dashboard-deploy-$RELEASE_SHA/ops/deploy-release.sh production '$RELEASE_SHA' \
-             /tmp/dashboard-$RELEASE_SHA.tar.gz"
+             /tmp/dashboard-$RELEASE_SHA.tar.gz /tmp/dashboard-frontend-$RELEASE_SHA.tar.gz"
       - name: Deployment summary
         if: always()
         run: |

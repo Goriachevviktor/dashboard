@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/lib/release_helpers.sh"
 ENVIRONMENT=${1:-}
 SHA=${2:-}
 ARCHIVE=${3:-}
+FRONTEND_ARCHIVE=${4:-}
 
 if [[ $ENVIRONMENT != test && $ENVIRONMENT != production ]]; then
   printf 'environment must be test or production\n' >&2
@@ -18,6 +19,10 @@ if ! validate_sha "$SHA"; then
 fi
 if [[ ! -f $ARCHIVE ]]; then
   printf 'release archive does not exist\n' >&2
+  exit 2
+fi
+if [[ ! -f $FRONTEND_ARCHIVE ]]; then
+  printf 'frontend archive does not exist\n' >&2
   exit 2
 fi
 
@@ -125,11 +130,7 @@ if [[ -f $SHARED_CONFIG_DIR/vapid_private.pem ]]; then
   ln -sfn "$SHARED_CONFIG_DIR/vapid_private.pem" "$RELEASE_DIR/server/vapid_private.pem"
 fi
 
-(
-  cd "$RELEASE_DIR/frontend"
-  npm ci
-  npm run build -- --outDir "$RELEASE_DIR/frontend-dist"
-)
+install_frontend_artifact "$FRONTEND_ARCHIVE" "$RELEASE_DIR"
 
 backup=''
 if [[ $ENVIRONMENT == production && $CREATE_DB_BACKUP == true ]]; then

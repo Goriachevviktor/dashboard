@@ -37,6 +37,13 @@ jobs:
       - name: Lint frontend
         run: npm run lint
         working-directory: frontend
+      - name: Upload tested frontend build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: frontend-dist/
+          if-no-files-found: error
 
   backend:
     runs-on: ubuntu-latest

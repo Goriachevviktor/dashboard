@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: deploy-test
@@ -39,9 +40,18 @@ jobs:
           for value in "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_USER" "$RELEASE_ROOT" "$SHARED_CONFIG_DIR" "$PUBLIC_HEALTH_URL"; do
             [[ -n "$value" && "$value" =~ ^[A-Za-z0-9_./:@-]+$ ]]
           done
+      - name: Download tested frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist-${{ github.event.workflow_run.head_sha }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: frontend-dist
       - name: Package exact release
         run: |
+          test -s frontend-dist/index.html
           git archive --format=tar.gz --output="/tmp/dashboard-$RELEASE_SHA.tar.gz" "$RELEASE_SHA"
+          tar -czf "/tmp/dashboard-frontend-$RELEASE_SHA.tar.gz" -C frontend-dist .
           tar -czf "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" ops/deploy-release.sh ops/lib/release_helpers.sh
       - uses: webfactory/ssh-agent@v0.10.0
         with:
@@ -53,7 +63,7 @@ jobs:
       - name: Upload and deploy
         run: |
           scp -P "$DEPLOY_PORT" \
-            "/tmp/dashboard-$RELEASE_SHA.tar.gz" "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" \
+            "/tmp/dashboard-$RELEASE_SHA.tar.gz" "/tmp/dashboard-frontend-$RELEASE_SHA.tar.gz" "/tmp/dashboard-deploy-$RELEASE_SHA.tar.gz" \
             "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
           ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "rm -rf /tmp/dashboard-deploy-$RELEASE_SHA && mkdir /tmp/dashboard-deploy-$RELEASE_SHA && \
@@ -61,7 +71,7 @@ jobs:
              RELEASE_ROOT='$RELEASE_ROOT' SHARED_CONFIG_DIR='$SHARED_CONFIG_DIR' \
              PUBLIC_HEALTH_URL='$PUBLIC_HEALTH_URL' CREATE_DB_BACKUP=false \
              bash /tmp/dashboard-deploy-$RELEASE_SHA/ops/deploy-release.sh test '$RELEASE_SHA' \
-             /tmp/dashboard-$RELEASE_SHA.tar.gz"
+             /tmp/dashboard-$RELEASE_SHA.tar.gz /tmp/dashboard-frontend-$RELEASE_SHA.tar.gz"
       - name: Deployment summary
         if: always()
         run: |

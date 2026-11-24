@@ -28,6 +28,19 @@ else
   printf 'ok - invalid SHA is rejected\n'
 fi
 
+source_archive=$(mktemp)
+trap 'rm -f "$source_archive"' EXIT
+if output=$(RELEASE_ROOT=$(mktemp -d) SHARED_CONFIG_DIR=$(mktemp -d) PUBLIC_HEALTH_URL=http://example.invalid \
+  bash "$SCRIPT" test "$(printf 'a%.0s' {1..40})" "$source_archive" /missing-frontend.tar.gz 2>&1); then
+  printf 'not ok - missing frontend artifact was accepted\n' >&2
+  failures=$((failures + 1))
+elif [[ $output == *'frontend archive does not exist'* ]]; then
+  printf 'ok - missing frontend artifact is rejected\n'
+else
+  printf 'not ok - missing frontend artifact failed for another reason\n' >&2
+  failures=$((failures + 1))
+fi
+
 assert_contains 'uses strict shell mode' '^set -Eeuo pipefail'
 assert_contains 'uses a stable deployment lock' 'flock'
 assert_contains 'creates immutable SHA release paths' 'RELEASE_DIR="\$RELEASES_DIR/\$SHA"'
@@ -45,6 +58,14 @@ assert_contains 'checks the public API health path' 'PUBLIC_HEALTH_URL%/}/api/he
 assert_contains 'restores the previous release on failure' 'rollback'
 assert_contains 'updates the current release symlink' 'current'
 assert_contains 'prunes inactive releases' 'RELEASE_RETENTION'
+assert_contains 'requires a prebuilt frontend artifact' 'FRONTEND_ARCHIVE'
+assert_contains 'installs the prebuilt frontend artifact' 'install_frontend_artifact "\$FRONTEND_ARCHIVE" "\$RELEASE_DIR"'
+if grep -Eq '^[[:space:]]*npm (ci|run build)' "$SCRIPT"; then
+  printf 'not ok - server still installs or builds frontend dependencies\n' >&2
+  failures=$((failures + 1))
+else
+  printf 'ok - server does not install or build frontend dependencies\n'
+fi
 
 if (( failures > 0 )); then
   printf '%d deployment contract assertion(s) failed\n' "$failures" >&2

@@ -54,6 +54,30 @@ else
   printf 'ok - readiness check used all required attempts\n'
 fi
 
+artifact_root=$(mktemp -d)
+trap 'rm -rf "$artifact_root"' EXIT
+mkdir -p "$artifact_root/source/assets" "$artifact_root/release"
+printf '<html>ready</html>\n' > "$artifact_root/source/index.html"
+printf 'console.log("ready")\n' > "$artifact_root/source/assets/index.js"
+tar -czf "$artifact_root/frontend.tar.gz" -C "$artifact_root/source" .
+check 'installs a valid prebuilt frontend' install_frontend_artifact "$artifact_root/frontend.tar.gz" "$artifact_root/release"
+check 'retains the frontend on a repeated deployment' install_frontend_artifact "$artifact_root/frontend.tar.gz" "$artifact_root/release"
+if [[ $(cat "$artifact_root/release/frontend-dist/index.html") != '<html>ready</html>' ]]; then
+  printf 'not ok - installed frontend content differs\n' >&2
+  failures=$((failures + 1))
+fi
+printf '<html>changed</html>\n' > "$artifact_root/source/index.html"
+tar -czf "$artifact_root/changed.tar.gz" -C "$artifact_root/source" .
+check_not 'rejects changed content for the same release' install_frontend_artifact "$artifact_root/changed.tar.gz" "$artifact_root/release"
+if [[ $(cat "$artifact_root/release/frontend-dist/index.html") != '<html>ready</html>' ]]; then
+  printf 'not ok - rejected artifact changed the installed frontend\n' >&2
+  failures=$((failures + 1))
+fi
+mkdir -p "$artifact_root/incomplete"
+printf '<html>incomplete</html>\n' > "$artifact_root/incomplete/index.html"
+tar -czf "$artifact_root/incomplete.tar.gz" -C "$artifact_root/incomplete" .
+check_not 'rejects frontend without JavaScript assets' install_frontend_artifact "$artifact_root/incomplete.tar.gz" "$artifact_root/release"
+
 if (( failures > 0 )); then
   printf '%d release helper assertion(s) failed\n' "$failures" >&2
   exit 1
