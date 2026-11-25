@@ -3,15 +3,16 @@ const DASHBOARD_CONFIG = {
 };
 
 export async function dashboardRequest(path, options = {}) {
+  const { responseType, ...requestOptions } = options;
   const headers = {
     "Content-Type": "application/json",
-    ...(options.headers || {}),
+    ...(requestOptions.headers || {}),
   };
-  if (options.authToken) {
-    headers.Authorization = `Bearer ${options.authToken}`;
+  if (requestOptions.authToken) {
+    headers.Authorization = `Bearer ${requestOptions.authToken}`;
   }
   const response = await fetch(`${DASHBOARD_CONFIG.apiBaseUrl}${path}`, {
-    ...options,
+    ...requestOptions,
     headers,
     credentials: "include",
   });
@@ -28,6 +29,7 @@ export async function dashboardRequest(path, options = {}) {
     throw error;
   }
   if (response.status === 204) return null;
+  if (responseType === "blob") return response.blob();
   return response.json();
 }
 
@@ -52,6 +54,7 @@ export function buildApi(authRequest) {
     createBrspMeeting: (payload) => authRequest("/brsp-meetings", { method: "POST", body: JSON.stringify(payload) }),
     patchBrspMeeting: (id, payload) => authRequest(`/brsp-meetings/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     deleteBrspMeeting: (id) => authRequest(`/brsp-meetings/${id}`, { method: "DELETE" }),
+    downloadBrspDraftPdf: (id) => authRequest(`/brsp-meetings/${id}/draft.pdf`, { responseType: "blob" }),
     listMindMaps: () => authRequest("/mind-maps"),
     createMindMap: (payload) => authRequest("/mind-maps", { method: "POST", body: JSON.stringify(payload) }),
     patchMindMap: (id, payload) => authRequest(`/mind-maps/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

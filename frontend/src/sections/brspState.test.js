@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { activeMeetingTopics, completedTopics, topicIds, topicReports } from './brspState.js';
+import { activeMeetingTopics, canDownloadDraft, completedTopics, topicIds, topicReports } from './brspState.js';
 
 const catalog = [
   { id: 'a', name: 'ОЕМ', status: 'active' },
@@ -37,4 +37,11 @@ test('historical aliases share status and report history', () => {
     { date: '2026-11-18', text: 'Новый' },
     { date: '2026-09-16', text: 'Старый' },
   ]);
+});
+
+test('PDF download requires a draft with a nonempty current report', () => {
+  assert.equal(canDownloadDraft(null), false);
+  assert.equal(canDownloadDraft({ status: 'done', topics: [{ text: 'Доклад' }] }), false);
+  assert.equal(canDownloadDraft({ status: 'draft', topics: [{ text: ' \n ' }] }), false);
+  assert.equal(canDownloadDraft({ status: 'draft', topics: [{ text: '' }, { text: 'Доклад' }] }), true);
 });
