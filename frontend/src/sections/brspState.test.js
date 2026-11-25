@@ -43,5 +43,6 @@ test('PDF download requires a draft with a nonempty current report', () => {
   assert.equal(canDownloadDraft(null), false);
   assert.equal(canDownloadDraft({ status: 'done', topics: [{ text: 'Доклад' }] }), false);
   assert.equal(canDownloadDraft({ status: 'draft', topics: [{ text: ' \n ' }] }), false);
+  assert.equal(canDownloadDraft({ status: 'draft', topics: [{ text: '--------' }] }), false);
   assert.equal(canDownloadDraft({ status: 'draft', topics: [{ text: '' }, { text: 'Доклад' }] }), true);
 });

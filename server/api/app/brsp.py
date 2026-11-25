@@ -7,7 +7,7 @@ from psycopg.types.json import Jsonb
 
 from .auth import require_auth
 from .db import db
-from .brsp_pdf import render_draft_pdf
+from .brsp_pdf import has_prepared_report, render_draft_pdf
 
 router = APIRouter()
 
@@ -115,7 +115,7 @@ def download_brsp_draft_pdf(meeting_id: int, user: dict[str, Any] = Depends(requ
         meeting = get_owned_meeting(conn, meeting_id, user)
     if meeting["status"] != "draft":
         raise HTTPException(409, "PDF доступен только для черновика встречи")
-    if not any(topic["text"].strip() for topic in meeting["topics"]):
+    if not any(has_prepared_report(topic["text"]) for topic in meeting["topics"]):
         raise HTTPException(409, "Во встрече нет подготовленных докладов")
     pdf = render_draft_pdf(meeting_json(meeting))
     filename = f"sink-brsp-{meeting['meeting_date'].isoformat()}-draft.pdf"

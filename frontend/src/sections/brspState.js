@@ -11,8 +11,10 @@ export const activeMeetingTopics = (meeting, catalog) => meeting?.topics.filter(
 
 export const completedTopics = catalog => catalog.filter(topic => topic.status === 'completed');
 
+export const hasPreparedReport = text => Boolean(text.trim()) && !/^[\s\-–—]+$/u.test(text);
+
 export const canDownloadDraft = meeting => meeting?.status === 'draft' &&
-  meeting.topics.some(topic => topic.text.trim());
+  meeting.topics.some(topic => hasPreparedReport(topic.text));
 
 export const topicReports = (meetings, ids, beforeDate = null) => meetings
   .filter(meeting => !beforeDate || meeting.date < beforeDate)
