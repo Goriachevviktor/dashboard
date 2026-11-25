@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useConfirmDialog } from '../components/common/useConfirmDialog.jsx';
-import { activeMeetingTopics, catalogEntryForTopic, completedTopics, topicIds, topicReports } from './brspState.js';
+import { activeMeetingTopics, canDownloadDraft, catalogEntryForTopic, completedTopics, topicIds, topicReports } from './brspState.js';
 import './BrspSection.css';
 
 const formatDate = value => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -170,6 +170,24 @@ export default function BrspSection({ api, onError }) {
     finally { setSavingId(null); }
   }
 
+  async function downloadDraftPdf() {
+    if (!meeting || busy || !canDownloadDraft(meeting)) return;
+    if (isDirty) { onError(new Error('Сначала сохраните изменения во встрече')); return; }
+    setSavingId(-3);
+    try {
+      const blob = await api.downloadBrspDraftPdf(meeting.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `sink-brsp-${meeting.date}-draft.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { onError(error); }
+    finally { setSavingId(null); }
+  }
+
   return <div className="brsp-section">
     {confirmDialog}
     <div className="brsp-toolbar">
@@ -214,7 +232,7 @@ export default function BrspSection({ api, onError }) {
           {topicTab === 'completed' && (topic ? <><div className="brsp-field-label">Краткий доклад</div><div className="brsp-report-history">{reports.length ? reports.map(item => <div className="brsp-history-entry" key={item.date}><strong>{formatDate(item.date)}</strong><p>{item.text}</p></div>) : <p className="brsp-placeholder">По этой теме пока нет докладов.</p>}</div></> : <p className="brsp-placeholder">Завершённых тем пока нет.</p>)}
           {!meeting && topicTab === 'active' && <p className="brsp-placeholder">Выберите встречу слева или создайте новую.</p>}
         </div>
-        {meeting && topicTab === 'active' && <div className="brsp-editor-footer"><span className="brsp-save-state">{isDirty ? 'Есть несохранённые изменения' : 'Все изменения сохранены'}</span><div className="brsp-footer-actions"><button type="button" className="brsp-link danger" disabled={busy} onClick={deleteMeeting}>Удалить встречу</button><button type="button" className="brsp-button" disabled={busy} onClick={() => saveMeeting(meeting.status === 'draft' ? 'done' : 'draft')}>{meeting.status === 'draft' ? 'Завершить встречу' : 'Вернуть в черновик'}</button><button type="button" className="brsp-button brsp-primary" disabled={busy || !isDirty} onClick={() => saveMeeting()}>{busy ? 'Сохранение...' : 'Сохранить'}</button></div></div>}
+        {meeting && topicTab === 'active' && <div className="brsp-editor-footer"><span className="brsp-save-state">{isDirty ? 'Есть несохранённые изменения' : 'Все изменения сохранены'}</span><div className="brsp-footer-actions"><button type="button" className="brsp-link danger" disabled={busy} onClick={deleteMeeting}>Удалить встречу</button>{meeting.status === 'draft' && <button type="button" className="brsp-button" title={canDownloadDraft(meeting) ? 'Скачать черновик встречи в PDF' : 'Сначала подготовьте хотя бы один доклад'} disabled={busy || !canDownloadDraft(meeting)} onClick={downloadDraftPdf}>Скачать PDF</button>}<button type="button" className="brsp-button" disabled={busy} onClick={() => saveMeeting(meeting.status === 'draft' ? 'done' : 'draft')}>{meeting.status === 'draft' ? 'Завершить встречу' : 'Вернуть в черновик'}</button><button type="button" className="brsp-button brsp-primary" disabled={busy || !isDirty} onClick={() => saveMeeting()}>{busy ? 'Сохранение...' : 'Сохранить'}</button></div></div>}
       </section>
     </div>
     {dialog && <div className="brsp-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setDialog(null); }}><form className="brsp-modal" onSubmit={dialog === 'meeting' ? createMeeting : addTopic}><h2>{dialog === 'meeting' ? 'Новая встреча' : 'Добавить тему'}</h2><p>{dialog === 'meeting' ? 'Выберите активные темы для встречи. Доклады прошлых встреч останутся в истории.' : 'Тема появится в выбранной встрече.'}</p><label htmlFor="brsp-modal-input">{dialog === 'meeting' ? 'Дата встречи' : 'Название темы'}</label><input id="brsp-modal-input" autoFocus required type={dialog === 'meeting' ? 'date' : 'text'} maxLength={dialog === 'meeting' ? undefined : 100} value={dialog === 'meeting' ? dateInput : topicInput} onChange={event => dialog === 'meeting' ? setDateInput(event.target.value) : setTopicInput(event.target.value)} />{dialog === 'meeting' && <div className="brsp-topic-picker"><strong>Темы встречи</strong>{catalog.filter(item => item.status === 'active').map(item => <label key={item.id}><input type="checkbox" checked={createTopicIds.includes(item.id)} onChange={event => setCreateTopicIds(ids => event.target.checked ? [...ids, item.id] : ids.filter(id => id !== item.id))} />{item.name}</label>)}{!catalog.some(item => item.status === 'active') && <small>Активных тем пока нет.</small>}</div>}<div className="brsp-modal-actions"><button type="button" className="brsp-button" onClick={() => setDialog(null)}>Отмена</button><button type="submit" className="brsp-button brsp-primary" disabled={busy}>{dialog === 'meeting' ? 'Создать' : 'Добавить'}</button></div></form></div>}

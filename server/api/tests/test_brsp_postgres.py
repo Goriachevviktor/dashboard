@@ -1,10 +1,12 @@
 import asyncio
 import os
+from io import BytesIO
 from uuid import uuid4
 
 import psycopg
 import pytest
 from fastapi import HTTPException
+from pypdf import PdfReader
 from psycopg.rows import dict_row
 
 from app import brsp
@@ -18,6 +20,37 @@ class JsonRequest:
 
     async def json(self):
         return self.payload
+
+
+def test_brsp_draft_pdf_requires_owner_and_draft_status():
+    migrate_auth_schema()
+    suffix = uuid4().hex
+    emails = [f"brsp-pdf-a-{suffix}@example.test", f"brsp-pdf-b-{suffix}@example.test"]
+    with psycopg.connect(os.environ["DASHBOARD_DATABASE_URL"], row_factory=dict_row) as conn:
+        users = [conn.execute(
+            "INSERT INTO users (email, password_hash, display_name, role) VALUES (%s, %s, %s, 'member') RETURNING *",
+            (email, hash_password("test-password"), email),
+        ).fetchone() for email in emails]
+
+    try:
+        created = asyncio.run(brsp.create_brsp_meeting(JsonRequest({"date": "2026-11-25"}), users[0]))
+        updated = asyncio.run(brsp.update_brsp_meeting(created["id"], JsonRequest({
+            "topics": [{"id": str(uuid4()), "name": "ОЕМ", "text": "Текущий доклад"}],
+        }), users[0]))
+        response = brsp.download_brsp_draft_pdf(updated["id"], users[0])
+        assert "Текущий доклад" in PdfReader(BytesIO(response.body)).pages[0].extract_text()
+
+        with pytest.raises(HTTPException) as denied:
+            brsp.download_brsp_draft_pdf(updated["id"], users[1])
+        assert denied.value.status_code == 404
+
+        asyncio.run(brsp.update_brsp_meeting(updated["id"], JsonRequest({"status": "done"}), users[0]))
+        with pytest.raises(HTTPException) as done:
+            brsp.download_brsp_draft_pdf(updated["id"], users[0])
+        assert done.value.status_code == 409
+    finally:
+        with psycopg.connect(os.environ["DASHBOARD_DATABASE_URL"]) as conn:
+            conn.execute("DELETE FROM users WHERE email = ANY(%s)", (emails,))
 
 
 def test_brsp_meetings_are_private_and_keep_history():

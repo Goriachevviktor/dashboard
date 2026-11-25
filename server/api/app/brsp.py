@@ -2,11 +2,12 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from psycopg.types.json import Jsonb
 
 from .auth import require_auth
 from .db import db
+from .brsp_pdf import render_draft_pdf
 
 router = APIRouter()
 
@@ -106,6 +107,26 @@ def list_brsp_meetings(user: dict[str, Any] = Depends(require_auth)) -> list[dic
             (user["id"],),
         ).fetchall()
         return [meeting_json(row) for row in rows]
+
+
+@router.get("/brsp-meetings/{meeting_id}/draft.pdf")
+def download_brsp_draft_pdf(meeting_id: int, user: dict[str, Any] = Depends(require_auth)) -> Response:
+    with db() as conn:
+        meeting = get_owned_meeting(conn, meeting_id, user)
+    if meeting["status"] != "draft":
+        raise HTTPException(409, "PDF доступен только для черновика встречи")
+    if not any(topic["text"].strip() for topic in meeting["topics"]):
+        raise HTTPException(409, "Во встрече нет подготовленных докладов")
+    pdf = render_draft_pdf(meeting_json(meeting))
+    filename = f"sink-brsp-{meeting['meeting_date'].isoformat()}-draft.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/brsp-topics")
