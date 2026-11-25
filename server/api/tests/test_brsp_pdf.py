@@ -18,6 +18,7 @@ def test_draft_pdf_contains_only_current_nonempty_reports_and_note():
         "topics": [
             {"name": "ОЕМ", "text": "Доклад сегодня\nВторой абзац"},
             {"name": "Пустая тема", "text": "  \n "},
+            {"name": "Плейсхолдер", "text": " ————  "},
             {"name": "Терминалы", "text": "Следующий доклад <важно>"},
         ],
     }
@@ -34,6 +35,7 @@ def test_draft_pdf_contains_only_current_nonempty_reports_and_note():
     assert "Следующий доклад <важно>" in text
     assert "Решение по встрече" in text
     assert "Пустая тема" not in text
+    assert "Плейсхолдер" not in text
 
 
 def test_draft_pdf_paginates_long_cyrillic_report():
@@ -77,6 +79,7 @@ def test_export_rejects_done_and_empty_drafts(monkeypatch):
     for row in (
         {"status": "done", "topics": [{"name": "ОЕМ", "text": "Есть доклад"}]},
         {"status": "draft", "topics": [{"name": "ОЕМ", "text": "  "}]},
+        {"status": "draft", "topics": [{"name": "ОЕМ", "text": "--------"}]},
     ):
         monkeypatch.setattr(brsp, "db", lambda: Db(row))
         with pytest.raises(HTTPException) as error:

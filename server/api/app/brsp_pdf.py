@@ -2,6 +2,7 @@ from datetime import date
 from html import escape
 from io import BytesIO
 from pathlib import Path
+import re
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
@@ -18,6 +19,10 @@ MONTHS = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
 )
+
+
+def has_prepared_report(text: str) -> bool:
+    return bool(text.strip()) and re.fullmatch(r"[\s\-–—]+", text) is None
 
 
 def render_draft_pdf(meeting: dict) -> bytes:
@@ -52,7 +57,7 @@ def render_draft_pdf(meeting: dict) -> bytes:
         Paragraph(formatted_date, date_style),
     ]
     for topic in meeting["topics"]:
-        if not topic["text"].strip():
+        if not has_prepared_report(topic["text"]):
             continue
         flow.append(Paragraph(escape(topic["name"]), topic_style))
         flow.append(Paragraph(escape(topic["text"]).replace("\n", "<br/>"), report_style))
