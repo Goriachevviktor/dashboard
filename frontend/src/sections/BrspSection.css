@@ -12,6 +12,7 @@
 .brsp-column-header { min-height: 68px; padding: 18px 17px; border-bottom: 1px solid #e3ebf5; }
 .brsp-column-header strong { display: block; color: #8193ad; font-size: 11px; font-weight: 800; text-transform: uppercase; }
 .brsp-column-header small { display: block; margin-top: 4px; color: #a1afc2; font-size: 12px; }
+.brsp-meeting-select-wrap { display: none; }
 .brsp-header-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .brsp-topic-tabs { display: flex; gap: 14px; padding: 0 17px; border-bottom: 1px solid #e3ebf5; }
 .brsp-topic-tabs button { min-height: 38px; padding: 8px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #8899af; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
@@ -72,5 +73,30 @@
 .brsp-topic-picker small { display: block; padding: 12px; color: #8a9bb2; }
 .brsp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 @media (max-width: 1120px) { .brsp-board { grid-template-columns: 165px 220px minmax(260px,1fr); } .brsp-list-item { padding: 13px; } }
-@media (max-width: 800px) { .brsp-board { display: block; min-height: 0; } .brsp-column + .brsp-column, .brsp-editor { border-left: 0; border-top: 1px solid #e3ebf5; } .brsp-column-header { min-height: 52px; padding: 11px 14px; } .brsp-meeting-list, .brsp-topic-list { display: flex; overflow-x: auto; } .brsp-list-item { min-width: 168px; max-width: 205px; min-height: 68px; border-right: 1px solid #eef2f7; border-bottom: 0; } .brsp-editor-body { padding: 15px; } .brsp-editor-header, .brsp-editor-footer { padding: 13px 15px; } .brsp-editor-header { align-items: start; } .brsp-link { white-space: normal; } .brsp-report-text { min-height: 230px; } .brsp-toolbar-title { display: none; } .brsp-toolbar { justify-content: flex-end; } }
+@media (max-width: 800px) {
+  .brsp-board { display: block; width: 100%; min-width: 0; min-height: 0; }
+  .brsp-column + .brsp-column, .brsp-editor { border-left: 0; border-top: 1px solid #e3ebf5; }
+  .brsp-column-header { min-height: 52px; padding: 11px 14px; }
+  .brsp-meeting-list { display: none; }
+  .brsp-meeting-select-wrap { display: block; padding: 12px 14px 14px; }
+  .brsp-meeting-select-wrap label { display: block; margin-bottom: 7px; color: #8193ad; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .brsp-meeting-select { display: block; width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid #d7e2f0; border-radius: 5px; background: #fcfdff; color: #1e3a6e; font-size: 16px; }
+  .brsp-meeting-selected-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; color: #8899af; font-size: 12px; }
+  .brsp-topic-list { max-height: min(34dvh, 290px); min-height: 74px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .brsp-topic-list .brsp-list-item { width: 100%; min-width: 0; max-width: none; min-height: 48px; padding: 12px 14px; border-right: 0; border-bottom: 1px solid #eef2f7; }
+  .brsp-topic-list .brsp-list-item small { display: none; }
+  .brsp-topic-tabs button { min-height: 44px; }
+  .brsp-meeting-note { display: none; }
+  .brsp-editor-body { padding: 15px; }
+  .brsp-editor-header, .brsp-editor-footer { padding: 13px 15px; }
+  .brsp-editor-header { display: block; }
+  .brsp-header-links { justify-content: flex-start; margin-top: 10px; }
+  .brsp-link { white-space: normal; }
+  .brsp-report-text { min-height: 230px; }
+  .brsp-toolbar-title { display: none; }
+  .brsp-toolbar { justify-content: flex-end; }
+  .brsp-button { min-height: 44px; }
+  .brsp-text-input, .brsp-report-text, .brsp-meta-fields input, .brsp-modal input { font-size: 16px; }
+  .brsp-modal { max-height: calc(100dvh - 28px); overflow-y: auto; }
+}
 @media (max-width: 460px) { .brsp-editor-footer { align-items: stretch; } .brsp-footer-actions { width: 100%; } .brsp-footer-actions .brsp-button { flex: 1; } .brsp-footer-actions .brsp-link { width: 100%; text-align: left; } }

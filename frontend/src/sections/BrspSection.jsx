@@ -197,6 +197,14 @@ export default function BrspSection({ api, onError }) {
     <div className="brsp-board">
       <section className="brsp-column" aria-label="Встречи">
         <div className="brsp-column-header"><strong>Встречи</strong><small>По фактическим датам</small></div>
+        <div className="brsp-meeting-select-wrap">
+          <label htmlFor="brsp-meeting-select">Дата встречи</label>
+          <select id="brsp-meeting-select" className="brsp-meeting-select" value={selectedId ?? ''} disabled={loading || !meetings.length} onChange={event => selectMeeting(meetings.find(item => item.id === Number(event.target.value)))}>
+            {!meetings.length && <option value="">Нет встреч</option>}
+            {meetings.map(item => <option key={item.id} value={item.id}>{formatDate(item.date)} · {item.status === 'draft' ? 'Черновик' : 'Проведена'}{dirtyIds.includes(item.id) ? ' *' : ''}</option>)}
+          </select>
+          {meeting && <div className="brsp-meeting-selected-meta"><span className={`brsp-status ${meeting.status}`}>{meeting.status === 'draft' ? 'Черновик' : 'Проведена'}</span><span>· {topicCount(meeting.topics.length)} во встрече</span></div>}
+        </div>
         <div className="brsp-meeting-list">
           {loading && <p className="brsp-placeholder">Загрузка встреч...</p>}
           {!loading && !meetings.length && <p className="brsp-placeholder">Пока нет встреч. Создайте первую.</p>}
@@ -227,7 +235,7 @@ export default function BrspSection({ api, onError }) {
           {meeting && topicTab === 'active' && <>
             <div className="brsp-meta-fields"><label>Дата встречи<input type="date" value={meeting.date} disabled={busy} onChange={event => changeMeeting({ date: event.target.value })} /></label><label>Состояние<span className={`brsp-status ${meeting.status}`}>{meeting.status === 'draft' ? 'Черновик' : 'Проведена'}</span></label></div>
             {topic && <><label className="brsp-field-label" htmlFor="brsp-topic-name">Название темы</label><input id="brsp-topic-name" className="brsp-text-input" maxLength={100} value={topic.name} disabled={busy} onChange={event => changeTopic({ name: event.target.value })} /><div className="brsp-field-label">Краткий доклад</div><div className="brsp-report-history"><div className="brsp-current-report"><label htmlFor="brsp-report-text">Доклад встречи · {formatDate(meeting.date)}</label><textarea id="brsp-report-text" className="brsp-report-text" maxLength={20000} value={topic.text} disabled={busy} onChange={event => changeTopic({ text: event.target.value })} placeholder="Тезисы для выступления по этой теме..." /></div>{reports.map(item => <div className="brsp-history-entry" key={item.date}><strong>{formatDate(item.date)}</strong><p>{item.text}</p></div>)}</div></>}
-            <label className="brsp-field-label" htmlFor="brsp-meeting-note">Общий комментарий по встрече</label><textarea id="brsp-meeting-note" className="brsp-note-text" maxLength={20000} value={meeting.note} disabled={busy} onChange={event => changeMeeting({ note: event.target.value })} placeholder="Решения, договорённости и вопросы вне отдельных тем..." />
+            <div className="brsp-meeting-note"><label className="brsp-field-label" htmlFor="brsp-meeting-note">Общий комментарий по встрече</label><textarea id="brsp-meeting-note" className="brsp-note-text" maxLength={20000} value={meeting.note} disabled={busy} onChange={event => changeMeeting({ note: event.target.value })} placeholder="Решения, договорённости и вопросы вне отдельных тем..." /></div>
           </>}
           {topicTab === 'completed' && (topic ? <><div className="brsp-field-label">Краткий доклад</div><div className="brsp-report-history">{reports.length ? reports.map(item => <div className="brsp-history-entry" key={item.date}><strong>{formatDate(item.date)}</strong><p>{item.text}</p></div>) : <p className="brsp-placeholder">По этой теме пока нет докладов.</p>}</div></> : <p className="brsp-placeholder">Завершённых тем пока нет.</p>)}
           {!meeting && topicTab === 'active' && <p className="brsp-placeholder">Выберите встречу слева или создайте новую.</p>}
